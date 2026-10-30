@@ -19,7 +19,7 @@ def test_new_domain_login_and_hash_only(tmp_path,monkeypatch):
     assert "a long and unique passphrase here" not in raw
     assert "XPPN_V2_ADMIN_PASSWORD=" not in raw
     assert "XPPN_V2_COOKIE_SECURE=1" in raw
-    assert "XPPN_V2_ADMIN_PASSWORD_HASH=pbkdf2_sha256$600000$" in raw
+    assert "XPPN_V2_ADMIN_PASSWORD_HASH=pbkdf2_sha256:600000:" in raw
     assert oct(env.stat().st_mode & 0o777)=="0o600"
     _, values=read_env(env)
     monkeypatch.setenv("XPPN_V2_ADMIN_PASSWORD_HASH",values["XPPN_V2_ADMIN_PASSWORD_HASH"])
@@ -52,7 +52,7 @@ def test_legacy_preview_plaintext_password_is_migrated(tmp_path):
     raw=env.read_text()
     assert "previous-preview-password-long-enough" not in raw
     assert "XPPN_V2_ADMIN_PASSWORD=previous-preview-password-long-enough" not in raw
-    assert "XPPN_V2_ADMIN_PASSWORD_HASH=pbkdf2_sha256$" in raw
+    assert "XPPN_V2_ADMIN_PASSWORD_HASH=pbkdf2_sha256:" in raw
 
 
 @pytest.mark.parametrize("bad",["127.0.0.1","localhost","http://panel.example.com","domain.local",
@@ -149,3 +149,20 @@ def test_hidden_unicode_login_character_is_explained(tmp_path):
     with pytest.raises(SetupError,match="U\\+200B"):
         configure(tmp_path / ".env.preview","newnode.gowayot.com","admin\u200b",
                   "long-example-password-for-tests")
+
+
+
+def test_migrate_existing_dollar_separated_hash_without_password_reset(tmp_path,monkeypatch):
+    from v2.app import _password_ok
+    env=tmp_path/".env.preview"
+    configure(env,"admin.gowayot.com","admin","a strong existing password 123")
+    original=env.read_text()
+    import re
+    old=original.replace("pbkdf2_sha256:600000:","pbkdf2_sha256$600000$").replace(":",":")
+    old=re.sub(r"(?m)^(XPPN_V2_ADMIN_PASSWORD_HASH=pbkdf2_sha256\$600000\$)([0-9a-f]{32}):([0-9a-f]{64})$",r"\1\2$\3",old)
+    env.write_text(old)
+    configure(env,"admin.gowayot.com","admin","")
+    _, values=read_env(env)
+    assert values["XPPN_V2_ADMIN_PASSWORD_HASH"].startswith("pbkdf2_sha256:600000:")
+    monkeypatch.setenv("XPPN_V2_ADMIN_PASSWORD_HASH",values["XPPN_V2_ADMIN_PASSWORD_HASH"])
+    assert _password_ok("a strong existing password 123")
