@@ -47,5 +47,5 @@ def test_only_primary_panel_is_migrated_without_writing_old_db(tmp_path,monkeypa
     assert "projects" not in tables
     assert token not in ciphertext
     assert old.read_bytes()==before
-    with pytest.raises(migrate.MigrationError if hasattr(migrate,"MigrationError") else ValueError):
+    with pytest.raises(ValueError):
         migrate.migrate_panel(str(old),execute=True)
