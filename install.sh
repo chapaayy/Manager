@@ -14,7 +14,7 @@ STAGE=$(mktemp -d /tmp/xppn-install.XXXXXXXX)
 trap 'rm -rf "$STAGE"' EXIT
 SOURCE="$STAGE/source"
 mkdir -p "$SOURCE"
-if [[ "$1" == '--local' ]]; then
+if [[ $# -gt 0 ]] && [[ "$1" == '--local' ]]; then
   HERE=$(cd "$(dirname "$BASH_SOURCE")" && pwd)
   [[ -f "$HERE/manager/app.py" ]] || { echo 'Local release sources missing' >&2; exit 1; }
   tar -C "$HERE" -cf - --exclude='.git' --exclude='.env' --exclude='__pycache__' . | tar -xf - -C "$SOURCE"
