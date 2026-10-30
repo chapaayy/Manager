@@ -1,0 +1,494 @@
+"use strict";
+const $ = id => document.getElementById(id);
+const esc = value => String(value ?? "").replace(/[&<>"']/g, c => ({
+  "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+}[c]));
+const icon = name => '<svg><use href="/static/icons.svg#i-'+name+'"></use></svg>';
+const types = {xray:"Xray JSON",nginx:"Nginx",nginx_compose:"Nginx Compose",node_compose:"Remnawave Compose"};
+const titles = {nodes:"Ноды",configs:"Конфигурации",presets:"Пресеты",settings:"Настройки"};
+const labels = {regular:"Обычная",entry:"Входная / мост",exit:"Выходная"};
+let csrf = "", currentPage = "nodes", currentConfig = null, configRevision = 0,
+    configBase = "", configDirty = false, currentPreset = null, currentPlan = null,
+    panelProfiles = [], expanded = new Set(), toastTimer = null;
+let state = {panel:{},nodes:[],bridges:[],configs:[],presets:[]};
+
+function message(text, error=false){
+  const box = $("toast");
+  box.textContent = text;
+  box.classList.toggle("error",error);
+  box.classList.add("visible");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>box.classList.remove("visible"),4400);
+}
+function apiError(value){
+  if(typeof value === "string")return value;
+  if(value && typeof value.detail === "string")return value.detail;
+  if(value && Array.isArray(value.detail))return value.detail.map(x=>x.msg).join("; ");
+  return "Неизвестная ошибка";
+}
+async function api(path,method="GET",payload){
+  const headers = {"Accept":"application/json"};
+  if(payload !== undefined)headers["Content-Type"]="application/json";
+  if(method!=="GET")headers["X-CSRF-Token"]=csrf;
+  let response;
+  try{
+    response = await fetch("/api"+path,{method,headers,credentials:"same-origin",
+      ...(payload===undefined?{}:{body:JSON.stringify(payload)})});
+  }catch{
+    throw new Error("Сервер менеджера недоступен. Проверь соединение.");
+  }
+  let body=null;
+  try{body=await response.json()}catch{}
+  if(!response.ok){
+    if(response.status===401&&path!=="/auth/login")setAuthorized(false);
+    throw new Error(apiError(body)||"HTTP "+response.status);
+  }
+  return body;
+}
+function setAuthorized(value){
+  $("login-screen").classList.toggle("hidden",value);
+  $("shell").classList.toggle("hidden",!value);
+}
+async function refresh(){
+  const [dashboard,configs,presets]=await Promise.all([
+    api("/dashboard"),api("/configs"),api("/presets")
+  ]);
+  state.panel=dashboard.panel;
+  state.nodes=dashboard.nodes;
+  state.bridges=dashboard.bridges;
+  state.configs=configs;
+  state.presets=presets;
+  renderNodes();
+  renderConfigList();
+  renderPresets();
+  renderPanel();
+}
+async function signIn(password){
+  const result=await api("/auth/login","POST",{password});
+  csrf=result.csrf;
+  setAuthorized(true);
+  await refresh();
+}
+async function start(){
+  bindEvents();
+  try{
+    const data=await api("/auth/session");
+    csrf=data.csrf;
+    setAuthorized(true);
+    await refresh();
+  }catch(e){
+    setAuthorized(false);
+  }
+  try{
+    const collapsed=localStorage.getItem("xppn-v2-collapsed");
+    $("sidebar").classList.toggle("collapsed",collapsed==="1"||(collapsed===null&&innerWidth<1000));
+  }catch{}
+  $("placeholder-preview").innerHTML=highlightTokens(
+    '{\n  "inbounds": [\n    {\n      "tag": "{{source.code}}_{{exits.0.code}}_VLESS_TLS_IN"\n    }\n  ],\n  "outbounds": [{\n    "address": "{{exits.0.domain}}",\n    "id": "{{exits.0.uuid}}"\n  }]\n}'
+  );
+  api("/template/variables").then(x=>{
+    $("template-variable-list").innerHTML=x.variables.map(v=>
+      '<div class="variable-pill">'+esc("{{"+v.key+"}}")+'<small>'+esc(v.description)+'</small></div>'
+    ).join("");
+  }).catch(()=>{});
+}
+function showPage(page){
+  if(configDirty&&currentPage==="configs"&&page!=="configs"){
+    if(!confirm("В редакторе есть несохранённые изменения. Покинуть страницу?"))return;
+    configDirty=false;
+  }
+  currentPage=page;
+  document.querySelectorAll(".nav-link").forEach(el=>
+    el.classList.toggle("active",el.dataset.page===page));
+  document.querySelectorAll("main > section").forEach(el=>
+    el.classList.toggle("hidden",el.id!=="page-"+page));
+  $("current-page-name").textContent=titles[page]||page;
+}
+function renderNodes(){
+  $("metric-nodes").textContent=String(state.nodes.length);
+  $("metric-bridges").textContent=String(state.bridges.length);
+  $("metric-exits").textContent=String(state.bridges.reduce((n,b)=>n+b.exits.length,0));
+  const bridges = state.bridges;
+  const target=$("bridge-list");
+  if(!bridges.length){
+    target.innerHTML='<div class="empty-state"><span class="feature-icon">'+icon("git-branch")+
+      '</span><h3>Мостов пока нет</h3><p>Добавь входной VPS и создай мост. Внутри него будут появляться все выходные серверы и планы изменений.</p>'+
+      '<button class="btn subtle" data-action="bridge-new">'+icon("plus")+' Создать первый мост</button></div>';
+  }else{
+    target.innerHTML=bridges.map(b=>{
+      const open=expanded.has(b.id);
+      const main=b.entry;
+      const children=b.exits.map(e=>
+        '<div class="bridge-child">'+icon("server")+
+        '<div class="child-body"><strong>'+esc(e.code)+' · '+esc(e.name)+'</strong><small>'+
+          esc(e.domain)+' · TCP/'+esc(e.inbound_port)+'</small></div>'+
+        '<span class="tiny-chip success">Связан</span></div>'
+      ).join("");
+      const pending=b.plans.map(p=>
+        '<button class="bridge-child" data-action="open-plan" data-plan="'+esc(p.id)+'" type="button">'+
+        icon("file-code")+'<div class="child-body"><strong>'+esc(p.exit_code)+
+        ' · черновик</strong><small>Не применён на VPS · TCP/'+esc(p.inbound_port)+'</small></div>'+
+        '<span class="tiny-chip warning">'+esc(p.status)+'</span></button>'
+      ).join("");
+      return '<article class="bridge-card '+(open?'open':'')+'">'+
+        '<button class="bridge-head" data-action="toggle-bridge" data-bridge="'+esc(b.id)+'" aria-expanded="'+open+'">'+
+        '<span class="feature-icon">'+icon("git-branch")+'</span>'+
+        '<span class="bridge-title"><strong>'+esc(main.code)+' · '+esc(b.name)+
+        '</strong><small>'+esc(main.domain)+' · '+b.exits.length+' связанных нод</small></span>'+
+        '<span class="tiny-chip">'+(b.snapshot_enc?"Xray":"Bridge")+'</span>'+
+        '<span class="bridge-chevron">'+icon("chevron-down")+'</span></button>'+
+        (open?'<div class="bridge-children">'+(children||'<p class="muted small">Пока нет подключённых выходов.</p>')+pending+
+          '<div class="bridge-footer">'+
+          '<button class="btn subtle" data-action="bridge-exit" data-bridge="'+esc(b.id)+'">'+icon("plus")+' Добавить выход</button>'+
+          '<button class="btn subtle" data-action="bridge-import" data-bridge="'+esc(b.id)+'">'+icon("file-code")+' Импорт Xray</button>'+
+          '</div></div>':'')+'</article>';
+    }).join("");
+  }
+  const grouped=new Set(state.bridges.flatMap(b=>[b.entry_id,...b.exits.map(e=>e.id)]));
+  const others=state.nodes.filter(n=>!grouped.has(n.id));
+  $("other-nodes").innerHTML=others.length?others.map(n=>
+    '<div class="node-card"><span class="feature-icon">'+icon("server")+'</span><div><strong>'+
+    esc(n.code)+' · '+esc(n.name)+'</strong><p>'+esc(n.domain)+' · '+esc(labels[n.role])+
+    '</p></div><span class="tiny-chip warning">Черновик</span></div>'
+  ).join(""):'<div class="empty-state"><h3>Незадействованных серверов нет</h3><p>Новые VPS появятся здесь, пока ты не включишь их в мост.</p></div>';
+}
+function openModal(title,kicker,content,submit){
+  $("modal-title").textContent=title;$("modal-kicker").textContent=kicker;
+  $("modal-content").innerHTML=content;
+  $("modal").showModal();
+  const form=$("modal-content").querySelector("form");
+  if(form)form.addEventListener("submit",async e=>{
+    e.preventDefault();
+    const b=form.querySelector('button[type="submit"]');
+    if(b)b.disabled=true;
+    try{await submit(new FormData(form));$("modal").close();await refresh()}
+    catch(err){message(err.message,true)}
+    finally{if(b)b.disabled=false}
+  });
+}
+function nodeModal(){
+  openModal("Добавить сервер","ИНВЕНТАРИЗАЦИЯ / ЧЕРНОВИК",
+    '<p class="muted small">Это только карточка для будущего сценария установки. SSH и Docker пока не запускаются.</p>'+
+    '<form><label>Название<input name="name" required maxlength="80" placeholder="Германия · DE-01"></label>'+
+    '<label>Код сервера<input name="code" required maxlength="20" placeholder="DE1"></label>'+
+    '<label>Страна (код)<input name="country" required maxlength="2" value="DE"></label>'+
+    '<label>Домен<input name="domain" required placeholder="de1.example.com"></label>'+
+    '<label>Назначение<select name="role"><option value="regular">Обычная нода</option><option value="entry">Вход моста</option><option value="exit">Выходная нода</option></select></label>'+
+    '<div class="form-buttons"><button class="btn primary" type="submit">Сохранить запись</button></div></form>',
+    async fd=>{await api("/nodes","POST",Object.fromEntries(fd));message("Нода добавлена в схему. На VPS ничего не установлено.")});
+}
+function bridgeModal(){
+  const entries=state.nodes.filter(n=>n.role==="entry"&&!state.bridges.some(b=>b.entry_id===n.id));
+  if(!entries.length)return message("Сначала добавь сервер с ролью «Вход моста».",true);
+  openModal("Создать мост","ТОПОЛОГИЯ / НОВЫЙ МОСТ",
+    '<form><label>Название<input name="name" required placeholder="RU-01 · Мост"></label>'+
+    '<label>Входная нода<select name="entry_id">'+entries.map(n=>
+    '<option value="'+esc(n.id)+'">'+esc(n.code)+' · '+esc(n.name)+'</option>').join("")+
+    '</select></label><p class="muted small">Выходы можно добавить после создания. Существующий Xray-конфиг сначала импортируй как копию.</p>'+
+    '<div class="form-buttons"><button class="btn primary" type="submit">Создать мост</button></div></form>',
+    async fd=>{const r=await api("/bridges","POST",Object.fromEntries(fd));expanded.add(r.id);message("Мост создан. Действующие серверы не изменены.")});
+}
+function bridgeExitModal(id){
+  const bridge=state.bridges.find(x=>x.id===id);
+  if(!bridge)return;
+  const exits=state.nodes.filter(n=>n.role==="exit"&&!bridge.exits.some(e=>e.id===n.id));
+  if(!exits.length)return message("Сначала добавь новую выходную ноду, например NL1.",true);
+  openModal("Добавить выходную ноду","BRIDGE / ПЛАН ИЗМЕНЕНИЙ",
+    '<p class="muted small">Создадим дополнительный outbound, выделим свободный inbound-порт и покажем разницу. Существующий маршрут не перезаписывается.</p>'+
+    '<form><label>Выходная нода<select name="exit_id">'+exits.map(n=>
+    '<option value="'+esc(n.id)+'">'+esc(n.code)+' · '+esc(n.domain)+'</option>').join("")+
+    '</select></label>'+
+    '<label>UUID межсерверного VLESS <span class="muted">· необязательно</span><input name="outgoing_uuid" placeholder="Пусто = создать новый UUID" autocomplete="off"></label>'+
+    '<label>Дополнительный TCP-порт <span class="muted">· автоматически</span><input name="inbound_port" type="number" min="8444" max="8999" placeholder="8444"></label>'+
+    '<p class="muted small">UUID должен совпадать с пользователем принимающего outbound на выходном сервере. Автоматическая синхронизация обеих сторон пока не включена.</p>'+
+    '<div class="form-buttons"><button type="submit" class="btn primary">Подготовить изменения</button></div></form>',
+    async fd=>{
+      const data={exit_id:fd.get("exit_id")};
+      if(fd.get("outgoing_uuid"))data.outgoing_uuid=fd.get("outgoing_uuid");
+      if(fd.get("inbound_port"))data.inbound_port=Number(fd.get("inbound_port"));
+      const plan=await api("/bridges/"+encodeURIComponent(id)+"/plans","POST",data);
+      setTimeout(()=>openPlan(plan),80);
+      message("Черновик моста подготовлен без изменений на VPS.");
+    });
+}
+async function bridgeImportModal(id){
+  const b=await api("/bridges/"+encodeURIComponent(id));
+  openModal("Импорт текущего Xray","BRIDGE / ТОЛЬКО ЧТЕНИЕ",
+    '<p class="muted small">Вставь JSON действующего моста. Менеджер сохранит его в зашифрованной базе только как снимок. Это НЕ загрузка конфига на VPS.</p>'+
+    '<form><label>Действующий Xray JSON<textarea name="config" rows="14" required spellcheck="false" placeholder="{ ... }"></textarea></label>'+
+    '<label><input type="checkbox" name="confirm" required> Я понимаю, что на VPS ничего не меняется.</label>'+
+    '<div class="form-buttons"><button class="btn primary" type="submit">Сохранить снимок</button></div></form>',
+    async fd=>{
+      let parsed;
+      try{parsed=JSON.parse(fd.get("config"))}catch{throw new Error("JSON не удалось прочитать")}
+      await api("/bridges/"+encodeURIComponent(id)+"/import","POST",{
+        config:parsed,revision:b.revision,confirm_read_only:fd.has("confirm")
+      });
+      message("Снимок текущего Xray сохранён зашифрованно.");
+    });
+}
+function openPlan(plan){
+  currentPlan=plan;
+  $("plan-diff").innerHTML=String(plan.diff||"").split("\n").map(line=>{
+    const kind=line.startsWith("+")?"added":line.startsWith("-")?"removed":
+      line.startsWith("@")?"hunk":"";
+    return '<span class="'+kind+'">'+esc(line)+'</span>';
+  }).join("\n");
+  $("plan-json").textContent=JSON.stringify(plan.config||{},null,2);
+  $("plan-approve").disabled=plan.status!=="draft";
+  $("plan-approve").textContent=plan.status==="approved"?
+    "Черновик утверждён (не применён)":"Утвердить черновик (без применения)";
+  $("plan-dialog").showModal();
+}
+async function openPlanId(id){
+  try{openPlan(await api("/plans/"+encodeURIComponent(id)))}
+  catch(e){message(e.message,true)}
+}
+function markConfigDirty(){
+  const now=JSON.stringify({
+    name:$("config-name").value,kind:$("config-kind").value,content:$("config-content").value
+  });
+  configDirty=now!==configBase;
+  $("config-hint").textContent=configDirty?"● Несохранённые изменения":"Файл хранится в библиотеке; никакие VPS не изменены.";
+}
+function setConfigClean(){
+  configBase=JSON.stringify({
+    name:$("config-name").value,kind:$("config-kind").value,content:$("config-content").value
+  });
+  configDirty=false;markConfigDirty();
+}
+function discardConfig(){return !configDirty||confirm("Отменить несохранённые изменения?")}
+function resetConfig(force=false){
+  if(!force&&!discardConfig())return;
+  currentConfig=null;configRevision=0;
+  $("config-name").value="";$("config-content").value="";
+  $("config-kind").disabled=false;$("config-kind").value="xray";
+  $("config-editor-title").textContent="Новый файл";
+  $("config-version").textContent="Не сохранён";
+  $("config-delete").classList.add("hidden");
+  setConfigClean();renderConfigList();
+}
+async function openConfig(id){
+  if(!discardConfig())return;
+  try{
+    const file=await api("/configs/"+encodeURIComponent(id));
+    currentConfig=id;configRevision=file.revision;
+    $("config-name").value=file.name;$("config-content").value=file.content;
+    $("config-kind").value=file.kind;$("config-kind").disabled=true;
+    $("config-editor-title").textContent=file.name;
+    $("config-version").textContent="Версия "+file.revision;
+    $("config-delete").classList.remove("hidden");
+    setConfigClean();renderConfigList();
+  }catch(e){message(e.message,true)}
+}
+function renderConfigList(){
+  const q=$("config-search").value.toLowerCase().trim();
+  const files=state.configs.filter(f=>(f.name+" "+types[f.kind]).toLowerCase().includes(q));
+  $("config-files").innerHTML=files.length?files.map(f=>
+    '<button class="file-row '+(currentConfig===f.id?"active":"")+
+    '" data-open-config="'+esc(f.id)+'">'+icon("file-code")+'<span><strong>'+
+    esc(f.name)+'</strong><small>'+esc(types[f.kind])+' · v'+f.revision+
+    '</small></span></button>').join(""):'<p class="muted small">Файлов пока нет. Создай конфиг справа.</p>';
+}
+function highlightTokens(value){
+  return String(value).split(/(\{\{[a-z0-9.*_-]+\}\})/gi).map(part=>
+    /^\{\{[a-z0-9.*_-]+\}\}$/i.test(part)?'<span class="placeholder-token">'+esc(part)+'</span>':esc(part)
+  ).join("");
+}
+async function saveConfig(){
+  const payload={name:$("config-name").value.trim(),kind:$("config-kind").value,
+                 content:$("config-content").value};
+  if(!payload.name||!payload.content.trim())return message("Укажи название и содержимое.",true);
+  if(currentConfig)payload.revision=configRevision;
+  try{
+    const result=await api(currentConfig?"/configs/"+encodeURIComponent(currentConfig):"/configs",
+                           currentConfig?"PUT":"POST",payload);
+    configDirty=false;await refresh();await openConfig(result.id);
+    message("Файл сохранён в библиотеке, без изменений на нодах.");
+  }catch(e){message(e.message,true)}
+}
+async function deleteConfig(){
+  if(!currentConfig||!confirm("Удалить файл из библиотеки? Файлы пресетов защищены от случайного удаления."))return;
+  try{
+    await api("/configs/"+encodeURIComponent(currentConfig),"DELETE");
+    resetConfig(true);await refresh();message("Файл удалён.");
+  }catch(e){message(e.message,true)}
+}
+function resetPreset(){
+  currentPreset=null;$("preset-name").value="";$("preset-description").value="";
+  $("preset-edit-title").textContent="Новый пресет";
+  for(const s of document.querySelectorAll("[data-preset-kind]"))s.value="";
+}
+function renderPresetSelects(selected={}){
+  $("preset-selects").innerHTML=Object.entries(types).map(([kind,label])=>
+    '<label>'+esc(label)+'<select data-preset-kind="'+kind+'"><option value="">Без этого файла</option>'+
+    state.configs.filter(f=>f.kind===kind).map(f=>
+      '<option value="'+esc(f.id)+'" '+(selected[kind]===f.id?"selected":"")+'>'+
+      esc(f.name)+' · v'+f.revision+'</option>').join("")+
+    '</select></label>'
+  ).join("");
+}
+function renderPresets(){
+  $("preset-count").textContent=String(state.presets.length);
+  let selected={};
+  if(currentPreset){
+    const p=state.presets.find(x=>x.id===currentPreset);
+    if(p)selected=Object.fromEntries(p.items.map(i=>[i.kind,i.config_id]));
+  }
+  renderPresetSelects(selected);
+  $("preset-cards").innerHTML=state.presets.length?state.presets.map(p=>
+    '<article class="preset-card"><h3>'+esc(p.name)+'</h3><p>'+esc(p.description||"Пользовательский набор")+'</p>'+
+    p.items.map(i=>'<div class="preset-file-chip">'+esc(types[i.kind])+'<strong>'+
+    esc(i.config_name)+'</strong></div>').join("")+
+    '<div class="form-buttons"><button class="btn subtle" data-preset-edit="'+esc(p.id)+'">Изменить</button>'+
+    '<button class="btn subtle" data-preset-delete="'+esc(p.id)+'">Удалить</button></div></article>'
+  ).join(""):'<div class="empty-state"><span class="feature-icon">'+icon("layers")+
+    '</span><h3>Пресетов пока нет</h3><p>Сначала сохрани конфиги, затем объединяй их в готовые наборы.</p></div>';
+}
+function editPreset(id){
+  const p=state.presets.find(x=>x.id===id);if(!p)return;
+  currentPreset=id;$("preset-name").value=p.name;$("preset-description").value=p.description;
+  $("preset-edit-title").textContent=p.name;
+  renderPresetSelects(Object.fromEntries(p.items.map(x=>[x.kind,x.config_id])));
+}
+async function savePreset(){
+  const ids=[...document.querySelectorAll("[data-preset-kind]")].map(x=>x.value).filter(Boolean);
+  if(!ids.length)return message("Добавь хотя бы один файл.",true);
+  const body={name:$("preset-name").value.trim(),
+    description:$("preset-description").value.trim(),config_ids:ids};
+  try{
+    await api(currentPreset?"/presets/"+encodeURIComponent(currentPreset):"/presets",
+              currentPreset?"PUT":"POST",body);
+    resetPreset();await refresh();message("Набор сохранён в библиотеке.");
+  }catch(e){message(e.message,true)}
+}
+async function removePreset(id){
+  if(!confirm("Удалить пресет? Сами конфигурации останутся."))return;
+  try{await api("/presets/"+encodeURIComponent(id),"DELETE");
+    if(currentPreset===id)resetPreset();await refresh();message("Пресет удалён.");
+  }catch(e){message(e.message,true)}
+}
+function renderPanel(){
+  $("panel-url").value=state.panel.url||"";
+  $("panel-ip").value=state.panel.outbound_ip||"";
+  $("panel-token").value="";
+  $("panel-token").placeholder=state.panel.has_token?
+    "Токен уже сохранён · оставь пустым":"Введи API-токен Remnawave";
+  $("panel-status").textContent=state.panel.url?
+    "Одна основная панель · "+state.panel.url:"Панель пока не подключена.";
+}
+async function savePanel(){
+  const body={url:$("panel-url").value.trim(),token:$("panel-token").value,
+              outbound_ip:$("panel-ip").value.trim()};
+  try{state.panel=await api("/panel","PUT",body);renderPanel();
+    message("Настройки Remnawave сохранены. Изменений на VPS нет.");
+  }catch(e){message(e.message,true)}
+}
+function showProfileInbounds(){
+  const selected=panelProfiles.find(x=>x.uuid===$("panel-profile-select").value);
+  const checked=(selected?.uuid===state.panel.config_profile_uuid?
+    state.panel.inbound_uuids:[]);
+  $("panel-inbounds").innerHTML=(selected?.inbounds||[]).map(i=>
+    '<label><input class="inbound-check" type="checkbox" value="'+esc(i.uuid)+'" '+
+    ((!checked.length||checked.includes(i.uuid))?"checked":"")+'>'+esc(i.tag||i.uuid)+'</label>'
+  ).join("")||'<p class="muted small">Inbound-ов в этом профиле нет.</p>';
+}
+async function checkPanel(){
+  $("panel-status").textContent="Проверяем API и доступные Config Profiles…";
+  try{
+    const check=await api("/panel/check","POST");
+    panelProfiles=check.config_profiles||[];
+    $("panel-profile-area").classList.remove("hidden");
+    $("panel-profile-select").innerHTML=panelProfiles.map(p=>
+      '<option value="'+esc(p.uuid)+'">'+esc(p.name||p.uuid)+'</option>').join("");
+    if(panelProfiles.some(p=>p.uuid===state.panel.config_profile_uuid))
+      $("panel-profile-select").value=state.panel.config_profile_uuid;
+    showProfileInbounds();
+    $("panel-status").textContent="API доступен · "+panelProfiles.length+
+      " профилей · ключ ноды "+(check.node_key_available?"получен":"не найден");
+    $("panel-status").className="form-feedback success";
+  }catch(e){$("panel-status").textContent=e.message;$("panel-status").className="form-feedback error"}
+}
+async function savePanelProfile(){
+  const inbounds=[...document.querySelectorAll(".inbound-check:checked")].map(x=>x.value);
+  if(!inbounds.length)return message("Выбери хотя бы один inbound.",true);
+  try{
+    state.panel=await api("/panel/profile","PUT",{
+      uuid:$("panel-profile-select").value,inbounds
+    });
+    message("Профиль сохранён для новых нод.");
+  }catch(e){message(e.message,true)}
+}
+function bindEvents(){
+  $("login-form").addEventListener("submit",async e=>{
+    e.preventDefault();
+    const btn=e.currentTarget.querySelector("button");btn.disabled=true;
+    $("login-error").textContent="";
+    try{await signIn($("login-password").value);$("login-password").value=""}
+    catch(err){$("login-error").textContent=err.message}
+    finally{btn.disabled=false}
+  });
+  document.querySelectorAll(".nav-link").forEach(btn=>
+    btn.addEventListener("click",()=>showPage(btn.dataset.page)));
+  $("toggle-sidebar").onclick=()=>{
+    const collapsed=$("sidebar").classList.toggle("collapsed");
+    $("toggle-sidebar").title=collapsed?"Развернуть меню":"Свернуть меню";
+    try{localStorage.setItem("xppn-v2-collapsed",collapsed?"1":"0")}catch{}
+  };
+  $("refresh").onclick=()=>refresh().then(()=>message("Данные обновлены")).catch(e=>message(e.message,true));
+  $("new-node").onclick=nodeModal;$("new-bridge").onclick=bridgeModal;
+  $("bridge-list").addEventListener("click",e=>{
+    const button=e.target.closest("[data-action]");
+    if(!button)return;
+    const action=button.dataset.action,id=button.dataset.bridge;
+    if(action==="toggle-bridge"){
+      expanded.has(id)?expanded.delete(id):expanded.add(id);
+      renderNodes();
+    }else if(action==="bridge-new")bridgeModal();
+    else if(action==="bridge-exit")bridgeExitModal(id);
+    else if(action==="bridge-import")bridgeImportModal(id).catch(err=>message(err.message,true));
+    else if(action==="open-plan")openPlanId(button.dataset.plan);
+  });
+  $("modal-close").onclick=()=>$("modal").close();
+  $("plan-close").onclick=()=>$("plan-dialog").close();
+  $("plan-dismiss").onclick=()=>$("plan-dialog").close();
+  $("plan-approve").onclick=async()=>{
+    if(!currentPlan||!confirm("Утвердить черновик? Это НЕ применяет изменения к Remnawave или VPS."))return;
+    try{
+      await api("/plans/"+encodeURIComponent(currentPlan.id)+"/approve","POST");
+      $("plan-dialog").close();await refresh();
+      message("Черновик утверждён, но НЕ применён на сервере.");
+    }catch(e){message(e.message,true)}
+  };
+  $("new-config").onclick=()=>resetConfig();
+  $("config-search").addEventListener("input",renderConfigList);
+  $("config-files").addEventListener("click",e=>{
+    const button=e.target.closest("[data-open-config]");
+    if(button)openConfig(button.dataset.openConfig);
+  });
+  ["config-name","config-kind","config-content"].forEach(id=>
+    $(id).addEventListener("input",markConfigDirty));
+  $("config-content").addEventListener("keydown",e=>{
+    if(e.key==="Tab"){e.preventDefault();const x=e.target;
+      x.setRangeText("  ",x.selectionStart,x.selectionEnd,"end");markConfigDirty()}
+    if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==="s"){
+      e.preventDefault();saveConfig()}
+  });
+  $("config-save").onclick=saveConfig;$("config-delete").onclick=deleteConfig;
+  $("new-preset").onclick=resetPreset;$("preset-reset").onclick=resetPreset;
+  $("preset-form").onsubmit=e=>{e.preventDefault();savePreset()};
+  $("preset-cards").addEventListener("click",e=>{
+    const edit=e.target.closest("[data-preset-edit]");
+    const remove=e.target.closest("[data-preset-delete]");
+    if(edit)editPreset(edit.dataset.presetEdit);
+    if(remove)removePreset(remove.dataset.presetDelete);
+  });
+  $("panel-form").onsubmit=e=>{e.preventDefault();savePanel()};
+  $("panel-check").onclick=checkPanel;
+  $("panel-profile-select").onchange=showProfileInbounds;
+  $("panel-profile-save").onclick=savePanelProfile;
+  window.addEventListener("beforeunload",e=>{
+    if(configDirty){e.preventDefault();e.returnValue=""}
+  });
+}
+document.addEventListener("DOMContentLoaded",start);
