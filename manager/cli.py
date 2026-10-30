@@ -17,9 +17,8 @@ def provision_env():
     if not re.fullmatch(r'[A-Za-z0-9_.-]{3,40}', name):
         print('Invalid XPPN_ADMIN_USER (3-40 latin letters, digits, dot, underscore, hyphen).', file=sys.stderr)
         return 2
-    if password and len(password) < 16:
-        print('XPPN_ADMIN_PASSWORD must contain at least 16 characters.', file=sys.stderr)
-        return 2
+    if password and len(password) < 8:
+        print('WARNING: Short administrator password; restrict public access to the panel.', file=sys.stderr)
     init_db()
     with connect() as c:
         row = c.execute('SELECT id,username FROM admins LIMIT 1').fetchone()
@@ -53,10 +52,10 @@ def interactive_password(action):
     if not re.fullmatch(r'[A-Za-z0-9_.-]{3,40}', name):
         print('Invalid username.')
         return 1
-    pwd = getpass.getpass('New admin password (16+ characters): ')
+    pwd = getpass.getpass('New admin password: ')
     again = getpass.getpass('Repeat password: ')
-    if len(pwd) < 16 or pwd != again:
-        print('Password too short or mismatch')
+    if not pwd or pwd != again:
+        print('Password is empty or confirmation does not match')
         return 1
     with connect() as c:
         if present:
