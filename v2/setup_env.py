@@ -15,7 +15,6 @@ import tempfile
 
 ROUNDS = 600000
 DOMAIN = re.compile(r"(?=.{4,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}\Z")
-USERNAME = re.compile(r"[A-Za-z0-9_.-]{3,40}\Z")
 KEYS = ("XPPN_V2_DB", "XPPN_V2_DOMAIN", "XPPN_V2_ADMIN_USER",
         "XPPN_V2_ADMIN_PASSWORD_HASH", "XPPN_V2_SESSION_SECRET",
         "XPPN_DATA_KEY", "XPPN_V2_COOKIE_SECURE")
@@ -30,8 +29,10 @@ def validate(domain: str, username: str, password: str, *, has_hash: bool) -> tu
     username = username.strip()
     if not DOMAIN.fullmatch(domain) or domain.endswith(".local") or domain.endswith(".example.com"):
         raise SetupError("Укажи публичный домен, например dashboard.myservice.com")
-    if not USERNAME.fullmatch(username):
-        raise SetupError("Логин: 3–40 латинских символов, цифры, точка, _ или -")
+    if not 3 <= len(username) <= 40 or not all(ch.isalnum() or ch in "_.-" for ch in username):
+        bad = [f"U+{ord(ch):04X}" for ch in username if not (ch.isalnum() or ch in "_.-")]
+        explanation = " (неподдерживаемые символы: " + ", ".join(bad[:5]) + ")" if bad else ""
+        raise SetupError("Логин: 3–40 букв, цифр, точка, _ или -" + explanation)
     if password and (len(password) < 12 or len(password) > 256 or "\n" in password or "\r" in password):
         raise SetupError("Пароль должен содержать 12–256 символов без переносов строк")
     if not password and not has_hash:
