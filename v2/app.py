@@ -333,10 +333,10 @@ def template_variables(_=Depends(read_access)):
         "variables": [
             {"key": "source.code", "description": "Код входной ноды"},
             {"key": "source.domain", "description": "TLS-путь и сертификат входной ноды"},
-            {"key": "exits.*.code", "description": "Теги отдельных выходных маршрутов"},
-            {"key": "exits.*.domain", "description": "Адрес и TLS SNI выхода"},
-            {"key": "exits.*.uuid", "description": "UUID на обеих сторонах — секрет"},
-            {"key": "exits.*.inbound_port", "description": "Уникальный входной TCP-порт"},
+            {"key": "exit.code", "description": "Код первого выходного сервера"},
+            {"key": "exit.domain", "description": "Адрес и TLS SNI выхода"},
+            {"key": "bridge.user_id", "description": "Межсерверный UUID — секрет"},
+            {"key": "additional.inbound_port", "description": "Новый порт выделяется автоматически, не заполняется текстовой заменой"},
         ]
     }
 
