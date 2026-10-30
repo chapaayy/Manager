@@ -1,8 +1,61 @@
 <!doctype html>
 <html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>XPPN — Nodes</title><link rel="stylesheet" href="/assets/app.css?v=1.7.0"></head>
 <body>
+<svg class="icon-sprite" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><symbol id="xicon-panel-left-close" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2" />
+  <path d="M9 3v18" />
+  <path d="m16 15-3-3 3-3" /></symbol>
+<symbol id="xicon-server" viewBox="0 0 24 24"><rect width="20" height="8" x="2" y="2" rx="2" ry="2" />
+  <rect width="20" height="8" x="2" y="14" rx="2" ry="2" />
+  <line x1="6" x2="6.01" y1="6" y2="6" />
+  <line x1="6" x2="6.01" y1="18" y2="18" /></symbol>
+<symbol id="xicon-layout-dashboard" viewBox="0 0 24 24"><rect width="7" height="9" x="3" y="3" rx="1" />
+  <rect width="7" height="5" x="14" y="3" rx="1" />
+  <rect width="7" height="9" x="14" y="12" rx="1" />
+  <rect width="7" height="5" x="3" y="16" rx="1" /></symbol>
+<symbol id="xicon-files" viewBox="0 0 24 24"><path d="M15 2h-4a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V8" />
+  <path d="M16.706 2.706A2.4 2.4 0 0 0 15 2v5a1 1 0 0 0 1 1h5a2.4 2.4 0 0 0-.706-1.706z" />
+  <path d="M5 7a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h8a2 2 0 0 0 1.732-1" /></symbol>
+<symbol id="xicon-layers" viewBox="0 0 24 24"><path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z" />
+  <path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12" />
+  <path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17" /></symbol>
+<symbol id="xicon-scroll-text" viewBox="0 0 24 24"><path d="M15 12h-5" />
+  <path d="M15 8h-5" />
+  <path d="M19 17V5a2 2 0 0 0-2-2H4" />
+  <path d="M8 21h12a2 2 0 0 0 2-2v-1a1 1 0 0 0-1-1H11a1 1 0 0 0-1 1v1a2 2 0 1 1-4 0V5a2 2 0 1 0-4 0v2a1 1 0 0 0 1 1h3" /></symbol>
+<symbol id="xicon-activity" viewBox="0 0 24 24"><path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2" /></symbol>
+<symbol id="xicon-settings-2" viewBox="0 0 24 24"><path d="M14 17H5" />
+  <path d="M19 7h-9" />
+  <circle cx="17" cy="17" r="3" />
+  <circle cx="7" cy="7" r="3" /></symbol>
+<symbol id="xicon-refresh-cw" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+  <path d="M21 3v5h-5" />
+  <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
+  <path d="M8 16H3v5" /></symbol>
+<symbol id="xicon-folder-cog" viewBox="0 0 24 24"><path d="M10.3 20H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.98a2 2 0 0 1 1.69.9l.66 1.2A2 2 0 0 0 12 6h8a2 2 0 0 1 2 2v3.3" />
+  <path d="m14.305 19.53.923-.382" />
+  <path d="m15.228 16.852-.923-.383" />
+  <path d="m16.852 15.228-.383-.923" />
+  <path d="m16.852 20.772-.383.924" />
+  <path d="m19.148 15.228.383-.923" />
+  <path d="m19.53 21.696-.382-.924" />
+  <path d="m20.772 16.852.924-.383" />
+  <path d="m20.772 19.148.924.383" />
+  <circle cx="18" cy="18" r="3" /></symbol>
+<symbol id="xicon-plus" viewBox="0 0 24 24"><path d="M5 12h14" />
+  <path d="M12 5v14" /></symbol>
+<symbol id="xicon-code" viewBox="0 0 24 24"><path d="m16 18 6-6-6-6" />
+  <path d="m8 6-6 6 6 6" /></symbol>
+<symbol id="xicon-shield-check" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" />
+  <path d="m9 12 2 2 4-4" /></symbol>
+<symbol id="xicon-chevrons-left" viewBox="0 0 24 24"><path d="m11 17-5-5 5-5" />
+  <path d="m18 17-5-5 5-5" /></symbol>
+<symbol id="xicon-chevrons-right" viewBox="0 0 24 24"><path d="m6 17 5-5-5-5" />
+  <path d="m13 17 5-5-5-5" /></symbol>
+<symbol id="xicon-menu" viewBox="0 0 24 24"><path d="M4 5h16" />
+  <path d="M4 12h16" />
+  <path d="M4 19h16" /></symbol></svg>
 <section id="login-screen" class="auth-wrap hidden"><div class="login-panel"><div class="brand"><span class="brand-icon">✳</span><b>XPPN</b><span class="brand-soft">/ Control</span></div><p class="eyebrow">PRIVATE INFRASTRUCTURE</p><h1>Твои серверы.<br><span class="muted-heading">Одно место.</span></h1><p class="subline">Защищённый доступ к управлению нодами.</p><form id="login-form"><label>Логин<input id="login-user" autocomplete="username" required value="admin"></label><label>Пароль<input id="login-pass" type="password" autocomplete="current-password" required></label><button class="btn primary full" type="submit">Войти в панель <span>→</span></button><p id="login-error" class="error" aria-live="polite"></p></form></div></section>
-<div id="app-screen" class="app-shell hidden"><aside class="sidebar"><div class="sidebar-top"><div class="brand"><span class="brand-icon">✳</span><b>XPPN</b><span class="brand-soft">Manager</span></div><button id="sidebar-toggle" type="button" class="sidebar-toggle" title="Свернуть меню" aria-label="Свернуть меню" aria-expanded="true">☰</button></div><p class="side-heading">РАБОЧЕЕ ПРОСТРАНСТВО</p><button class="sidebar-link active" id="nav-servers"><span class="nav-icon">▦</span> Ноды <b id="total-count" class="nav-counter">0</b></button><button class="sidebar-link" id="nav-overview"><span class="nav-icon">◫</span> Обзор</button><button class="sidebar-link" id="nav-configs"><span class="nav-icon">⌘</span> Конфигурации</button><button class="sidebar-link" id="nav-presets"><span class="nav-icon">◈</span> Пресеты</button><button class="sidebar-link" id="nav-logs"><span class="nav-icon">≡</span> Логи</button><button class="sidebar-link" id="nav-monitoring"><span class="nav-icon">◴</span> Мониторинг</button><button class="sidebar-link" id="nav-settings"><span class="nav-icon">⚙</span> Настройки</button><button class="sidebar-link" id="nav-updates"><span class="nav-icon">↻</span> Обновления</button><button class="sidebar-link" id="nav-projects"><span class="nav-icon">▧</span> VPN-проекты</button><button class="sidebar-link" id="nav-add"><span class="nav-icon">＋</span> Новая нода</button><div class="side-stretch"></div><div class="side-bottom"><span class="status-pulse"></span> Защищённое соединение<button class="quiet-button" id="logout">Выйти из панели →</button></div></aside>
+<div id="app-screen" class="app-shell hidden"><aside class="sidebar"><div class="sidebar-top"><div class="brand"><span class="brand-icon"><svg class="lucide-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#xicon-shield-check"></use></svg></span><b>XPPN</b><span class="brand-soft">Manager</span></div><button id="sidebar-toggle" type="button" class="sidebar-toggle" title="Свернуть меню" aria-label="Свернуть меню" aria-expanded="true"><svg class="lucide-icon sidebar-collapse-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#xicon-panel-left-close"></use></svg></button></div><p class="side-heading">РАБОЧЕЕ ПРОСТРАНСТВО</p><button class="sidebar-link active" id="nav-servers"><span class="nav-icon"><svg class="lucide-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#xicon-server"></use></svg></span> Ноды <b id="total-count" class="nav-counter">0</b></button><button class="sidebar-link" id="nav-overview"><span class="nav-icon"><svg class="lucide-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#xicon-layout-dashboard"></use></svg></span> Обзор</button><button class="sidebar-link" id="nav-configs"><span class="nav-icon"><svg class="lucide-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#xicon-files"></use></svg></span> Конфигурации</button><button class="sidebar-link" id="nav-presets"><span class="nav-icon"><svg class="lucide-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#xicon-layers"></use></svg></span> Пресеты</button><button class="sidebar-link" id="nav-logs"><span class="nav-icon"><svg class="lucide-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#xicon-scroll-text"></use></svg></span> Логи</button><button class="sidebar-link" id="nav-monitoring"><span class="nav-icon"><svg class="lucide-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#xicon-activity"></use></svg></span> Мониторинг</button><button class="sidebar-link" id="nav-settings"><span class="nav-icon"><svg class="lucide-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#xicon-settings-2"></use></svg></span> Настройки</button><button class="sidebar-link" id="nav-updates"><span class="nav-icon"><svg class="lucide-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#xicon-refresh-cw"></use></svg></span> Обновления</button><button class="sidebar-link" id="nav-projects"><span class="nav-icon"><svg class="lucide-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#xicon-folder-cog"></use></svg></span> VPN-проекты</button><button class="sidebar-link" id="nav-add"><span class="nav-icon"><svg class="lucide-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#xicon-plus"></use></svg></span> Новая нода</button><div class="side-stretch"></div><div class="side-bottom"><span class="status-pulse"></span> Защищённое соединение<button class="quiet-button" id="logout">Выйти из панели →</button></div></aside>
 <main class="workspace"><div class="workspace-top"><span class="topbreadcrumb">XPPN <span>/</span> <span id="breadcrumb">Серверы</span></span><span class="top-right"><i class="status-pulse"></i> Infrastructure manager</span></div>
 <section id="overview-page" class="hidden"><div class="page-intro"><div><p class="eyebrow">XPPN CONTROL</p><h1>Обзор инфраструктуры</h1><p class="subline">Все ноды, проблемы, состояние сервисов.</p></div></div><div id="overview-stats" class="stats"></div><div class="panel" id="overview-list"></div></section>
 <section id="configs-page" class="hidden">
