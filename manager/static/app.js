@@ -642,3 +642,209 @@ showPage=function(page){
   }
   return earlierPage(page);
 };
+
+
+/* v1.8 — first-node onboarding: one Remnawave panel, predictable install modes. */
+let wizardMainProject=null,wizardPanelReady=false,wizardPanelProfiles=[],wizardStatusLoading=false;
+let wizardPreflightOk=false,wizardPreflightBusy=false,wizardPreflightStamp='',wizardPreflightIssue='';
+const primaryPanel=()=>projectCache.find(p=>p.id==='default')||projectCache[0]||null;
+const mainPanelNeedsSetup=()=>preset()!=='agent'&&!wizardPanelReady;
+function wizardStatus(text,kind='info'){
+  const el=$('wizard-panel-message');el.textContent=text;el.dataset.kind=kind;
+}
+function wizardPanelSummary(){
+  const p=primaryPanel();
+  wizardMainProject=p;
+  wizardPanelReady=!!(p&&p.panel_url&&p.panel_ip&&p.has_api_token&&p.has_secret_key&&p.panel_config_profile_uuid&&(p.panel_active_inbounds||[]).length);
+  const agent=preset()==='agent';
+  $('wizard-panel-setup').classList.toggle('hidden',agent);
+  $('wizard-panel-status-title').textContent=wizardPanelReady?'Remnawave подключена':'Один раз подключи Remnawave';
+  $('wizard-panel-status-detail').textContent=wizardPanelReady
+    ?(p.panel_url+' · настройки для новых нод сохранены')
+    :'Введи URL, API-токен и исходящий IP панели. После этого новые VPS будут подключаться автоматически.';
+  $('wizard-panel-setup').dataset.ready=wizardPanelReady?'true':'false';
+  $('wizard-panel-edit').textContent=wizardPanelReady?'Изменить':'Подключить';
+}
+function fillWizardPanelSettings(){
+  const p=primaryPanel();if(!p)return;
+  $('wizard-remna-url').value=p.panel_url||'';
+  $('wizard-remna-token').value='';
+  $('wizard-remna-egress').value=p.panel_ip||'';
+  wizardStatus('');
+}
+async function prepareWizardTemplates(preferredMode){
+  const mode=preferredMode||preset();
+  const p=primaryPanel();
+  if(!p)return;
+  const id=$('wizard-profile').value;
+  profilesCache=await api('/projects/'+encodeURIComponent(p.id)+'/profiles');
+  const subset=profilesCache.filter(x=>x.mode===mode && (mode!=='full'||x.transport==='tls-raw'));
+  $('wizard-profile').innerHTML=subset.map(x=>'<option value="'+escapeHtml(x.id)+'">'+escapeHtml(x.name)+'</option>').join('');
+  const selected=subset.find(x=>x.id===id)||subset.find(x=>x.transport==='tls-raw')||subset[0];
+  if(selected)$('wizard-profile').value=selected.id;
+  $('wizard-profile-hint').textContent=selected
+    ?'Шаблон «'+selected.name+'». Дополнительные параметры подставятся автоматически.'
+    :'Шаблон для этого режима не найден. Менеджер использует стандартные параметры.';
+}
+refreshWizardProjects=async function(){
+  await fetchProjects();
+  const p=primaryPanel();
+  $('wizard-project').innerHTML=p?'<option value="'+escapeHtml(p.id)+'">'+escapeHtml(p.name)+'</option>':'';
+  if(!p)return wizardStatus('В менеджере нет основной панели. Проверь базу данных.','error');
+  $('wizard-project').value=p.id;
+  await prepareWizardTemplates(preset());
+  wizardPanelSummary();
+  fillWizardPanelSettings();
+  $('wizard-panel-settings').classList.toggle('hidden',wizardPanelReady);
+  $('wizard-panel-profiles').classList.add('hidden');
+  if(preset()==='full')$('confirm-clean').checked=false;
+};
+wizardProjectChange=async()=>refreshWizardProjects();
+wizardProfileChange=function(){
+  const found=profilesCache.find(x=>x.id===$('wizard-profile').value);
+  if(found)$('wizard-profile-hint').textContent='Шаблон «'+found.name+'» · будет применён к выбранной установке.';
+};
+const originalPresetChange=onPresetChange;
+onPresetChange=function(){
+  originalPresetChange();
+  wizardPanelSummary();
+  // Choosing a mode must NOT silently switch back to the first project template.
+  prepareWizardTemplates(preset()).catch(e=>wizardStatus(errorText(e),'error'));
+};
+document.querySelectorAll('input[name="preset"]').forEach(el=>el.onchange=()=>onPresetChange());
+$('wizard-profile').onchange=wizardProfileChange;
+$('wizard-panel-edit').onclick=()=>{
+  $('wizard-panel-settings').classList.toggle('hidden');
+  if(!$('wizard-panel-settings').classList.contains('hidden'))fillWizardPanelSettings();
+};
+function showPanelOptions(profiles){
+  wizardPanelProfiles=profiles.filter(p=>p.uuid && Array.isArray(p.inbounds)&&p.inbounds.length);
+  const select=$('wizard-remna-profile');
+  select.innerHTML=wizardPanelProfiles.map(p=>'<option value="'+escapeHtml(p.uuid)+'">'+escapeHtml(p.name||p.uuid)+'</option>').join('');
+  const main=primaryPanel();
+  if(main?.panel_config_profile_uuid&&wizardPanelProfiles.some(p=>p.uuid===main.panel_config_profile_uuid))select.value=main.panel_config_profile_uuid;
+  renderPanelInbounds();
+  $('wizard-panel-profiles').classList.remove('hidden');
+}
+function renderPanelInbounds(){
+  const selected=wizardPanelProfiles.find(p=>p.uuid===$('wizard-remna-profile').value);
+  const existing=primaryPanel();
+  const preselected=selected?.uuid===existing?.panel_config_profile_uuid?(existing.panel_active_inbounds||[]):[];
+  $('wizard-remna-inbounds').innerHTML=(selected?.inbounds||[]).map(x=>
+    '<label class="checkbox-row"><input type="checkbox" class="wizard-inbound" value="'+escapeHtml(x.uuid)+'" '+(preselected.length?preselected.includes(x.uuid):true?'checked':'')+'><span>'+escapeHtml(x.tag||x.uuid)+'</span></label>'
+  ).join('')||'<p class="setup-notice">В профиле нет доступных inbound-ов. Проверь конфигурацию Remnawave.</p>';
+}
+$('wizard-remna-profile').onchange=renderPanelInbounds;
+$('wizard-panel-connect').onclick=async()=>{
+  const p=primaryPanel();
+  if(!p)return wizardStatus('Основной проект не обнаружен.','error');
+  const url=$('wizard-remna-url').value.trim(),token=$('wizard-remna-token').value;
+  const egress=$('wizard-remna-egress').value.trim();
+  if(!url||!/^https:\/\//i.test(url))return wizardStatus('Укажи HTTPS-адрес панели Remnawave.','error');
+  if(!token&&!p.has_api_token)return wizardStatus('Введи API-токен Remnawave.','error');
+  if(!egress)return wizardStatus('Укажи исходящий IPv4 панели — он используется для разрешения доступа к ноде.','error');
+  const btn=$('wizard-panel-connect');btn.disabled=true;wizardStatus('Сохраняем подключение и проверяем API…');
+  try{
+    await api('/projects/'+encodeURIComponent(p.id),'PATCH',{name:p.name,panel_url:url,panel_ip:egress,api_token:token});
+    const connected=await api('/projects/'+encodeURIComponent(p.id)+'/panel/sync','POST',{});
+    await fetchProjects();wizardPanelSummary();
+    showPanelOptions(connected.profiles||[]);
+    if(!wizardPanelProfiles.length)wizardStatus('API доступен, но нет профилей с inbound-ами. Настрой один Config Profile в Remnawave и повтори проверку.','error');
+    else wizardStatus('Подключение проверено. Выбери профиль и сохрани его для всех будущих нод.','success');
+    $('wizard-remna-token').value='';
+  }catch(e){wizardStatus(errorText(e),'error')}finally{btn.disabled=false}
+};
+$('wizard-panel-save').onclick=async()=>{
+  const p=primaryPanel();
+  const ids=[...document.querySelectorAll('.wizard-inbound:checked')].map(e=>e.value);
+  if(!ids.length)return wizardStatus('Выбери хотя бы один inbound для автоматической регистрации новых нод.','error');
+  const btn=$('wizard-panel-save');btn.disabled=true;
+  try{
+    await api('/projects/'+encodeURIComponent(p.id)+'/panel/defaults','PUT',{
+      config_profile_uuid:$('wizard-remna-profile').value,active_inbounds:ids,country_code:'XX'
+    });
+    await fetchProjects();wizardPanelSummary();
+    $('wizard-panel-settings').classList.add('hidden');
+    wizardStatus('Основная Remnawave готова. Все новые ноды будут использовать эти настройки.','success');
+    toast('Подключение Remnawave сохранено');
+  }catch(e){wizardStatus(errorText(e),'error')}finally{btn.disabled=false}
+};
+validateWizard=function(){
+  for(const id of ['server-name','server-ip','server-password']){
+    if(!$(id).value.trim())throw Error('Укажи название, IP-адрес и пароль root.');
+  }
+  const port=Number($('server-port').value);
+  if(!Number.isInteger(port)||port<1||port>65535)throw Error('SSH-порт должен быть от 1 до 65535.');
+  if(preset()!=='agent'){
+    if(!wizardPanelReady)throw Error('Сначала подключи Remnawave один раз на первом шаге.');
+    if(!/^\d+\.\d+\.\d+$/.test($('wizard-version').value.trim()))throw Error('Версия ноды: например 3.4.2.');
+  }
+  if(preset()==='full'){
+    if(!$('wizard-domain').value.trim())throw Error('Для полной установки укажи домен ноды. TLS-сертификат нельзя получить по одному IP.');
+    if(!$('confirm-clean').checked)throw Error('Подтверди, что VPS подготовлен для полной установки.');
+  }
+};
+function resetWizardPreflight(){
+  wizardPreflightOk=false;wizardPreflightBusy=false;wizardPreflightStamp='';
+  $('wizard-preflight').dataset.kind='idle';
+  $('wizard-preflight').innerHTML='<span class="wizard-spinner"></span><span>После подтверждения SSH-ключа проверим ОС, диск, Docker и занятые порты. Ничего не изменяем.</span>';
+  $('enroll-btn').disabled=true;
+}
+$('wizard-next').onclick=()=>{
+  if(wizardStep===1){
+    if(mainPanelNeedsSetup()){
+      $('wizard-panel-settings').classList.remove('hidden');
+      wizardStatus('Сначала настрой подключение Remnawave. Это потребуется сделать только один раз.','error');
+      $('wizard-panel-setup').scrollIntoView({behavior:'smooth',block:'center'});
+      return;
+    }
+    if(preset()!=='agent'&&(!$('wizard-profile').value))return toast('Не найден шаблон установки для выбранного режима.');
+    setWizardStep(2);return;
+  }
+  if(wizardStep===2){
+    try{validateWizard()}catch(e){toast(errorText(e));return}
+    $('review-server').textContent=$('server-name').value.trim()+' · '+$('server-ip').value.trim()+':'+$('server-port').value;
+    $('review-preset').textContent=presets[preset()].name;
+    $('review-details').textContent=preset()==='agent'?'Только агент':$('wizard-version').value.trim()+(preset()==='full'?' · '+$('wizard-domain').value.trim():'');
+    expectedFingerprint='';fingerprintTarget='';
+    $('fingerprint-box').classList.add('hidden');
+    $('fingerprint-confirm').checked=false;
+    resetWizardPreflight();setWizardStep(3);
+  }
+};
+const originalFingerprintCheck=fingerprintCheck;
+const preflightIdentity=()=>$('server-ip').value.trim()+':'+$('server-port').value+':'+expectedFingerprint;
+fingerprintCheck=function(){
+  const valid=!!($('fingerprint-confirm').checked&&expectedFingerprint&&fingerprintTarget===$('server-ip').value.trim()+':'+$('server-port').value);
+  $('enroll-btn').disabled=!(valid&&wizardPreflightOk);
+  if(valid&&!wizardPreflightOk&&!wizardPreflightBusy){
+    runReadOnlyPreflight().catch(e=>{
+      wizardPreflightOk=false;wizardPreflightBusy=false;
+      $('wizard-preflight').dataset.kind='error';
+      $('wizard-preflight').textContent='Не удалось проверить сервер: '+errorText(e)+'. Повтори проверку SSH-ключа.';
+      $('enroll-btn').disabled=true;
+    });
+  }
+};
+async function runReadOnlyPreflight(){
+  wizardPreflightBusy=true;wizardPreflightStamp=preflightIdentity();
+  $('wizard-preflight').dataset.kind='busy';
+  $('wizard-preflight').innerHTML='<span class="wizard-spinner"></span><span>Проверяем VPS без изменений на сервере…</span>';
+  const response=await api('/ssh/preflight','POST',{
+    ip:$('server-ip').value.trim(),port:Number($('server-port').value),
+    password:$('server-password').value,fingerprint:expectedFingerprint
+  });
+  if(wizardPreflightStamp!==preflightIdentity())return;
+  const conflicts=(response.ports_in_use||[]).filter(port=>preset()==='full'?[80,443,2222].includes(port):preset()==='node'?port===2222:false);
+  const problems=[...(response.warnings||[])];
+  wizardPreflightOk=!conflicts.length;
+  $('wizard-preflight').dataset.kind=conflicts.length?'error':problems.length?'warning':'success';
+  const details=escapeHtml(response.os+' '+response.version+' · '+response.arch+' · '+(response.free_disk_mb||'—')+' МБ свободно');
+  const notices=problems.length?'<ul>'+problems.map(t=>'<li>'+escapeHtml(t)+'</li>').join('')+'</ul>':'';
+  $('wizard-preflight').innerHTML='<div><strong>'+ (wizardPreflightOk?'Сервер проверен':'Обнаружен конфликт портов') +'</strong><p>'+details+'</p>'+notices+
+    (conflicts.length?'<p>Полную установку поверх этих сервисов запускать нельзя. Выбери «Только управление» или освободи порты и проверь снова.</p>':'<p>Проверка ничего не изменила на VPS. Для установки нажми кнопку ниже.</p>')+'</div>';
+  wizardPreflightBusy=false;
+  $('enroll-btn').disabled=!(wizardPreflightOk&&$('fingerprint-confirm').checked);
+}
+$('fingerprint-confirm').onchange=fingerprintCheck;
+['server-ip','server-port','server-password'].forEach(id=>$(id).addEventListener('input',resetWizardPreflight));
