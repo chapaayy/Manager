@@ -51,7 +51,7 @@ def test_legacy_preview_plaintext_password_is_migrated(tmp_path):
     configure(env,"admin.gowayot.com","admin","")
     raw=env.read_text()
     assert "previous-preview-password-long-enough" not in raw
-    assert "PBKDF2" not in raw.upper()
+    assert "XPPN_V2_ADMIN_PASSWORD=previous-preview-password-long-enough" not in raw
     assert "XPPN_V2_ADMIN_PASSWORD_HASH=pbkdf2_sha256$" in raw
 
 
