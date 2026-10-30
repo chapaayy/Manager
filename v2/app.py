@@ -43,11 +43,45 @@ def _secret() -> str:
     return key
 
 
-def _password() -> str:
+def _username() -> str:
+    name = os.environ.get("XPPN_V2_ADMIN_USER", "admin")
+    if not 3 <= len(name) <= 40 or not all(c.isalnum() or c in "_.-" for c in name):
+        raise RuntimeError("XPPN_V2_ADMIN_USER must be 3–40 safe characters")
+    return name
+
+
+def _password_hash() -> str:
+    stored = os.environ.get("XPPN_V2_ADMIN_PASSWORD_HASH", "")
+    if stored:
+        parts = stored.split("$")
+        if len(parts) != 4 or parts[0] != "pbkdf2_sha256":
+            raise RuntimeError("Invalid XPPN_V2_ADMIN_PASSWORD_HASH")
+        try:
+            rounds = int(parts[1])
+            if not 300_000 <= rounds <= 2_000_000:
+                raise ValueError()
+            salt = bytes.fromhex(parts[2])
+            digest = bytes.fromhex(parts[3])
+            if len(salt) != 16 or len(digest) != 32:
+                raise ValueError()
+        except ValueError:
+            raise RuntimeError("Invalid XPPN_V2_ADMIN_PASSWORD_HASH") from None
+        return stored
+    # Backward compatibility ONLY for old v2 preview environments.
     value = os.environ.get("XPPN_V2_ADMIN_PASSWORD", "")
     if len(value) < 12:
-        raise RuntimeError("Set XPPN_V2_ADMIN_PASSWORD (at least 12 characters)")
-    return value
+        raise RuntimeError("Configure XPPN_V2_ADMIN_PASSWORD_HASH before starting")
+    return ""
+
+
+def _password_ok(password: str) -> bool:
+    value = _password_hash()
+    if value:
+        _, iterations, salt, digest = value.split("$")
+        computed = hashlib.pbkdf2_hmac("sha256", password.encode(), bytes.fromhex(salt), int(iterations))
+        return hmac.compare_digest(computed, bytes.fromhex(digest))
+    return hmac.compare_digest(hashlib.sha256(password.encode()).digest(),
+                               hashlib.sha256(os.environ["XPPN_V2_ADMIN_PASSWORD"].encode()).digest())
 
 
 def signer():
@@ -57,7 +91,8 @@ def signer():
 @app.on_event("startup")
 def startup():
     _secret()
-    _password()
+    _username()
+    _password_hash()
     storage.init_db()
 
 
@@ -114,6 +149,7 @@ def _fail(exc: Exception):
 
 
 class Login(BaseModel):
+    username: str = Field(default="admin", min_length=1, max_length=80)
     password: str = Field(min_length=1, max_length=512)
 
 
@@ -172,10 +208,9 @@ def login(body: Login, request: Request, response: Response):
     failures = [t for t in _failed_login.get(ip, []) if now - t < 900]
     if len(failures) >= 6:
         raise HTTPException(429, "Слишком много попыток. Повтори позже")
-    correct = hmac.compare_digest(
-        hashlib.sha256(body.password.encode()).digest(),
-        hashlib.sha256(_password().encode()).digest(),
-    )
+    valid_user = hmac.compare_digest(body.username.encode(), _username().encode())
+    valid_password = _password_ok(body.password)
+    correct = valid_user and valid_password
     if not correct:
         failures.append(now)
         _failed_login[ip] = failures
