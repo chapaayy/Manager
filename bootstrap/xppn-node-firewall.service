@@ -1,0 +1,12 @@
+[Unit]
+Description=XPPN restrict Remnawave node port to panel IP
+After=network-pre.target
+Before=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/bash /opt/xppn-agent/bootstrap/firewall.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

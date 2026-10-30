@@ -1,0 +1,19 @@
+[Unit]
+Description=XPPN Host Helper (local Unix socket)
+After=network.target
+
+[Service]
+Type=simple
+ExecStartPre=/usr/bin/mkdir -p /run/xppn-agent
+ExecStartPre=/usr/bin/chmod 755 /run/xppn-agent
+ExecStart=/usr/bin/python3 /opt/xppn-agent/agent/helper.py
+User=root
+Group=root
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

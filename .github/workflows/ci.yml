@@ -1,0 +1,31 @@
+name: XPPN Manager checks
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Python requirements
+        run: python -m pip install -r manager/requirements.txt pytest httpx
+      - name: Static checks
+        run: |
+          python -m compileall -q manager agent tests
+          node --check manager/static/app.js
+          node tests/test_auth_ui.js
+          bash -n deploy/*.sh
+      - name: Unit tests
+        env:
+          XPPN_SESSION_SECRET: xppn-ci-only-placeholder-0123456789-0123456789
+          XPPN_DATA_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+          XPPN_DB: /tmp/xppn-ci.sqlite3
+        run: python -m pytest -q tests

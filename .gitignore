@@ -1,0 +1,22 @@
+# Never commit credentials
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.crt
+*.p12
+*.pfx
+installer.env
+agent.env
+helper.key
+*.sqlite
+*.db
+*.db-wal
+*.db-shm
+/backups/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+node_modules/
+.DS_Store

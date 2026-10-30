@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" sizes="any" href="/SVG_XP_Toolbox.png.svg?v=6" />
+    <link rel="apple-touch-icon" type="image/svg+xml" href="/SVG_XP_Toolbox.png.svg?v=6" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>XP IMG - Конвертер изображений</title>
+    <meta name="theme-color" content="#000000" />
+    <meta
+      name="description"
+      content="XP IMG — локальный конвертер изображений для PNG, JPG, WEBP и AVIF. Сжатие, resize, пакетная обработка и ZIP прямо в браузере."
+    />
+    <meta name="keywords" content="XP IMG, конвертер изображений, PNG, JPG, WEBP, AVIF" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="XP IMG - Конвертер изображений" />
+    <meta property="og:description" content="Локальная обработка изображений: сжатие, resize, пакетная конвертация и ZIP прямо в браузере." />
+    <meta property="twitter:card" content="summary_large_image" />
+    <meta property="twitter:title" content="XP IMG - Конвертер изображений" />
+    <meta property="twitter:description" content="Локальная обработка изображений прямо в браузере." />
+
+    <script>
+      (function () {
+        const theme = localStorage.getItem('theme');
+        const systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+        if (theme === 'dark' || (!theme && systemDark)) {
+          document.documentElement.classList.add('dark');
+        } else {
+          document.documentElement.classList.remove('dark');
+        }
+
+        document.documentElement.classList.add('preload');
+        window.addEventListener('load', () => {
+          document.documentElement.classList.remove('preload');
+        });
+      })();
+    </script>
+    <style>
+      html.dark body {
+        background-color: #000000;
+        color: #ffffff;
+      }
+      body {
+        background-color: #ffffff;
+        color: #0f172a;
+        opacity: 0;
+        animation: fadeIn 0.3s ease-in forwards;
+      }
+      a {
+        text-decoration: none;
+        color: inherit;
+      }
+      * {
+        -webkit-tap-highlight-color: transparent;
+      }
+      body {
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+      }
+      .preload * {
+        transition: none !important;
+      }
+      @keyframes fadeIn {
+        0% {
+          opacity: 0;
+        }
+        100% {
+          opacity: 1;
+        }
+      }
+    </style>
+    <script type="module" crossorigin src="/assets/index-CG4gSczo.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-C5sVk6W-.css">
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>
