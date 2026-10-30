@@ -248,6 +248,7 @@ def get_bridge(bridge_id: str) -> dict:
                FROM plans p JOIN nodes n ON n.id=p.exit_id
                WHERE p.bridge_id=? AND p.status IN ('draft','approved')
                ORDER BY p.created_at DESC""", (bridge_id,)).fetchall()]
+    row["has_snapshot"] = bool(row["snapshot_enc"])
     row.pop("snapshot_enc")
     row["entry"] = get_node(row["entry_id"])
     row["exits"] = exits
