@@ -5,12 +5,13 @@ const esc = value => String(value ?? "").replace(/[&<>"']/g, c => ({
 }[c]));
 const icon = name => '<svg><use href="/static/icons.svg#i-'+name+'"></use></svg>';
 const types = {xray:"Xray JSON",nginx:"Nginx",nginx_compose:"Nginx Compose",node_compose:"Remnawave Compose"};
-const titles = {nodes:"Ноды",configs:"Конфигурации",presets:"Пресеты",settings:"Настройки"};
+const titles = {nodes:"Ноды",configs:"Конфигурации",presets:"Пресеты",settings:"Настройки",updates:"Обновления"};
 const labels = {regular:"Обычная",entry:"Входная / мост",exit:"Выходная"};
 let csrf = "", currentPage = "nodes", currentConfig = null, configRevision = 0,
     configBase = "", configDirty = false, currentPreset = null, currentPlan = null,
     panelProfiles = [], expanded = new Set(), toastTimer = null;
 let state = {panel:{},nodes:[],bridges:[],configs:[],presets:[]};
+let updateDetails = null, updatePolling = null;
 
 function message(text, error=false){
   const box = $("toast");
@@ -101,6 +102,7 @@ function showPage(page){
   document.querySelectorAll("main > section").forEach(el=>
     el.classList.toggle("hidden",el.id!=="page-"+page));
   $("current-page-name").textContent=titles[page]||page;
+  if(page==="updates")refreshUpdateStatus();
 }
 function renderNodes(){
   $("metric-nodes").textContent=String(state.nodes.length);
@@ -437,6 +439,68 @@ async function savePanelProfile(){
     message("Профиль сохранён для новых нод.");
   }catch(e){message(e.message,true)}
 }
+
+function updateRender(data){
+  updateDetails=data;
+  $("update-installed").textContent=data.installed_sha?data.installed_sha.slice(0,10):"Неизвестно";
+  if(data.latest_sha)$("update-remote").textContent=data.latest_sha.slice(0,10);
+  const stateName=data.state||"unavailable";
+  const messages={
+    unavailable:data.message||"Служба обновлений ещё не активирована.",
+    idle:"Панель готова к проверке обновлений.",
+    running:data.message||"Обновляем… возможен короткий разрыв соединения.",
+    succeeded:data.message||"Обновление завершено.",
+    failed:data.message||"Обновление завершилось ошибкой."
+  };
+  const status=$("update-status");
+  status.textContent=messages[stateName]||"Неизвестный статус";
+  status.className="form-feedback "+(stateName==="failed"?"error":stateName==="succeeded"?"success":"");
+  const busy=stateName==="running";
+  $("update-check").disabled=!data.enabled||busy;
+  $("update-start").disabled=!data.enabled||busy||data.update_available!==true;
+  if(!data.enabled){
+    $("update-help").textContent="Для обновлений с сайта один раз активируй системную службу на VPS. После этого SSH для каждой новой версии не нужен.";
+  }else if(busy){
+    $("update-help").textContent="Панель может кратковременно перестать отвечать. Оставь эту страницу открытой — состояние появится после перезапуска.";
+  }else{
+    $("update-help").textContent="Перед обновлением сохраняется резервная копия базы и конфигурации. Если новая версия не запускается, восстанавливается предыдущий код.";
+  }
+}
+async function refreshUpdateStatus(){
+  try{
+    const data=await api("/system/update");
+    updateRender({...data,latest_sha:updateDetails?.latest_sha||"",
+      update_available:updateDetails?.update_available===true &&
+        updateDetails?.installed_sha===data.installed_sha});
+  }catch(e){
+    if(currentPage==="updates")$("update-status").textContent="Панель перезапускается или недоступна. Проверяем соединение…";
+  }
+}
+async function checkUpdates(){
+  $("update-check").disabled=true;
+  $("update-status").textContent="Проверяем GitHub…";
+  try{
+    const data=await api("/system/update/check","POST");
+    updateRender(data);
+    $("update-status").textContent=data.update_available?
+      "Доступно обновление. Нажми «Установить обновление».":"Установлена актуальная версия.";
+  }catch(e){
+    $("update-status").textContent=e.message;
+    $("update-status").className="form-feedback error";
+    if(updateDetails)updateRender({...updateDetails,update_available:false});
+  }
+}
+async function startUpdate(){
+  if(!updateDetails?.update_available)return;
+  if(!confirm("Обновить XPPN Manager до последней версии GitHub? Будет кратковременный перезапуск, база и настройки сохраняются."))return;
+  $("update-start").disabled=true;
+  try{
+    const result=await api("/system/update","POST");
+    message(result.message);
+    updateRender({...updateDetails,state:"running",message:result.message,update_available:false});
+  }catch(e){message(e.message,true);refreshUpdateStatus()}
+}
+
 function bindEvents(){
   $("login-form").addEventListener("submit",async e=>{
     e.preventDefault();
@@ -454,6 +518,9 @@ function bindEvents(){
     try{localStorage.setItem("xppn-v2-collapsed",collapsed?"1":"0")}catch{}
   };
   $("refresh").onclick=()=>refresh().then(()=>message("Данные обновлены")).catch(e=>message(e.message,true));
+  $("update-check").onclick=checkUpdates;
+  $("update-start").onclick=startUpdate;
+  updatePolling=setInterval(()=>{if(currentPage==="updates")refreshUpdateStatus()},4500);
   $("new-node").onclick=nodeModal;$("new-bridge").onclick=bridgeModal;
   $("bridge-list").addEventListener("click",e=>{
     const button=e.target.closest("[data-action]");
