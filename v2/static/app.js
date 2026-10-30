@@ -485,9 +485,9 @@ async function checkUpdates(){
     $("update-status").textContent=data.update_available?
       "Доступно обновление. Нажми «Установить обновление».":"Установлена актуальная версия.";
   }catch(e){
+    if(updateDetails)updateRender({...updateDetails,update_available:false});
     $("update-status").textContent=e.message;
     $("update-status").className="form-feedback error";
-    if(updateDetails)updateRender({...updateDetails,update_available:false});
   }
 }
 async function startUpdate(){
