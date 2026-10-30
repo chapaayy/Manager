@@ -195,6 +195,29 @@ def panel_sync(pid:str,_=Depends(write_access)):
         c.execute('INSERT INTO audit VALUES(?,?,?)',(int(time.time()),'panel.sync',pid))
     return {'ok':True,'has_node_key':True,'profiles':profiles}
 
+class ConfirmPanelEgress(BaseModel):
+    confirm_same_host: bool
+
+@app.post('/api/projects/{pid}/panel/dns-as-egress')
+def configure_panel_dns_egress(pid:str,body:ConfirmPanelEgress,_=Depends(write_access)):
+    """Opt-in only. DNS is the outbound IP only if the operator confirms matching hosting."""
+    if not body.confirm_same_host:
+        raise HTTPException(422,'Подтверди, что IPv4 домена совпадает с исходящим IPv4 панели')
+    with store.connect() as c:
+        row=c.execute('SELECT panel_url FROM projects WHERE id=?',(pid,)).fetchone()
+    if not row:raise HTTPException(404,'Основная панель не найдена')
+    if not row['panel_url']:raise HTTPException(422,'Сначала укажи адрес Remnawave')
+    try:
+        ip=remna_api.panel_dns_ipv4(row['panel_url'])
+    except remna_api.PanelError as e:
+        raise HTTPException(422,str(e))
+    with store.connect() as c:
+        updated=c.execute('UPDATE projects SET panel_ip=?,updated_at=? WHERE id=? AND panel_url=?',
+                          (ip,int(time.time()),pid,row['panel_url']))
+        if updated.rowcount!=1:raise HTTPException(409,'Адрес панели изменился во время проверки. Повтори действие')
+        c.execute('INSERT INTO audit VALUES(?,?,?)',(int(time.time()),'panel.egress.confirmed-dns',pid))
+    return {'ok':True,'panel_ip':ip}
+
 @app.put('/api/projects/{pid}/panel/defaults')
 def panel_defaults(pid:str,body:PanelDefaultsBody,_=Depends(write_access)):
     try:
