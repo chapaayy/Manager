@@ -33,7 +33,11 @@ if [[ ! -d "$APP/.git" ]]; then
 else
   [[ "$(git -C "$APP" branch --show-current)" == "$BRANCH" ]] ||
     { echo "В $APP другая ветка" >&2; exit 1; }
-  git -C "$APP" fetch -q --depth 1 origin "$BRANCH"
+  if [[ "$(git -C "$APP" rev-parse --is-shallow-repository)" == true ]]; then
+    git -C "$APP" fetch -q --unshallow origin "$BRANCH"
+  else
+    git -C "$APP" fetch -q origin "$BRANCH"
+  fi
   git -C "$APP" merge --ff-only FETCH_HEAD
 fi
 
