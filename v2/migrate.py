@@ -23,7 +23,7 @@ def inspect_legacy(source: str) -> dict:
     path = Path(source).expanduser().resolve(strict=True)
     if not path.is_file():
         raise MigrationError("Ожидается путь к файлу SQLite базы v1")
-    uri = "file:" + quote(str(path), safe="/") + "?mode=ro&immutable=1"
+    uri = "file:" + quote(str(path), safe="/") + "?mode=ro"
     try:
         db = sqlite3.connect(uri, uri=True)
         db.row_factory = sqlite3.Row
