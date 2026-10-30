@@ -49,9 +49,12 @@ def request(method: str, path: str):
     if not permitted:
         raise PanelError("Запрещённый API-маршрут")
     panel = storage.get_panel()
-    token = storage.get_panel_token()
+    token = storage.get_panel_token().strip()
+    caddy_key = storage.get_caddy_api_key().strip()
     if not panel["url"] or not token:
-        raise PanelError("Сначала подключи одну основную Remnawave")
+        raise PanelError("Сначала укажи домен и API-токен Remnawave")
+    if any(c in value for value in (token, caddy_key) for c in ("\\r", "\\n")):
+        raise PanelError("Токен содержит недопустимые символы переноса строки")
     host = urlsplit(validate_url(panel["url"])).hostname
     try:
         addresses = socket.getaddrinfo(host, 443, type=socket.SOCK_STREAM)
@@ -62,11 +65,30 @@ def request(method: str, path: str):
         raise PanelError("Не удалось получить DNS-запись Remnawave") from None
     connection = PinnedHTTPS(host, ips[0])
     try:
-        connection.request("GET", path, headers={"Authorization": "Bearer " + token,
-                                                 "Accept": "application/json"})
+        headers = {
+            "Authorization": token if token.lower().startswith("bearer ") else "Bearer " + token,
+            "Accept": "application/json",
+        }
+        # Optional second factor issued by a Caddy Auth Portal in front of Remnawave.
+        if caddy_key:
+            headers["X-Api-Key"] = caddy_key
+        connection.request("GET", path, headers=headers)
         response = connection.getresponse()
+        if response.status == 401:
+            raise PanelError(
+                f"HTTP 401 на {path}: доступ к API отклонён. Проверь API-токен "
+                "в Remnawave Settings → API Tokens. Если панель защищена Caddy/MFA, "
+                "укажи отдельный X-Api-Key портала в дополнительных настройках."
+            )
+        if response.status in (301, 302, 303, 307, 308):
+            raise PanelError(
+                f"HTTP {response.status} на {path}: API перенаправлен, вероятно, "
+                "на страницу входа. Для Caddy/MFA нужен ключ портала."
+            )
+        if response.status == 403:
+            raise PanelError(f"HTTP 403 на {path}: токен или защита прокси не разрешают запрос.")
         if not 200 <= response.status < 300:
-            raise PanelError(f"Remnawave ответила HTTP {response.status}")
+            raise PanelError(f"Remnawave вернула HTTP {response.status} на {path}")
         body = response.read(300001)
         if len(body) > 300000:
             raise PanelError("Слишком большой ответ API")
