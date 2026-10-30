@@ -246,3 +246,184 @@ $('hub-updates-run').onclick=async()=>{if(!confirm('Обновить главн�
 $('hub-monitor-refresh').onclick=()=>loadMonitoring().catch(e=>toast(errorText(e)));
 setInterval(()=>{if(csrf&&selectedNode&&!$('detail-page').classList.contains('hidden')){refreshDetail().catch(()=>{});if(selectedTab==='jobs')refreshJobs();else if(selectedTab==='components' && $('component-install-box')?.classList.contains('hidden'))renderTab()}},7000);
 init().catch(e=>{authUI(true);$('login-error').textContent=errorText(e)});
+
+
+/* v1.6.1 browser configuration workspace */
+let configFetchSerial = 0;
+let configDirty = false;
+let configBaseline = '';
+let configLastSelection = {node:'', name:''};
+const configFiles = {nginx:'nginx.conf',nginx_compose:'nginx / docker-compose.yml',node_compose:'remnanode / docker-compose.yml'};
+function configStatus(message,kind) {
+  $('hub-config-state').textContent=message;
+  $('hub-config-pill').textContent=kind==='ready'?'Открыт':kind==='dirty'?'Есть изменения':kind==='saving'?'Загрузка':kind==='error'?'Недоступен':'Не загружен';
+  $('hub-config-pill').dataset.kind=kind||'empty';
+}
+function configEmpty(title,description,canImport) {
+  $('hub-config-editor').classList.add('hidden');
+  $('hub-config-empty').classList.remove('hidden');
+  $('hub-config-empty-title').textContent=title;
+  $('hub-config-empty-description').textContent=description;
+  $('hub-config-empty-action').disabled=!canImport;
+  $('hub-config-import').disabled=!canImport;
+}
+function configCanImport(node,name) {
+  return !!(node && node.online && node.stage==='ready' && node.components && node.components.configs && node.components.configs[name]);
+}
+function configResetDirty() {
+  configDirty=false;
+  configBaseline=$('hub-config-text').value;
+  $('hub-config-dirty').textContent='Изменений нет';
+  $('hub-config-save').disabled=true;
+  $('hub-config-apply').disabled=false;
+}
+function configEditChanged() {
+  configDirty=$('hub-config-text').value!==configBaseline;
+  $('hub-config-dirty').textContent=configDirty?'● Несохранённые изменения':'Изменений нет';
+  $('hub-config-save').disabled=!configDirty;
+  $('hub-config-apply').disabled=configDirty;
+  $('hub-config-lines').textContent='Строк: '+($('hub-config-text').value.split('\n').length);
+  if(configDirty)configStatus('Редактирование в браузере · нажми «Сохранить черновик», затем «Применить к ноде».','dirty');
+}
+$('hub-config-text').addEventListener('input',configEditChanged);
+$('hub-config-text').addEventListener('keydown',e=>{
+  if(e.key==='Tab'){e.preventDefault();const el=e.target,a=el.selectionStart,b=el.selectionEnd;el.setRangeText('  ',a,b,'end');configEditChanged();}
+  if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='s'){e.preventDefault();$('hub-config-save').click();}
+});
+window.addEventListener('beforeunload',e=>{if(configDirty){e.preventDefault();e.returnValue='';}});
+function configSelectionChanged() {
+  if(configDirty&&!confirm('Несохранённые изменения будут потеряны. Перейти к другому файлу?')){
+    $('hub-config-node').value=configLastSelection.node;
+    $('hub-config-name').value=configLastSelection.name;
+    return;
+  }
+  configDirty=false;
+  loadStoredConfig().catch(e=>toast(errorText(e)));
+}
+$('hub-config-node').onchange=configSelectionChanged;
+$('hub-config-name').onchange=configSelectionChanged;
+loadConfigCenter=async function(){
+  await ensureHubNodes();
+  if(selectedNode && nodesCache.some(n=>n.id===selectedNode)) $('hub-config-node').value=selectedNode;
+  const selected=nodesCache.find(n=>n.id===$('hub-config-node').value);
+  if(selected && selected.components && selected.components.configs){
+    const files=selected.components.configs;
+    if(!files[$('hub-config-name').value]){
+      const found=['nginx','nginx_compose','node_compose'].find(k=>files[k]);
+      if(found)$('hub-config-name').value=found;
+    }
+  }
+  await loadStoredConfig();
+};
+loadStoredConfig=async function(){
+  const serial=++configFetchSerial;
+  const id=$('hub-config-node').value,name=$('hub-config-name').value;
+  const node=nodesCache.find(n=>n.id===id);
+  const canImport=configCanImport(node,name);
+  $('hub-config-filename').textContent=configFiles[name]||name;
+  $('hub-config-import').disabled=!canImport;
+  configLastSelection={node:id,name};
+  configEmpty('Открываем файл','Проверяем сохранённую копию конфигурации.',canImport);
+  if(!id){
+    configStatus('Нет подключённых нод. Добавь VPS во вкладке «Ноды».','empty');
+    configEmpty('Нет подключённых нод','Сначала подключи сервер к XPPN Manager.',false);
+    return;
+  }
+  configStatus('Загружаем конфигурацию…','saving');
+  const url='/nodes/'+encodeURIComponent(id)+'/configs/'+encodeURIComponent(name);
+  let snapshot;
+  try{
+    try{snapshot=await api(url);}
+    catch(e){
+      if(!String(e.message||e).includes('Import config from node once first'))throw e;
+      if(!canImport){
+        const hint=node && !node.online?'Нода сейчас не на связи. Дождись подключения агента.':
+          node && !(node.telemetry?.capabilities||[]).includes('config.read')?'Установлена старая версия агента. Обнови XPPN Agent для работы с конфигами.':
+          'Этот файл не найден на выбранной ноде. Выбери другой конфиг.';
+        configStatus(hint,'empty');
+        configEmpty('Файл пока недоступен',hint,false);
+        return;
+      }
+      configStatus('Первое открытие: считываем файл с VPS. Это только чтение, работа VPN не прервётся.','saving');
+      const job=await api(url+'/import','POST',{});
+      await waitNodeJob(id,job.id,100);
+      if(serial!==configFetchSerial)return;
+      snapshot=await api(url);
+    }
+    if(serial!==configFetchSerial)return;
+    storedRevision=snapshot.revision;
+    $('hub-config-text').value=snapshot.content||'';
+    $('hub-config-empty').classList.add('hidden');
+    $('hub-config-editor').classList.remove('hidden');
+    configResetDirty();
+    $('hub-config-lines').textContent='Строк: '+($('hub-config-text').value.split('\n').length);
+    const state=snapshot.status==='draft'?'Черновик сохранён, ещё не применён':snapshot.status==='synced'?'Синхронизировано с нодой':'Состояние: '+snapshot.status;
+    configStatus('Версия '+snapshot.revision+' · '+state+'. Изменения можно делать прямо в поле ниже.','ready');
+    const history=await api(url+'/history');
+    if(serial!==configFetchSerial)return;
+    $('hub-config-history').innerHTML=history.map(v=>'<button class="btn secondary sm config-restore" data-revision="'+v.revision+'">Версия '+v.revision+' · '+new Date(v.created_at*1000).toLocaleString('ru-RU')+'</button>').join(' ')||'<p class="muted">История пока пустая.</p>';
+    document.querySelectorAll('#hub-config-history .config-restore').forEach(button=>button.onclick=async()=>{
+      if(configDirty&&!confirm('Отменить несохранённые изменения?'))return;
+      if(!confirm('Восстановить версию '+button.dataset.revision+' в новый черновик?'))return;
+      try{await api(url+'/restore/'+button.dataset.revision,'POST',{});await loadStoredConfig();toast('История восстановлена в новый черновик')}catch(e){toast(errorText(e));}
+    });
+  }catch(e){
+    if(serial!==configFetchSerial)return;
+    const msg=errorText(e);
+    configStatus('Не удалось открыть конфиг: '+msg,'error');
+    configEmpty('Не удалось открыть файл',canImport?'Попробуй «Считать с ноды». Если ошибка повторится, проверь агент на VPS.':msg,canImport);
+  }
+};
+$('hub-config-empty-action').onclick=()=>$('hub-config-import').click();
+$('hub-config-import').onclick=async()=>{
+  const id=$('hub-config-node').value,name=$('hub-config-name').value;
+  const node=nodesCache.find(n=>n.id===id);
+  if(!configCanImport(node,name))return toast('Файл не обнаружен или нода недоступна.');
+  if(configDirty&&!confirm('Есть несохранённые изменения. Отменить их и считать файл заново?'))return;
+  if(!confirm('Считать актуальный файл с ноды? Сохранённый черновик при этом может препятствовать импорту.'))return;
+  const btn=$('hub-config-import');btn.disabled=true;
+  try{
+    const url=configUrl();
+    configStatus('Считываем конфигурацию с ноды…','saving');
+    const j=await api(url+'/import','POST',{});
+    await waitNodeJob(id,j.id,100);
+    await loadStoredConfig();
+    toast('Файл загружен в редактор');
+  }catch(e){toast(errorText(e));configStatus(errorText(e),'error')}finally{btn.disabled=false;}
+};
+$('hub-config-save').onclick=async()=>{
+  if(!configDirty)return;
+  const btn=$('hub-config-save');btn.disabled=true;
+  try{
+    const r=await api(configUrl(),'PUT',{content:$('hub-config-text').value,revision:storedRevision});
+    storedRevision=r.revision;
+    await loadStoredConfig();
+    toast('Черновик сохранён. Нода ещё не изменена.');
+  }catch(e){btn.disabled=false;toast(errorText(e));}
+};
+$('hub-config-apply').onclick=async()=>{
+  if(configDirty)return toast('Сначала сохрани изменения в черновик');
+  if(!confirm('Применить сохранённый файл к выбранной ноде? Сервис может перезапуститься, активные VPN-подключения могут прерваться.'))return;
+  const btn=$('hub-config-apply');btn.disabled=true;
+  try{
+    configStatus('Применяем конфигурацию на ноде…','saving');
+    const job=await api(configUrl()+'/apply','POST',{});
+    await waitNodeJob($('hub-config-node').value,job.id,180);
+    await loadStoredConfig();
+    toast('Конфигурация применена');
+  }catch(e){toast(errorText(e));await loadStoredConfig()}finally{btn.disabled=false;}
+};
+const originalNodeList=loadNodes;
+loadNodes=async function(){
+  await originalNodeList();
+  document.querySelectorAll('#server-list [data-node]').forEach(card=>{
+    if(card.querySelector('.server-config-link'))return;
+    const btn=document.createElement('button');
+    btn.type='button';btn.className='server-config-link';
+    btn.textContent='⌘ Открыть конфиги';
+    btn.onclick=e=>{e.preventDefault();e.stopPropagation();selectedNode=card.dataset.node;showPage('configs');};
+    card.appendChild(btn);
+  });
+};
+const originalCapabilityTabs=capabilityTabs;
+capabilityTabs=function(node){const tabs=originalCapabilityTabs(node);tabs.configs=true;return tabs;};
