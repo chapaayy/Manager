@@ -22,6 +22,7 @@ jobs:
           python -m compileall -q manager agent tests
           node --check manager/static/app.js
           node tests/test_auth_ui.js
+          node tests/test_config_editor_ui.js
           bash -n install.sh deploy/*.sh
       - name: Unit tests
         env:
