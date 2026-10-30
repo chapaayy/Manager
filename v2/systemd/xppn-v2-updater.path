@@ -1,0 +1,11 @@
+[Unit]
+Description=XPPN v2 web-triggered update watcher
+After=local-fs.target
+
+[Path]
+PathExists=/var/lib/xppn-v2-update/request
+Unit=xppn-v2-updater.service
+MakeDirectory=false
+
+[Install]
+WantedBy=multi-user.target
