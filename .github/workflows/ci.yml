@@ -31,7 +31,7 @@ jobs:
           XPPN_V2_DB=/data/xppn-v2.db
           XPPN_V2_DOMAIN=manager.example.org
           XPPN_V2_ADMIN_USER=admin
-          XPPN_V2_ADMIN_PASSWORD_HASH=pbkdf2_sha256$600000$0123456789abcdef0123456789abcdef$aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          XPPN_V2_ADMIN_PASSWORD_HASH=pbkdf2_sha256:600000:0123456789abcdef0123456789abcdef:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
           XPPN_V2_SESSION_SECRET=ci-only-secret-123456789012345678901234567890
           XPPN_DATA_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
           XPPN_V2_COOKIE_SECURE=1
@@ -41,7 +41,7 @@ jobs:
           docker compose --project-directory v2 --env-file v2/.env.preview \
             -f v2/compose.preview.yml -f v2/compose.public.yml config --format json \
             > /tmp/xppn-v2-compose.json
-          python -c 'import json; c=json.load(open("/tmp/xppn-v2-compose.json")); h=c["services"]["manager-v2"]["environment"]["XPPN_V2_ADMIN_PASSWORD_HASH"]; assert h.startswith("pbkdf2_sha256$600000$0123456789abcdef") and h.endswith("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"), "Compose mangled PBKDF2 delimiter"'
+          python -c 'import json; c=json.load(open("/tmp/xppn-v2-compose.json")); h=c["services"]["manager-v2"]["environment"]["XPPN_V2_ADMIN_PASSWORD_HASH"]; assert h.startswith("pbkdf2_sha256:600000:0123456789abcdef") and h.endswith("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"), "Compose mangled PBKDF2 delimiter"'
           XPPN_V2_EXISTING_NETWORK=xppn-manager_default \
             docker compose --project-directory v2 --env-file v2/.env.preview \
               -f v2/compose.preview.yml -f v2/compose.attach.yml config --quiet
