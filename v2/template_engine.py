@@ -248,3 +248,46 @@ def variables_map(source: Endpoint, exits: Sequence[Exit]) -> list[dict]:
             (f"exits.{index}.uuid", "UUID межсерверного подключения", "<скрыто>"),
         ])
     return [{"key": key, "description": desc, "preview": value} for key, desc, value in values]
+
+
+
+def extend_existing_bridge(current: dict, source: Endpoint, new_exit: Exit) -> dict:
+    """Preserve EVERY existing Xray field and add only one outbound, inbound and routing rule.
+
+    No balancing, no changes to current inbound clients, filters, fallbacks,
+    routing rules, TLS certificates, users or existing exits.
+    """
+    validate_rendered(current)
+    new_tag = f"TO_{new_exit.endpoint.code}_VLESS_TLS_OUT"
+    if any(o.get("tag") == new_tag for o in current["outbounds"]):
+        raise TemplateError("Этот выход уже присутствует в текущей конфигурации")
+    if any(
+        new_exit.endpoint.domain == v.get("address")
+        for o in current["outbounds"]
+        for group in o.get("settings", {}).get("vnext", [])
+        for v in [group]
+    ):
+        raise TemplateError("Выход с этим доменом уже добавлен")
+    inbound_tag = f"{source.code}_{new_exit.endpoint.code}_VLESS_TLS_IN"
+    if any(i.get("tag") == inbound_tag for i in current["inbounds"]):
+        raise TemplateError("Входной тег уже существует")
+    base = next((i for i in current["inbounds"]
+                 if i.get("port") == 443 and i.get("protocol") == "vless"
+                 and i.get("streamSettings", {}).get("security") == "tls"
+                 and i.get("streamSettings", {}).get("network") == "raw"), None)
+    if not base:
+        raise TemplateError("Нет образцового VLESS TLS RAW inbound на порту 443. Требуется отдельный шаблон.")
+    used = {i.get("port") for i in current["inbounds"]}
+    desired = new_exit.inbound_port
+    if desired is not None and desired in used:
+        raise TemplateError(f"Порт {desired} уже используется")
+    port = desired or allocate_port(used)
+    proposed = copy.deepcopy(current)
+    new_input = copy.deepcopy(base)
+    new_input["tag"] = inbound_tag
+    new_input["port"] = port
+    proposed["inbounds"].append(new_input)
+    proposed["outbounds"].append(new_outbound(new_exit))
+    proposed["routing"]["rules"].append(_route(new_tag, inbound_tag))
+    validate_rendered(proposed)
+    return proposed
