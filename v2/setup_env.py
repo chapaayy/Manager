@@ -43,7 +43,7 @@ def validate(domain: str, username: str, password: str, *, has_hash: bool) -> tu
 def make_hash(password: str) -> str:
     salt = os.urandom(16)
     digest = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, ROUNDS)
-    return "pbkdf2_sha256$%d$%s$%s" % (ROUNDS, salt.hex(), digest.hex())
+    return "pbkdf2_sha256:%d:%s:%s" % (ROUNDS, salt.hex(), digest.hex())
 
 
 def read_env(path: Path) -> tuple[list[str], dict[str, str]]:
@@ -65,8 +65,8 @@ def configure(path: Path, domain: str, username: str, password: str) -> dict:
     previous_raw = old.get("XPPN_V2_ADMIN_PASSWORD", "")
     supplied = password or (previous_raw if not previous_hash else "")
     domain, username = validate(domain, username, supplied, has_hash=bool(previous_hash))
-    hashed = previous_hash if previous_hash and not password else make_hash(supplied)
-    if not re.fullmatch(r"pbkdf2_sha256\$\d+\$[a-f0-9]{32}\$[a-f0-9]{64}", hashed):
+    hashed = previous_hash.replace("$", ":") if previous_hash and not password else make_hash(supplied)
+    if not re.fullmatch(r"pbkdf2_sha256:\d+:[a-f0-9]{32}:[a-f0-9]{64}", hashed):
         raise SetupError("Неверный формат сохранённого хеша пароля")
     key = old.get("XPPN_DATA_KEY", "")
     if key:
