@@ -171,6 +171,9 @@ def set_panel(*, url: str, outbound_ip: str = "", token: str | None = None):
     with transaction() as c:
         row = c.execute("SELECT token_enc FROM panel WHERE id=1").fetchone()
         previous = row["token_enc"]
+        current_url = c.execute("SELECT url FROM panel WHERE id=1").fetchone()["url"]
+        if current_url and current_url != url and token is None:
+            raise ValueError("При смене домена панели повторно введи API-токен")
         if token is not None:
             previous = encrypt(token) if token else ""
         c.execute("""UPDATE panel SET url=?, outbound_ip=?, token_enc=?,
