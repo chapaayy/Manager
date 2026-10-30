@@ -152,6 +152,7 @@ class ExitPlanData(BaseModel):
     # Omitted UUID is generated and securely staged by the manager.
     outgoing_uuid: str | None = None
     inbound_port: int | None = Field(default=None, ge=8444, le=8999)
+    config_template_id: str | None = None
 
 
 @app.get("/")
@@ -297,7 +298,7 @@ def preview_exit(bridge_id: str, body: ExitPlanData, _=Depends(write_access)):
     try:
         outgoing_id = body.outgoing_uuid or str(uuid.uuid4())
         return service.prepare_bridge_exit(
-            bridge_id, body.exit_id, outgoing_id, body.inbound_port)
+            bridge_id, body.exit_id, outgoing_id, body.inbound_port, body.config_template_id)
     except (TemplateError, LookupError, ValueError, sqlite3.IntegrityError) as e:
         _fail(e)
 
@@ -316,6 +317,13 @@ def approve(plan_id: str, _=Depends(write_access)):
         return storage.approve_plan(plan_id)
     except (LookupError, ValueError) as e:
         _fail(e)
+
+
+@app.get("/api/template/default")
+def default_bridge_template(_=Depends(read_access)):
+    path = Path(__file__).resolve().parent / "data" / "xray_bridge_template.json"
+    return {"name":"XPPN · Bridge VLESS TLS RAW","kind":"xray",
+            "content":path.read_text(encoding="utf-8")}
 
 
 @app.get("/api/template/variables")
