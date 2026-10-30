@@ -16,13 +16,13 @@ jobs:
         with:
           node-version: '22'
       - name: Python requirements
-        run: python -m pip install -r manager/requirements.txt pytest httpx
+        run: python -m pip install -r manager/requirements.txt pytest httpx pyyaml
       - name: Static checks
         run: |
           python -m compileall -q manager agent tests
           node --check manager/static/app.js
           node tests/test_auth_ui.js
-          bash -n deploy/*.sh
+          bash -n install.sh deploy/*.sh
       - name: Unit tests
         env:
           XPPN_SESSION_SECRET: xppn-ci-only-placeholder-0123456789-0123456789
