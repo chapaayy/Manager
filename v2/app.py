@@ -156,6 +156,7 @@ class Login(BaseModel):
 class PanelData(BaseModel):
     url: str
     token: str = Field(default="", max_length=2048)
+    caddy_api_key: str = Field(default="", max_length=2048)
     outbound_ip: str = ""
 
 
@@ -262,7 +263,8 @@ def update_panel(body: PanelData, _=Depends(write_access)):
         raise HTTPException(422, "API-токен слишком короткий")
     try:
         return storage.set_panel(url=url, outbound_ip=outbound,
-                                 token=body.token if body.token else None)
+                                 token=body.token.strip() if body.token.strip() else None,
+                                 caddy_api_key=body.caddy_api_key.strip() if body.caddy_api_key.strip() else None)
     except ValueError as e:
         raise HTTPException(422, str(e)) from None
 
