@@ -11,6 +11,9 @@ BRANCH="${XPPN_GIT_BRANCH:-main}"
 for tool in git docker python3 flock tar; do command -v "$tool" >/dev/null || exit 1; done
 BASE=/opt/xppn-manager
 ROOT=/opt/xppn-manager-updater
+# The systemd unit uses ProtectHome=yes; Docker must not write to /root/.docker.
+export DOCKER_CONFIG="${DOCKER_CONFIG:-$ROOT/docker-config}"
+install -d -m 0700 "$DOCKER_CONFIG"
 VOLUME="$(docker volume inspect --format '{{.Mountpoint}}' xppn-manager_manager-data)"
 [[ -d "$VOLUME" && -f "$BASE/.env" ]] || exit 1
 mkdir -p "$ROOT/releases" "$ROOT/backups"
@@ -55,7 +58,11 @@ BACKUP="$ROOT/backups/$(date -u +%Y%m%dT%H%M%SZ)-${SHA:0:10}"
 mkdir -p "$BACKUP"
 chmod 700 "$BACKUP"
 cp -p "$BASE/.env" "$BACKUP/.env"
-# Stop manager, back up its SQLite volume, and rebuild manager only. No agent or node touched.
+# Build first, with the currently running Manager still serving requests.
+# A failed build should NOT take the website offline.
+report running 'Building new Manager; current version remains online' "$SHA"
+docker compose --project-name xppn-manager -f "$NEW/docker-compose.yml" --env-file "$NEW/.env" build manager
+# Stop Manager only after the candidate Docker image has successfully built.
 rollback(){
   code=$?
   report error "Update failed; restoring backed-up data and previous release: $BACKUP" "$SHA"
@@ -73,7 +80,7 @@ rollback(){
 trap rollback ERR
 docker compose --project-name xppn-manager -f "$OLD/docker-compose.yml" --env-file "$OLD/.env" stop manager
 docker run --rm --network none -v xppn-manager_manager-data:/source:ro -v "$BACKUP":/backup alpine:3.20 sh -eu -c 'cd /source && tar -czf /backup/data.tar.gz . && test -s /backup/data.tar.gz'
-docker compose --project-name xppn-manager -f "$NEW/docker-compose.yml" --env-file "$NEW/.env" up -d --build --no-deps manager
+docker compose --project-name xppn-manager -f "$NEW/docker-compose.yml" --env-file "$NEW/.env" up -d --no-build --no-deps --force-recreate manager
 READY=0
 for i in $(seq 1 25); do
   if python3 -c 'import urllib.request; urllib.request.urlopen("http://127.0.0.1:8787/api/me",timeout=2)' >/dev/null 2>&1; then READY=1;break;fi
