@@ -1,0 +1,23 @@
+# SECRET_KEY is a secret from Remnawave API (/api/keygen).
+# Mount certs and logs; do not place SECRET_KEY in this editable library file.
+services:
+  remnanode:
+    image: remnawave/node:3.4.1
+    container_name: remnanode
+    hostname: remnanode
+    restart: unless-stopped
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+    environment:
+      NODE_PORT: "2222"
+    env_file:
+      - path: /opt/remnanode/node.env
+        format: raw
+    volumes:
+      - /opt/nginx/certs:/opt/nginx/certs:ro
+      - /var/log/remnanode:/var/log/remnanode
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
