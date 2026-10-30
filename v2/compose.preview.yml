@@ -5,7 +5,25 @@ services:
       context: ..
       dockerfile: v2/Dockerfile
     restart: unless-stopped
-    env_file: .env.preview
+    env_file:
+      - path: .env.preview
+        format: raw  # Keep PBKDF2 '
+    ports:
+      - "127.0.0.1:8790:8000"
+    volumes:
+      - v2-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,noexec,nosuid
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 160
+    mem_limit: 512m
+volumes:
+  v2-data:
+ delimiters intact; Compose 2.30+.
     ports:
       - "127.0.0.1:8790:8000"
     volumes:
