@@ -276,6 +276,7 @@ function resetConfig(force=false){
   $("config-version").textContent="Не сохранён";
   $("config-delete").classList.add("hidden");
   setConfigClean();renderConfigList();
+  $("config-dialog").showModal();
 }
 async function openConfig(id){
   if(!discardConfig())return;
@@ -288,16 +289,20 @@ async function openConfig(id){
     $("config-version").textContent="Версия "+file.revision;
     $("config-delete").classList.remove("hidden");
     setConfigClean();renderConfigList();
+    $("config-dialog").showModal();
   }catch(e){message(e.message,true)}
 }
 function renderConfigList(){
   const q=$("config-search").value.toLowerCase().trim();
   const files=state.configs.filter(f=>(f.name+" "+types[f.kind]).toLowerCase().includes(q));
+  $("config-count").textContent=files.length+" файлов";
   $("config-files").innerHTML=files.length?files.map(f=>
-    '<button class="file-row '+(currentConfig===f.id?"active":"")+
-    '" data-open-config="'+esc(f.id)+'">'+icon("file-code")+'<span><strong>'+
-    esc(f.name)+'</strong><small>'+esc(types[f.kind])+' · v'+f.revision+
-    '</small></span></button>').join(""):'<p class="muted small">Файлов пока нет. Создай конфиг справа.</p>';
+    '<button class="library-tile" data-open-config="'+esc(f.id)+'" type="button">'+
+    '<span class="feature-icon">'+icon("file-code")+'</span>'+
+    '<span class="library-tile-content"><strong>'+esc(f.name)+'</strong>'+
+    '<small>'+esc(types[f.kind])+' · версия '+f.revision+'</small></span>'+
+    '<span class="tiny-chip">Открыть</span></button>'
+    ).join(""):'<div class="empty-state"><h3>Конфигураций пока нет</h3><p>Нажми «Создать конфиг», чтобы добавить первый файл.</p></div>';
 }
 function highlightTokens(value){
   return String(value).split(/(\{\{[a-z0-9.*_-]+\}\})/gi).map(part=>
@@ -313,7 +318,7 @@ async function saveConfig(){
     const result=await api(currentConfig?"/configs/"+encodeURIComponent(currentConfig):"/configs",
                            currentConfig?"PUT":"POST",payload);
     configDirty=false;await refresh();await openConfig(result.id);
-    message("Файл сохранён в библиотеке, без изменений на нодах.");
+    message("Файл сохранён. На серверах ничего не изменилось.");
   }catch(e){message(e.message,true)}
 }
 async function deleteConfig(){
@@ -359,6 +364,7 @@ function editPreset(id){
   currentPreset=id;$("preset-name").value=p.name;$("preset-description").value=p.description;
   $("preset-edit-title").textContent=p.name;
   renderPresetSelects(Object.fromEntries(p.items.map(x=>[x.kind,x.config_id])));
+  $("preset-dialog").showModal();
 }
 async function savePreset(){
   const ids=[...document.querySelectorAll("[data-preset-kind]")].map(x=>x.value).filter(Boolean);
@@ -368,7 +374,7 @@ async function savePreset(){
   try{
     await api(currentPreset?"/presets/"+encodeURIComponent(currentPreset):"/presets",
               currentPreset?"PUT":"POST",body);
-    resetPreset();await refresh();message("Набор сохранён в библиотеке.");
+    resetPreset();$("preset-dialog").close();await refresh();message("Набор сохранён в библиотеке.");
   }catch(e){message(e.message,true)}
 }
 async function removePreset(id){
@@ -572,7 +578,10 @@ function bindEvents(){
       e.preventDefault();saveConfig()}
   });
   $("config-save").onclick=saveConfig;$("config-delete").onclick=deleteConfig;
-  $("new-preset").onclick=resetPreset;$("preset-reset").onclick=resetPreset;
+  $("config-close").onclick=()=>{if(discardConfig()){$("config-dialog").close();configDirty=false;}};
+  $("preset-close").onclick=()=>$("preset-dialog").close();
+  $("config-dialog").addEventListener("cancel",e=>{if(!discardConfig())e.preventDefault();else configDirty=false;});
+  $("new-preset").onclick=()=>{resetPreset();$("preset-dialog").showModal()};$("preset-reset").onclick=resetPreset;
   $("preset-form").onsubmit=e=>{e.preventDefault();savePreset()};
   $("preset-cards").addEventListener("click",e=>{
     const edit=e.target.closest("[data-preset-edit]");
