@@ -1,20 +1,20 @@
-# Never commit credentials
+# Secrets and live databases never belong in Git
 .env
 .env.*
+**/.env
+**/.env.preview
 !.env.example
+!**/.env.preview.example
 *.key
 *.pem
 *.crt
 *.p12
 *.pfx
-installer.env
-agent.env
-helper.key
-*.sqlite
 *.db
+*.sqlite
+*.sqlite3
 *.db-wal
 *.db-shm
-/backups/
 __pycache__/
 *.py[cod]
 .pytest_cache/
