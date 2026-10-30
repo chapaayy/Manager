@@ -6,7 +6,7 @@ umask 077
 [[ $# -eq 1 ]] || { echo 'Usage: sudo bash deploy/install-updater.sh git@github.com:OWNER/xppn-manager.git'; exit 1; }
 [[ "$1" =~ ^(git@github.com:[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\.git|https://github.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\.git)$ ]] || exit 1
 [[ -f /opt/xppn-manager/.env ]] || exit 1
-mkdir -p /opt/xppn-manager-updater
+install -d -m 0700 /opt/xppn-manager-updater /opt/xppn-manager-updater/docker-config
 install -m 0700 "$(dirname "$0")/update-worker.sh" /opt/xppn-manager-updater/update-worker.sh
 printf 'XPPN_GIT_URL=%q\nXPPN_GIT_BRANCH=main\n' "$1" > /etc/xppn-manager-updater.env
 chmod 600 /etc/xppn-manager-updater.env
@@ -18,6 +18,7 @@ After=docker.service
 [Service]
 Type=oneshot
 ExecStart=/opt/xppn-manager-updater/update-worker.sh
+Environment=DOCKER_CONFIG=/opt/xppn-manager-updater/docker-config
 User=root
 NoNewPrivileges=yes
 PrivateTmp=yes
