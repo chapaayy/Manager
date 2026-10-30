@@ -331,3 +331,12 @@ body{font-size:14px;background:#09090b}
 .server-config-link .lucide-icon{width:16px;height:16px}
 .config-fileicon .lucide-icon,.config-empty-symbol .lucide-icon{width:21px;height:21px}
 .preset-icon .lucide-icon{width:22px;height:22px}
+
+
+/* Full-bleed, actionable empty state for a newly installed Manager. */
+.servers-empty{grid-column:1/-1;min-height:350px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;background:linear-gradient(170deg,#18181c,#101013);border:1px dashed #45454d;border-radius:14px;padding:36px 24px}
+.servers-empty-icon{width:55px;height:55px;border:1px solid #4c4c55;border-radius:14px;background:#25252b;color:#e8e8ef;display:grid;place-items:center;margin-bottom:20px}
+.servers-empty-icon .lucide-icon{width:28px;height:28px}
+.servers-empty h2{font-size:22px;margin:0 0 9px}
+.servers-empty p{font-size:13px;color:#bcbcc6;line-height:1.8;max-width:540px;margin:0 0 24px}
+.servers-empty-actions{display:flex;gap:9px;flex-wrap:wrap;justify-content:center}
