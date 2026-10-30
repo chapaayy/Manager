@@ -82,10 +82,17 @@ unset PASS
 DOMAIN="$(sed -n 's/^XPPN_V2_DOMAIN=//p' "$ENVFILE" | tail -1)"
 
 echo "Собираем новую панель, не останавливая старую..."
+# The web app can only write an empty update marker to this narrow directory.
+install -d -m 0700 -o 10001 -g 10001 /var/lib/xppn-v2-update
+CADDY_V2="$(docker ps --filter label=com.docker.compose.project=xppn-v2-preview --filter label=com.docker.compose.service=caddy-v2 --format '{{.ID}}' | head -1)"
 CADDY="$(docker ps --filter label=com.docker.compose.project=xppn-manager --filter label=com.docker.compose.service=caddy --format '{{.ID}}' | head -1)"
 set -- -p xppn-v2-preview --project-directory "$APP/v2" --env-file "$ENVFILE" -f "$APP/v2/compose.preview.yml"
 MODE=standalone
-if [[ -n "$CADDY" ]]; then
+NETWORK=""
+if [[ -n "$CADDY_V2" ]]; then
+  # Existing v2 Caddy OWNS 80/443. Reuse it instead of detecting a false conflict.
+  set -- "$@" -f "$APP/v2/compose.public.yml"
+elif [[ -n "$CADDY" ]]; then
   MODE=shared
   [[ -f "$V1_CADDY" ]] && grep -q 'reverse_proxy manager:8000' "$V1_CADDY" ||
     { echo "Не распознан Caddyfile v1 — ничего не меняем" >&2; exit 1; }
@@ -142,8 +149,50 @@ for _ in $(seq 1 10); do
   fi
   sleep 3
 done
+# Install root-owned host worker. The public FastAPI app NEVER receives Docker
+# socket access. It can submit only a zero-content update request marker.
+if command -v systemctl >/dev/null 2>&1; then
+  install -d -m 0755 /usr/local/libexec
+  install -o root -g root -m 0755 "$APP/v2/host_updater.py" /usr/local/libexec/xppn-v2-updater.py
+  install -o root -g root -m 0644 "$APP/v2/systemd/xppn-v2-updater.path" /etc/systemd/system/xppn-v2-updater.path
+  install -o root -g root -m 0644 "$APP/v2/systemd/xppn-v2-updater.service" /etc/systemd/system/xppn-v2-updater.service
+  # Config is root-owned. Only the installer can change mode or Docker network.
+  python3 - "$MODE" "$NETWORK" <<'PY'
+import json
+import os
+import sys
+path="/etc/xppn-v2-update.json"
+fd=os.open(path,os.O_WRONLY | os.O_CREAT | os.O_TRUNC,0o600)
+with os.fdopen(fd,"w",encoding="utf8") as file:
+    json.dump({"mode":sys.argv[1].replace("standalone","public"),"network":sys.argv[2]},file)
+os.chmod(path,0o600)
+PY
+  REVISION="$(git -C "$APP" rev-parse HEAD)"
+  python3 - "$REVISION" <<'PY'
+import json
+import os
+from pathlib import Path
+import sys
+import time
+file=Path("/var/lib/xppn-v2-update/status.json")
+if not file.exists() or json.loads(file.read_text()).get("state")!="running":
+    content={"state":"idle","message":"Обновление с сайта готово.","installed_sha":sys.argv[1],
+             "target_sha":"","updated_at":int(time.time()),"rolled_back":False}
+    tmp=file.with_name(".status-installer-"+str(os.getpid()))
+    with tmp.open("w",encoding="utf-8") as out:
+        json.dump(content,out,ensure_ascii=False)
+    os.chmod(tmp,0o644)
+    os.replace(tmp,file)
+PY
+  systemctl daemon-reload
+  systemctl enable --now xppn-v2-updater.path
+  systemctl is-active --quiet xppn-v2-updater.path || {
+    echo "ВНИМАНИЕ: служба обновления с сайта не запущена." >&2
+  }
+fi
+
 echo "══════════════════════════════════════════════"
-echo "XPPN Manager v2.1"
+echo "XPPN Manager v2.2"
 echo "Ссылка: https://$DOMAIN"
 echo "Логин: $USERNAME"
 echo "Пароль: тот, что указал при установке"
@@ -153,4 +202,5 @@ if [[ "$TLS" == 0 ]]; then
 else
   echo "HTTPS и ответ менеджера проверены."
 fi
+echo "Вкладка Обновления теперь работает с сайта, SSH для следующих обновлений не нужен."
 echo "Старая версия v1 сохранена. Установка VPN-нод в v2 пока не подключена."
