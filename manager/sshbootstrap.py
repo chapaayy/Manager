@@ -73,6 +73,74 @@ def check_credentials(ip,port,password,expected_fp):
     finally:
         if t:t.close()
 
+def read_only_preflight(ip,port,password,expected_fp):
+    """Check an authenticated VPS without modifying packages, files or services."""
+    t=None
+    try:
+        t=transport(ip,port)
+        if fingerprint(t.get_remote_server_key())!=expected_fp:
+            raise RuntimeError('SSH-ключ сервера изменился. Проверь ключ в консоли провайдера.')
+        try:t.auth_password('root',password,fallback=False)
+        except paramiko.AuthenticationException:
+            raise ValueError('SSH-доступ не подтверждён. Проверь пароль root и настройки входа.')
+        if not t.is_authenticated():raise ValueError('Авторизация root не удалась.')
+        # Static command: no user-controlled strings, only read-only system queries.
+        cmd=(
+            'LC_ALL=C; . /etc/os-release 2>/dev/null; '
+            'printf "XPPN_OS=%s\\n" "${ID:-unknown}"; '
+            'printf "XPPN_VERSION=%s\\n" "${VERSION_ID:-unknown}"; '
+            'printf "XPPN_ARCH=%s\\n" "$(uname -m)"; '
+            'printf "XPPN_UID=%s\\n" "$(id -u)"; '
+            'printf "XPPN_DOCKER=%s\\n" "$(command -v docker 2>/dev/null || true)"; '
+            'printf "XPPN_DISK=%s\\n" "$(df -Pm / 2>/dev/null | tail -n 1 | awk \'{print $4}\')"; '
+            'printf "XPPN_PORTS_BEGIN\\n"; '
+            'if command -v ss >/dev/null 2>&1; then ss -lntH 2>/dev/null; '
+            'else printf "PORT_CHECK_UNAVAILABLE\\n"; fi'
+        )
+        ch=t.open_session(timeout=12)
+        ch.settimeout(20)
+        ch.exec_command(cmd)
+        pieces=[]
+        while True:
+            block=ch.recv(4096)
+            if not block:break
+            pieces.append(block)
+            if sum(map(len,pieces))>20000:raise RuntimeError('Ответ сервера для проверки слишком длинный.')
+        rc=ch.recv_exit_status();ch.close()
+        if rc!=0:raise RuntimeError('Сервер не смог выполнить диагностические команды.')
+        lines=b''.join(pieces).decode('utf-8',errors='replace').splitlines()
+        info={}
+        for line in lines:
+            if line.startswith('XPPN_') and '=' in line:
+                key,value=line.split('=',1)
+                info[key]=value[:150]
+        if info.get('XPPN_UID')!='0':
+            raise ValueError('Для первой установки требуется root-доступ.')
+        ports_text='\\n'.join(lines[lines.index('XPPN_PORTS_BEGIN')+1:]) if 'XPPN_PORTS_BEGIN' in lines else ''
+        port_check_available='PORT_CHECK_UNAVAILABLE' not in ports_text and bool(ports_text.strip())
+        used_ports=[]
+        if port_check_available:
+            import re
+            for port_number in (80,443,2222):
+                if re.search(r'(?<!\\d)[:.]'+str(port_number)+r'\\s',ports_text):
+                    used_ports.append(port_number)
+        arch=info.get('XPPN_ARCH','unknown')
+        os_id=info.get('XPPN_OS','unknown')
+        disk=int(info.get('XPPN_DISK','0')) if info.get('XPPN_DISK','0').isdigit() else 0
+        warnings=[]
+        if os_id not in ('ubuntu','debian'):warnings.append('ОС не Ubuntu/Debian. Автоматический установщик может не поддерживаться.')
+        if arch not in ('x86_64','aarch64'):warnings.append('Архитектура отличается от обычно поддерживаемых x86_64/aarch64.')
+        if disk and disk<2048:warnings.append('На системном диске меньше 2 ГБ свободного места.')
+        if used_ports:warnings.append('Уже заняты порты: '+', '.join(map(str,used_ports))+'. Проверь существующие сервисы до полной установки.')
+        if not port_check_available:warnings.append('Не удалось проверить локальные прослушиваемые порты.')
+        return {'os':os_id,'version':info.get('XPPN_VERSION','unknown'),
+                'arch':arch,'free_disk_mb':disk,'docker_installed':bool(info.get('XPPN_DOCKER')),
+                'ports_in_use':used_ports,'port_check_available':port_check_available,
+                'warnings':warnings,'read_only':True}
+    finally:
+        if t:t.close()
+
+
 def bootstrap(node_id, ip, port, password, expected_fp, token, helper_key, hub_url):
     t=None
     def info(msg):store.log_install(node_id,msg)
