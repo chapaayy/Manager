@@ -51,9 +51,15 @@ class OneClickInstallTests(unittest.TestCase):
         with store.connect() as c:
             self.assertEqual(c.execute('SELECT count(*) FROM admins').fetchone()[0],0)
 
-    def test_weak_password_rejected(self):
-        os.environ['XPPN_ADMIN_PASSWORD']='short'
-        self.assertEqual(cli.provision_env(),2)
+    def test_short_password_allowed_for_testing(self):
+        os.environ['XPPN_ADMIN_USER']='admin'
+        os.environ['XPPN_ADMIN_PASSWORD']='admin'
+        self.assertEqual(cli.provision_env(),0)
+        with store.connect() as c:
+            row=c.execute('SELECT username,password_hash FROM admins').fetchone()
+        self.assertEqual(row['username'],'admin')
+        self.assertNotEqual(row['password_hash'],'admin')
+        self.assertTrue(row['password_hash'].startswith('$argon2'))
 
     def test_installer_never_deletes_docker_volumes(self):
         s=(ROOT/'install.sh').read_text()
