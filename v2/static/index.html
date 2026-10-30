@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="referrer" content="no-referrer">
   <meta name="theme-color" content="#09090b">
-  <title>XPPN Manager 2.2 — рабочая область</title>
-  <link rel="stylesheet" href="/static/style.css?v=2.2.0">
-  <script src="/static/app.js?v=2.2.0" defer></script>
+  <title>XPPN Manager 2.3 — рабочая область</title>
+  <link rel="stylesheet" href="/static/style.css?v=2.3.0">
+  <script src="/static/app.js?v=2.3.0" defer></script>
 </head>
 <body>
   <div id="login-screen" class="auth-overlay">
@@ -30,7 +30,7 @@
       <div class="sidebar-head">
         <div class="brand" title="XPPN Manager">
           <span class="logo-mark small"><svg><use href="/static/icons.svg#i-shield-check"></use></svg></span>
-          <span class="brand-name"><strong>XPPN</strong><small>MANAGER 2.2</small></span>
+          <span class="brand-name"><strong>XPPN</strong><small>MANAGER 2.3</small></span>
         </div>
         <button class="icon-button" id="toggle-sidebar" title="Свернуть меню" aria-label="Свернуть меню" type="button">
           <svg><use href="/static/icons.svg#i-panel-left-close"></use></svg>
@@ -72,43 +72,19 @@
         </section>
 
         <section id="page-configs" class="page hidden">
-          <div class="page-heading"><div><p class="eyebrow">ЕДИНАЯ БИБЛИОТЕКА</p><h1>Конфигурации</h1><p class="subheading">Xray, Nginx и Compose. Файлы сохраняются независимо от серверов и входят в пресеты.</p></div><button id="new-config" class="btn primary"><svg><use href="/static/icons.svg#i-plus"></use></svg>Новый файл</button></div>
-          <div class="editor-layout">
-            <aside class="panel file-browser">
-              <label class="field-label" for="config-search">Найти конфиг</label>
-              <input type="search" id="config-search" placeholder="Название, тип файла">
-              <div class="file-list" id="config-files"><div class="skeleton h90"></div></div>
-            </aside>
-            <section class="panel code-workspace">
-              <div class="editor-header"><div><p class="eyebrow">РЕДАКТОР ФАЙЛА</p><h2 id="config-editor-title">Новый файл</h2></div><span class="tiny-chip" id="config-version">Не сохранён</span></div>
-              <div class="two-fields"><label>Название<input id="config-name" maxlength="100" placeholder="Bridge RU → DE"></label><label>Тип файла<select id="config-kind"><option value="xray">Xray JSON</option><option value="nginx">Nginx</option><option value="nginx_compose">Nginx Compose</option><option value="node_compose">Remnawave Compose</option></select></label></div>
-              <div class="code-toolbar"><span>ИСХОДНЫЙ КОНФИГ</span><span>UTF-8 · без автоматического применения</span></div>
-              <textarea id="config-content" spellcheck="false" aria-label="Редактор конфигурации" placeholder="Вставь JSON или создай конфигурацию…"></textarea>
-              <div class="editor-actions"><span class="muted" id="config-hint">Здесь можно хранить разные версии для разных нод.</span><button class="btn subtle hidden" id="config-delete"><svg><use href="/static/icons.svg#i-x"></use></svg>Удалить</button><button class="btn primary" id="config-save"><svg><use href="/static/icons.svg#i-save"></use></svg>Сохранить</button></div>
-              <details class="template-info"><summary>Как работают заменяемые переменные в Xray?</summary>
-                <div class="form-buttons"><button class="btn subtle" type="button" id="config-load-bridge">Загрузить образец Xray Bridge</button></div><div class="variable-sample"><pre id="placeholder-preview"></pre></div>
-                <div id="template-variable-list" class="variable-list"></div>
-                <p>Переменные выделены цветом. При подготовке ноды менеджер генерирует значения и показывает diff. Простое текстовое сохранение в библиотеке не изменяет VPN.</p>
-              </details>
-            </section>
+          <div class="page-heading"><div><p class="eyebrow">БИБЛИОТЕКА</p><h1>Конфигурации</h1><p class="subheading">Xray, Nginx и Docker Compose. Выбирай файл, чтобы открыть отдельный редактор.</p></div>
+            <button id="new-config" class="btn primary" type="button"><svg><use href="/static/icons.svg#i-plus"></use></svg>Создать конфиг</button>
           </div>
+          <div class="library-toolbar"><label class="field-label" for="config-search">Поиск<input type="search" id="config-search" placeholder="Название или тип конфигурации"></label>
+          <span class="muted small" id="config-count">0 файлов</span></div>
+          <div id="config-files" class="library-grid"><div class="skeleton h90"></div></div>
         </section>
-
         <section id="page-presets" class="page hidden">
-          <div class="page-heading"><div><p class="eyebrow">НАБОРЫ КОНФИГУРАЦИЙ</p><h1>Пресеты</h1><p class="subheading">Собирай файлы в готовые комплекты. Оригиналы остаются в библиотеке.</p></div><button class="btn primary" id="new-preset"><svg><use href="/static/icons.svg#i-plus"></use></svg>Новый пресет</button></div>
-          <div class="preset-grid">
-            <section class="panel preset-form-panel"><p class="eyebrow">РЕДАКТОР НАБОРА</p><h2 id="preset-edit-title">Новый пресет</h2>
-              <form id="preset-form">
-                <label>Название<input id="preset-name" maxlength="100" placeholder="RU Bridge · стандарт" required></label>
-                <label>Описание<textarea id="preset-description" rows="3" maxlength="600" placeholder="Какие ноды используют этот набор"></textarea></label>
-                <p class="eyebrow">ФАЙЛЫ В НАБОРЕ</p>
-                <div id="preset-selects" class="preset-selects"></div>
-                <p class="muted small">По одному конфигу каждого типа. Файлы можно менять отдельно, не создавая новый пресет.</p>
-                <div class="form-buttons"><button class="btn subtle" id="preset-reset" type="button">Очистить</button><button class="btn primary" type="submit">Сохранить пресет</button></div>
-              </form>
-            </section>
-            <section class="preset-results"><div class="section-title"><h2>Сохранённые наборы</h2><span id="preset-count" class="tiny-chip">0</span></div><div id="preset-cards" class="preset-cards"></div></section>
+          <div class="page-heading"><div><p class="eyebrow">ГОТОВЫЕ НАБОРЫ</p><h1>Пресеты</h1><p class="subheading">Наборы файлов для установки новых серверов. Создание и редактирование открываются отдельно.</p></div>
+            <button class="btn primary" id="new-preset" type="button"><svg><use href="/static/icons.svg#i-plus"></use></svg>Создать пресет</button>
           </div>
+          <div class="section-title"><h2>Сохранённые наборы</h2><span id="preset-count" class="tiny-chip">0</span></div>
+          <div id="preset-cards" class="library-grid"></div>
         </section>
 
         <section id="page-settings" class="page hidden">
@@ -171,6 +147,36 @@
     </div>
   </div>
 
+  <dialog id="config-dialog" class="modal library-dialog">
+    <div class="modal-header"><div><p class="eyebrow">БИБЛИОТЕКА / КОНФИГУРАЦИЯ</p><h2>Просмотр и редактирование файла</h2></div>
+      <button class="icon-button" type="button" id="config-close" aria-label="Закрыть"><svg><use href="/static/icons.svg#i-x"></use></svg></button></div>
+                <section class="panel code-workspace">
+              <div class="editor-header"><div><p class="eyebrow">РЕДАКТОР ФАЙЛА</p><h2 id="config-editor-title">Новый файл</h2></div><span class="tiny-chip" id="config-version">Не сохранён</span></div>
+              <div class="two-fields"><label>Название<input id="config-name" maxlength="100" placeholder="Bridge RU → DE"></label><label>Тип файла<select id="config-kind"><option value="xray">Xray JSON</option><option value="nginx">Nginx</option><option value="nginx_compose">Nginx Compose</option><option value="node_compose">Remnawave Compose</option></select></label></div>
+              <div class="code-toolbar"><span>ИСХОДНЫЙ КОНФИГ</span><span>UTF-8 · без автоматического применения</span></div>
+              <textarea id="config-content" spellcheck="false" aria-label="Редактор конфигурации" placeholder="Вставь JSON или создай конфигурацию…"></textarea>
+              <div class="editor-actions"><span class="muted" id="config-hint">Здесь можно хранить разные версии для разных нод.</span><button class="btn subtle hidden" id="config-delete"><svg><use href="/static/icons.svg#i-x"></use></svg>Удалить</button><button class="btn primary" id="config-save"><svg><use href="/static/icons.svg#i-save"></use></svg>Сохранить</button></div>
+              <details class="template-info"><summary>Как работают заменяемые переменные в Xray?</summary>
+                <div class="form-buttons"><button class="btn subtle" type="button" id="config-load-bridge">Загрузить образец Xray Bridge</button></div><div class="variable-sample"><pre id="placeholder-preview"></pre></div>
+                <div id="template-variable-list" class="variable-list"></div>
+                <p>Переменные выделены цветом. При подготовке ноды менеджер генерирует значения и показывает diff. Простое текстовое сохранение в библиотеке не изменяет VPN.</p>
+              </details>
+            </section>
+  </dialog>
+  <dialog id="preset-dialog" class="modal preset-dialog">
+    <div class="modal-header"><div><p class="eyebrow">БИБЛИОТЕКА / ПРЕСЕТ</p><h2>Состав пресета</h2></div>
+      <button class="icon-button" type="button" id="preset-close" aria-label="Закрыть"><svg><use href="/static/icons.svg#i-x"></use></svg></button></div>
+                <section class="panel preset-form-panel"><p class="eyebrow">РЕДАКТОР НАБОРА</p><h2 id="preset-edit-title">Новый пресет</h2>
+              <form id="preset-form">
+                <label>Название<input id="preset-name" maxlength="100" placeholder="RU Bridge · стандарт" required></label>
+                <label>Описание<textarea id="preset-description" rows="3" maxlength="600" placeholder="Какие ноды используют этот набор"></textarea></label>
+                <p class="eyebrow">ФАЙЛЫ В НАБОРЕ</p>
+                <div id="preset-selects" class="preset-selects"></div>
+                <p class="muted small">По одному конфигу каждого типа. Файлы можно менять отдельно, не создавая новый пресет.</p>
+                <div class="form-buttons"><button class="btn subtle" id="preset-reset" type="button">Очистить</button><button class="btn primary" type="submit">Сохранить пресет</button></div>
+              </form>
+            </section>
+  </dialog>
   <dialog id="modal" class="modal">
     <div class="modal-header"><div><p class="eyebrow" id="modal-kicker">ДЕЙСТВИЕ</p><h2 id="modal-title">Настройка</h2></div><button class="icon-button" id="modal-close" type="button" aria-label="Закрыть"><svg><use href="/static/icons.svg#i-x"></use></svg></button></div>
     <div id="modal-content"></div>
