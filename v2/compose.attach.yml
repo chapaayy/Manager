@@ -1,0 +1,11 @@
+# When the v1 XPPN Caddy already owns ports 80/443, attach the new
+# manager to the same Docker network. v1 Caddy gets a separate host rule.
+services:
+  manager-v2:
+    networks:
+      - default
+      - existing-proxy
+networks:
+  existing-proxy:
+    external: true
+    name: ${XPPN_V2_EXISTING_NETWORK:?Set the existing Caddy network}
