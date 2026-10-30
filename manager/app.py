@@ -383,7 +383,7 @@ def require_component_command(command,payload,node):
 class CredentialChange(BaseModel):
     current_password: str = Field(min_length=1,max_length=1024)
     username: str = Field(pattern=r'^[A-Za-z0-9_.-]{3,40}$')
-    new_password: str = Field(min_length=16,max_length=1024)
+    new_password: str = Field(min_length=1,max_length=1024)
 
 @app.get('/api/settings/status')
 def settings_status(request:Request,_=Depends(admin)):
