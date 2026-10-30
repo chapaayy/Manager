@@ -10,7 +10,7 @@ const ids=[...html.matchAll(/\bid="([^"]+)"/g)].map(m=>m[1]);
 const unique=new Set(ids);
 assert.equal(unique.size,ids.length,"Every HTML id must be unique");
 for(const id of [
-  "login-screen","shell","sidebar","toggle-sidebar","page-nodes","page-configs",
+  "login-screen","login-username","login-password","shell","sidebar","toggle-sidebar","page-nodes","page-configs",
   "page-presets","page-settings","bridge-list","other-nodes","modal","plan-dialog",
   "config-files","config-content","config-save","preset-form","panel-form",
   "panel-profile-select","plan-diff","plan-json","plan-approve",
@@ -25,6 +25,7 @@ assert.match(css,/prefers-reduced-motion/);
 assert.match(js,/bridgeExitModal/,"Bridge expansion is functional");
 assert.match(js,/highlightTokens/,"Editor highlights template parameters");
 assert.match(js,/X-CSRF-Token/,"Mutating calls need CSRF");
+assert.match(js,/await signIn\(\$\("login-username"\)/,"Login requires username");
 assert(!html.includes("wizard-project"),"Multi-panel project control must be absent");
 assert(!js.includes("projectCache"),"Multi-panel project JavaScript must be absent");
 console.log("PASS: clean single-panel v2 interface wiring and layout");
