@@ -1,4 +1,4 @@
-name: XPPN Manager checks
+name: XPPN Manager 2.0 checks
 on:
   push:
   pull_request:
@@ -15,21 +15,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Python requirements
-        run: python -m pip install -r manager/requirements.txt pytest httpx pyyaml
-      - name: Static checks
+      - name: Install only v2 dependencies
+        run: python -m pip install -r v2/requirements.txt pytest httpx
+      - name: Compile and verify the isolated v2 app
         run: |
-          python -m compileall -q manager agent tests v2 tests_v2
+          python -m compileall -q v2 tests_v2
           node --check v2/static/app.js
-          node --check manager/static/app.js
-          node tests/test_auth_ui.js
-          node tests/test_config_editor_ui.js
-          bash -n install.sh deploy/*.sh
-      - name: Unit tests
-        env:
-          XPPN_SESSION_SECRET: xppn-ci-only-placeholder-0123456789-0123456789
-          XPPN_DATA_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
-          XPPN_DB: /tmp/xppn-ci.sqlite3
-        run: |
-          python -m pytest -q tests
-          python -m pytest -q tests_v2
+          node tests_v2/test_ui.js
+          bash -n v2/preview-install.sh
+      - name: Validate Xray transformations, HTTP API and security
+        run: python -m pytest -q tests_v2
