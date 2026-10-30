@@ -245,7 +245,7 @@ async function openPlanId(id){
   catch(e){message(e.message,true)}
 }
 function renderVariablePreview(){
-  const fallback='{\\n  "inbounds":[{"tag":"{{source.code}}_{{exits.0.code}}_VLESS_TLS_IN"}],\\n  "outbounds":[{"address":"{{exits.0.domain}}","id":"{{exits.0.uuid}}"}]\\n}';
+  const fallback='{\\n  "inbounds":[{"tag":"{{source.code}}_{{exit.code}}_VLESS_TLS_IN"}],\\n  "outbounds":[{"address":"{{exit.domain}}","id":"{{bridge.user_id}}"}]\\n}';
   const source=$("config-content").value||fallback;
   const clipped=source.length>30000?source.slice(0,30000)+"\\n… предпросмотр ограничен 30 000 символами":source;
   $("placeholder-preview").innerHTML=highlightTokens(clipped);
