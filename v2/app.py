@@ -198,7 +198,7 @@ def home():
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "product": "XPPN Manager 2.0 Preview", "deployment": False}
+    return {"ok": True, "product": "XPPN Manager 2.1 Preview", "deployment": False}
 
 
 @app.post("/api/auth/login")
