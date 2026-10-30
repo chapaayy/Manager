@@ -5,18 +5,20 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="referrer" content="no-referrer">
   <meta name="theme-color" content="#09090b">
-  <title>XPPN Manager 2.0 — рабочая область</title>
-  <link rel="stylesheet" href="/static/style.css?v=2.0.0">
-  <script src="/static/app.js?v=2.0.0" defer></script>
+  <title>XPPN Manager 2.1 — рабочая область</title>
+  <link rel="stylesheet" href="/static/style.css?v=2.1.0">
+  <script src="/static/app.js?v=2.1.0" defer></script>
 </head>
 <body>
   <div id="login-screen" class="auth-overlay">
     <form id="login-form" class="auth-card">
       <div class="logo-mark"><svg><use href="/static/icons.svg#i-shield-check"></use></svg></div>
-      <p class="eyebrow">XPPN / VERSION 2.0</p>
+      <p class="eyebrow">XPPN / VERSION 2.1</p>
       <h1>Твоя инфраструктура.<br>Без лишнего.</h1>
       <p class="muted">Одна Remnawave, единое управление нодами и мостами.</p>
-      <label for="login-password">Пароль администратора</label>
+      <label for="login-username">Логин</label>
+      <input id="login-username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" required minlength="3" maxlength="40" value="admin">
+      <label for="login-password">Пароль</label>
       <input id="login-password" type="password" autocomplete="current-password" required minlength="1">
       <button class="btn primary large" type="submit">Войти <svg><use href="/static/icons.svg#i-arrow-right"></use></svg></button>
       <p class="form-error" id="login-error" role="alert"></p>
@@ -28,7 +30,7 @@
       <div class="sidebar-head">
         <div class="brand" title="XPPN Manager">
           <span class="logo-mark small"><svg><use href="/static/icons.svg#i-shield-check"></use></svg></span>
-          <span class="brand-name"><strong>XPPN</strong><small>MANAGER 2.0</small></span>
+          <span class="brand-name"><strong>XPPN</strong><small>MANAGER 2.1</small></span>
         </div>
         <button class="icon-button" id="toggle-sidebar" title="Свернуть меню" aria-label="Свернуть меню" type="button">
           <svg><use href="/static/icons.svg#i-panel-left-close"></use></svg>
