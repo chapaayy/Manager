@@ -116,13 +116,13 @@ def read_only_preflight(ip,port,password,expected_fp):
                 info[key]=value[:150]
         if info.get('XPPN_UID')!='0':
             raise ValueError('Для первой установки требуется root-доступ.')
-        ports_text='\\n'.join(lines[lines.index('XPPN_PORTS_BEGIN')+1:]) if 'XPPN_PORTS_BEGIN' in lines else ''
+        ports_text='\n'.join(lines[lines.index('XPPN_PORTS_BEGIN')+1:]) if 'XPPN_PORTS_BEGIN' in lines else ''
         port_check_available='PORT_CHECK_UNAVAILABLE' not in ports_text and bool(ports_text.strip())
         used_ports=[]
         if port_check_available:
             import re
             for port_number in (80,443,2222):
-                if re.search(r'(?<!\\d)[:.]'+str(port_number)+r'\\s',ports_text):
+                if re.search(r'(?<!\d)[:.]'+str(port_number)+r'\s',ports_text):
                     used_ports.append(port_number)
         arch=info.get('XPPN_ARCH','unknown')
         os_id=info.get('XPPN_OS','unknown')
