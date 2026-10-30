@@ -23,7 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from pydantic import BaseModel, Field
 
-from . import library, remnawave, service, storage
+from . import library, remnawave, service, storage, web_updates
 from .template_engine import Endpoint, TemplateError, safe_preview, variables_map
 
 STATIC = Path(__file__).resolve().parent / "static"
@@ -236,6 +236,27 @@ def session(sid=Depends(read_access)):
 def logout(response: Response, _=Depends(write_access)):
     response.delete_cookie(COOKIE, path="/")
     return {"ok": True}
+
+
+@app.get("/api/system/update")
+def update_status(_=Depends(read_access)):
+    return web_updates.status()
+
+
+@app.post("/api/system/update/check")
+def update_check(_=Depends(write_access)):
+    try:
+        return web_updates.check_available()
+    except ValueError as e:
+        raise HTTPException(503, str(e)) from None
+
+
+@app.post("/api/system/update")
+def trigger_update(_=Depends(write_access)):
+    try:
+        return web_updates.request_update()
+    except ValueError as e:
+        raise HTTPException(409, str(e)) from None
 
 
 @app.get("/api/dashboard")
