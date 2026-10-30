@@ -22,9 +22,29 @@ jobs:
           python -m compileall -q v2 tests_v2
           node --check v2/static/app.js
           node tests_v2/test_ui.js
-          bash -n v2/preview-install.sh
+          bash -n v2/preview-install.sh v2/install.sh
       - name: Validate Xray transformations, HTTP API and security
         run: python -m pytest -q tests_v2
+      - name: Validate public and shared-proxy Docker configurations
+        run: |
+          cat > v2/.env.preview <<'EOF'
+          XPPN_V2_DB=/data/xppn-v2.db
+          XPPN_V2_DOMAIN=manager.example.org
+          XPPN_V2_ADMIN_USER=admin
+          XPPN_V2_ADMIN_PASSWORD_HASH=pbkdf2_sha256$600000$0123456789abcdef0123456789abcdef$aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          XPPN_V2_SESSION_SECRET=ci-only-secret-123456789012345678901234567890
+          XPPN_DATA_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+          XPPN_V2_COOKIE_SECURE=1
+          EOF
+          docker compose --project-directory v2 --env-file v2/.env.preview \
+            -f v2/compose.preview.yml -f v2/compose.public.yml config --quiet
+          XPPN_V2_EXISTING_NETWORK=xppn-manager_default \
+            docker compose --project-directory v2 --env-file v2/.env.preview \
+              -f v2/compose.preview.yml -f v2/compose.attach.yml config --quiet
+          docker run --rm -e XPPN_V2_DOMAIN=manager.example.org \
+            -v "$PWD/v2/Caddyfile.public:/etc/caddy/Caddyfile:ro" \
+            caddy:2.10.2-alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+
       - name: Build v2 Docker image and test HTTP startup
         run: |
           docker build -f v2/Dockerfile -t xppn-v2-preview:ci .
