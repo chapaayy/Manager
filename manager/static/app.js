@@ -593,6 +593,22 @@ async function deletePreset(id){
     await loadPresetBundles();toast('Пресет удалён, файлы не затронуты');
   }catch(e){toast(errorText(e))}
 }
+$('lib-add-to-preset').onclick=async()=>{
+  if(!libraryId)return toast('Сначала сохрани и выбери файл в библиотеке');
+  if(libraryDirty)return toast('Сначала сохрани изменения в файле');
+  const file=libraryFiles.find(x=>x.id===libraryId);
+  if(!file)return toast('Файл не найден');
+  showPage('presets');
+  try{
+    await loadPresetBundles();
+    resetPresetEditor();
+    $('preset-file-'+file.kind).value=file.id;
+    presetDirty=true;
+    $('preset-editor-state').textContent='Выбран файл · сохрани пресет';
+    $('preset-bundle-name').focus();
+    toast('Файл добавлен в форму нового пресета');
+  }catch(e){toast(errorText(e))}
+};
 const side=$('app-screen'),toggle=$('sidebar-toggle');
 function applySidebarCollapsed(collapsed){
   side.classList.toggle('sidebar-collapsed',collapsed);
