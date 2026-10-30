@@ -731,7 +731,7 @@ function renderPanelInbounds(){
   const existing=primaryPanel();
   const preselected=selected?.uuid===existing?.panel_config_profile_uuid?(existing.panel_active_inbounds||[]):[];
   $('wizard-remna-inbounds').innerHTML=(selected?.inbounds||[]).map(x=>
-    '<label class="checkbox-row"><input type="checkbox" class="wizard-inbound" value="'+escapeHtml(x.uuid)+'" '+(preselected.length?preselected.includes(x.uuid):true?'checked':'')+'><span>'+escapeHtml(x.tag||x.uuid)+'</span></label>'
+    '<label class="checkbox-row"><input type="checkbox" class="wizard-inbound" value="'+escapeHtml(x.uuid)+'" '+((!preselected.length||preselected.includes(x.uuid))?'checked':'')+'><span>'+escapeHtml(x.tag||x.uuid)+'</span></label>'
   ).join('')||'<p class="setup-notice">В профиле нет доступных inbound-ов. Проверь конфигурацию Remnawave.</p>';
 }
 $('wizard-remna-profile').onchange=renderPanelInbounds;
