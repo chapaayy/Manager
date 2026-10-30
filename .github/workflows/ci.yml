@@ -45,8 +45,10 @@ jobs:
             -v "$PWD/v2/Caddyfile.public:/etc/caddy/Caddyfile:ro" \
             caddy:2.10.2-alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 
-      - name: Build v2 Docker image and test HTTP startup
+      - name: Build v2 Docker image and test HTTP startup with root-only checkout permissions
         run: |
+          # Reproduce installer umask 077, which previously crashed non-root uvicorn.
+          chmod -R go-rwx v2
           docker build -f v2/Dockerfile -t xppn-v2-preview:ci .
           docker run -d --name xppn-v2-smoke \
             -e XPPN_V2_DB=/tmp/xppn-v2-ci.db \
