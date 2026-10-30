@@ -72,7 +72,8 @@ user=vals.get('XPPN_ADMIN_USER','admin') or 'admin'
 if not re.fullmatch(r'[A-Za-z0-9_.-]{3,40}',user):
     sys.exit('Invalid XPPN_ADMIN_USER')
 password=vals.get('XPPN_ADMIN_PASSWORD','')
-if password and len(password)<16:sys.exit('XPPN_ADMIN_PASSWORD must be 16+ characters')
+if password and len(password)<8:
+    print('WARNING: Short administrator password. Restrict public access to this panel.', file=sys.stderr)
 if os.getenv('XPPN_EXISTING_DB')=='1' and not vals.get('XPPN_DATA_KEY'):
     sys.exit('Existing database detected: restore original XPPN_DATA_KEY before installation')
 updates={
