@@ -442,6 +442,7 @@ showPage=function(page){
 /* v1.7: saved-file library, multi-file presets, and persistent sidebar. */
 let libraryFiles=[],libraryId=null,libraryRevision=0,libraryBaseline='',libraryDirty=false;
 let presetBundles=[],presetBundleId=null,presetDirty=false;
+let pendingPresetSelection=null;
 const libTypes={nginx:'nginx.conf',nginx_compose:'Nginx Compose',node_compose:'Remnawave Compose'};
 const libraryFormData=()=>({name:$('lib-name').value.trim(),kind:$('lib-kind').value,content:$('lib-content').value});
 function markLibraryDirty(){
@@ -550,7 +551,17 @@ async function loadPresetBundles(){
     const old=presetBundles.find(p=>p.id===presetBundleId);
     for(const item of old?.items||[])selected[item.kind]=item.config_id;
   }
-  renderPresetSelectors(selected);renderPresetCards();
+  renderPresetSelectors(selected);
+  if(pendingPresetSelection){
+    const {kind,id}=pendingPresetSelection;
+    resetPresetEditor();
+    $('preset-file-'+kind).value=id;
+    presetDirty=true;
+    $('preset-editor-state').textContent='Выбран файл · сохрани пресет';
+    pendingPresetSelection=null;
+    toast('Файл добавлен в форму пресета');
+  }
+  renderPresetCards();
 }
 function renderPresetCards(){
   $('preset-count').textContent=presetBundles.length+' набора';
@@ -598,16 +609,8 @@ $('lib-add-to-preset').onclick=async()=>{
   if(libraryDirty)return toast('Сначала сохрани изменения в файле');
   const file=libraryFiles.find(x=>x.id===libraryId);
   if(!file)return toast('Файл не найден');
+  pendingPresetSelection={kind:file.kind,id:file.id};
   showPage('presets');
-  try{
-    await loadPresetBundles();
-    resetPresetEditor();
-    $('preset-file-'+file.kind).value=file.id;
-    presetDirty=true;
-    $('preset-editor-state').textContent='Выбран файл · сохрани пресет';
-    $('preset-bundle-name').focus();
-    toast('Файл добавлен в форму нового пресета');
-  }catch(e){toast(errorText(e))}
 };
 const side=$('app-screen'),toggle=$('sidebar-toggle');
 function applySidebarCollapsed(collapsed){
