@@ -670,6 +670,7 @@ function fillWizardPanelSettings(){
   $('wizard-remna-url').value=p.panel_url||'';
   $('wizard-remna-token').value='';
   $('wizard-remna-egress').value=p.panel_ip||'';
+  $('wizard-dns-as-egress').checked=false;
   wizardStatus('');
 }
 async function prepareWizardTemplates(preferredMode){
@@ -725,6 +726,9 @@ function showPanelOptions(profiles){
   if(main?.panel_config_profile_uuid&&wizardPanelProfiles.some(p=>p.uuid===main.panel_config_profile_uuid))select.value=main.panel_config_profile_uuid;
   renderPanelInbounds();
   $('wizard-panel-profiles').classList.remove('hidden');
+  const configured=!!main?.panel_ip;
+  $('wizard-egress-setup').classList.toggle('hidden',configured);
+  if(!configured)$('wizard-egress-advanced').open=false;
 }
 function renderPanelInbounds(){
   const selected=wizardPanelProfiles.find(p=>p.uuid===$('wizard-remna-profile').value);
@@ -739,18 +743,17 @@ $('wizard-panel-connect').onclick=async()=>{
   const p=primaryPanel();
   if(!p)return wizardStatus('Основной проект не обнаружен.','error');
   const url=$('wizard-remna-url').value.trim(),token=$('wizard-remna-token').value;
-  const egress=$('wizard-remna-egress').value.trim();
   if(!url||!/^https:\/\//i.test(url))return wizardStatus('Укажи HTTPS-адрес панели Remnawave.','error');
   if(!token&&!p.has_api_token)return wizardStatus('Введи API-токен Remnawave.','error');
-  if(!egress)return wizardStatus('Укажи исходящий IPv4 панели — он используется для разрешения доступа к ноде.','error');
   const btn=$('wizard-panel-connect');btn.disabled=true;wizardStatus('Сохраняем подключение и проверяем API…');
   try{
-    await api('/projects/'+encodeURIComponent(p.id),'PATCH',{name:p.name,panel_url:url,panel_ip:egress,api_token:token});
+    // Changing the domain must not keep an old allowlisted source address.
+    await api('/projects/'+encodeURIComponent(p.id),'PATCH',{name:p.name,panel_url:url,api_token:token,...(url!==p.panel_url?{panel_ip:''}:{})});
     const connected=await api('/projects/'+encodeURIComponent(p.id)+'/panel/sync','POST',{});
     await fetchProjects();wizardPanelSummary();
     showPanelOptions(connected.profiles||[]);
     if(!wizardPanelProfiles.length)wizardStatus('API доступен, но нет профилей с inbound-ами. Настрой один Config Profile в Remnawave и повтори проверку.','error');
-    else wizardStatus('Подключение проверено. Выбери профиль и сохрани его для всех будущих нод.','success');
+    else wizardStatus('API подключён. Выбери профиль и сохрани. Для ограничения доступа к нодам понадобится один раз подтвердить исходящий IP панели.','success');
     $('wizard-remna-token').value='';
   }catch(e){wizardStatus(errorText(e),'error')}finally{btn.disabled=false}
 };
@@ -760,6 +763,18 @@ $('wizard-panel-save').onclick=async()=>{
   if(!ids.length)return wizardStatus('Выбери хотя бы один inbound для автоматической регистрации новых нод.','error');
   const btn=$('wizard-panel-save');btn.disabled=true;
   try{
+    if(!p.panel_ip){
+      const manual=$('wizard-remna-egress').value.trim();
+      const confirmed=$('wizard-dns-as-egress').checked;
+      if(manual && confirmed)throw Error('Выбери один вариант: ручной IP или подтверждение адреса домена.');
+      if(confirmed){
+        await api('/projects/'+encodeURIComponent(p.id)+'/panel/dns-as-egress','POST',{confirm_same_host:true});
+      }else if(manual){
+        await api('/projects/'+encodeURIComponent(p.id),'PATCH',{name:p.name,panel_ip:manual});
+      }else{
+        throw Error('Для ограничения доступа к порту 2222 подтверди, что IP домена совпадает с исходящим IP панели, либо укажи исходящий IP вручную.');
+      }
+    }
     await api('/projects/'+encodeURIComponent(p.id)+'/panel/defaults','PUT',{
       config_profile_uuid:$('wizard-remna-profile').value,active_inbounds:ids,country_code:'XX'
     });
