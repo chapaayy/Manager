@@ -13,6 +13,7 @@ import re
 import uuid
 from dataclasses import dataclass
 from typing import Sequence
+from pathlib import Path
 
 CODE = re.compile(r"^[A-Z][A-Z0-9_-]{1,19}$")
 DOMAIN = re.compile(r"^(?=.{4,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$")
@@ -115,6 +116,51 @@ def new_outbound(exit_node: Exit) -> dict:
     }
 
 
+
+def render_template_document(source: Endpoint, first_exit: Exit,
+                             template: dict | None = None) -> dict:
+    """Resolve typed placeholders in JSON VALUES only, never blind whole-document replace."""
+    if template is None:
+        path = Path(__file__).resolve().parent / "data" / "xray_bridge_template.json"
+        template = json.loads(path.read_text(encoding="utf-8"))
+    allowed = {
+        "source.code": source.code,
+        "source.domain": source.domain,
+        "exit.code": first_exit.endpoint.code,
+        "exit.domain": first_exit.endpoint.domain,
+        "bridge.user_id": first_exit.user_id,
+    }
+    pattern = re.compile(r"\{\{([a-z0-9_.]+)\}\}")
+    def resolve(value):
+        if isinstance(value, str):
+            def sub(match):
+                key = match.group(1)
+                if key not in allowed:
+                    raise TemplateError("Неизвестная переменная в шаблоне: " + key)
+                return allowed[key]
+            return pattern.sub(sub, value)
+        if isinstance(value, list):
+            return [resolve(v) for v in value]
+        if isinstance(value, dict):
+            return {k: resolve(v) for k, v in value.items()}
+        return value
+    config = resolve(copy.deepcopy(template))
+    if not isinstance(config, dict):
+        raise TemplateError("Xray-шаблон должен быть JSON-объектом")
+    inputs = config.get("inbounds", [])
+    outputs = config.get("outbounds", [])
+    if len(inputs) != 2 or len(outputs) != 3:
+        raise TemplateError("Для bridge-шаблона требуются ровно 2 inbound и 3 outbound")
+    if {o.get("tag") for o in outputs} != {
+        f"TO_{first_exit.endpoint.code}_VLESS_TLS_OUT", "DIRECT", "BLOCKED"
+    }:
+        raise TemplateError("Bridge-шаблон содержит неожиданные outbound-теги")
+    if {i.get("port") for i in inputs} != {443, 8443}:
+        raise TemplateError("Bridge-шаблон должен использовать порты 443 и 8443")
+    validate_rendered(config)
+    return config
+
+
 def _route(outbound: str, inbound: str | None = None, **conditions) -> dict:
     result = {"type": "field"}
     result.update(conditions)
@@ -131,7 +177,8 @@ def allocate_port(used: set[int]) -> int:
     raise TemplateError("Нет свободных портов для новых входных подключений")
 
 
-def render_bridge(source: Endpoint, exits: Sequence[Exit], *, default_exit: str | None = None) -> dict:
+def render_bridge(source: Endpoint, exits: Sequence[Exit], *, default_exit: str | None = None,
+                  template: dict | None = None) -> dict:
     """Render original RUS1 filtering/routing semantics plus one dedicated inbound per extra exit.
 
     The first exit uses TCP/443 (main), TCP/8443 (filtered). Additional exits get
@@ -150,33 +197,10 @@ def render_bridge(source: Endpoint, exits: Sequence[Exit], *, default_exit: str 
     remaining = [x for x in exits if x.endpoint.code != first.endpoint.code]
     main_tag = f"{source.code}_{first.endpoint.code}_VLESS_TLS_IN"
     filter_tag = f"{source.code}_FILTER_VLESS_TLS_IN"
-    config = {
-        "log": {
-            "error": "/var/log/remnanode/error.log",
-            "access": "/var/log/remnanode/access.log",
-            "loglevel": "warning",
-        },
-        "inbounds": [
-            new_inbound(main_tag, 443, source.domain),
-            new_inbound(filter_tag, 8443, source.domain),
-        ],
-        "outbounds": [new_outbound(e) for e in exits]
-        + [{"tag": "DIRECT", "protocol": "freedom"},
-           {"tag": "BLOCKED", "protocol": "blackhole"}],
-        "routing": {
-            "rules": [
-                _route("BLOCKED", ip=["geoip:private"]),
-                _route("BLOCKED", domain=["geosite:private"]),
-                _route("BLOCKED", protocol=["bittorrent"]),
-                _route(f"TO_{first.endpoint.code}_VLESS_TLS_OUT", filter_tag, domain=["geosite:youtube"]),
-                _route("DIRECT", filter_tag, ip=["geoip:ru"]),
-                _route("DIRECT", filter_tag, domain=["geosite:category-ru"]),
-                _route(f"TO_{first.endpoint.code}_VLESS_TLS_OUT", filter_tag),
-                _route(f"TO_{first.endpoint.code}_VLESS_TLS_OUT", main_tag),
-            ],
-            "domainStrategy": "IPIfNonMatch",
-        },
-    }
+    config = render_template_document(source, first, template)
+    # Keep the chosen template's first outbound intact; append separate EU routes.
+    preserved_outputs = config["outbounds"]
+    config["outbounds"] = [preserved_outputs[0]] + [new_outbound(e) for e in remaining] + preserved_outputs[1:]
     ports = set(PORTS_RESERVED)
     for exit_node in remaining:
         port = exit_node.inbound_port if exit_node.inbound_port is not None else allocate_port(ports)
