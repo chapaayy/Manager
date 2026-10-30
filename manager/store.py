@@ -62,6 +62,21 @@ def init_db():
             revision INTEGER NOT NULL, content_enc TEXT NOT NULL, created_at INTEGER NOT NULL
         );
         CREATE INDEX IF NOT EXISTS idx_config_versions ON config_versions(node_id,name,revision);
+        CREATE TABLE IF NOT EXISTS library_configs(
+          id TEXT PRIMARY KEY, name TEXT NOT NULL, kind TEXT NOT NULL,
+          content_enc TEXT NOT NULL, revision INTEGER NOT NULL DEFAULT 1,
+          created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS config_presets(
+          id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '',
+          created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS config_preset_items(
+          preset_id TEXT NOT NULL REFERENCES config_presets(id) ON DELETE CASCADE,
+          config_id TEXT NOT NULL REFERENCES library_configs(id) ON DELETE RESTRICT,
+          kind TEXT NOT NULL, PRIMARY KEY(preset_id,kind)
+        );
+        CREATE INDEX IF NOT EXISTS idx_library_configs_kind ON library_configs(kind,name);
         CREATE TABLE IF NOT EXISTS alert_states(node_id TEXT PRIMARY KEY,status TEXT NOT NULL,updated_at INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS telemetry_history(
             id INTEGER PRIMARY KEY AUTOINCREMENT,node_id TEXT NOT NULL REFERENCES nodes(id),
