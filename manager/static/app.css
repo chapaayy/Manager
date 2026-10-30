@@ -340,3 +340,26 @@ body{font-size:14px;background:#09090b}
 .servers-empty h2{font-size:22px;margin:0 0 9px}
 .servers-empty p{font-size:13px;color:#bcbcc6;line-height:1.8;max-width:540px;margin:0 0 24px}
 .servers-empty-actions{display:flex;gap:9px;flex-wrap:wrap;justify-content:center}
+
+
+/* Keep the collapse toggle functional on tablet/mobile, too. */
+@media(max-width:850px){
+ .sidebar,.sidebar:not(.force-expanded){width:225px;padding:15px 9px}
+ .sidebar .brand b,.sidebar .brand-soft,.sidebar .side-heading{display:initial}
+ .sidebar .brand{margin:0 0 0 3px}
+ .sidebar-top{flex-direction:row;align-items:center}
+ .sidebar-link{font-size:12px;justify-content:flex-start;gap:10px}
+ .sidebar .nav-counter{display:inline-block}
+ .sidebar .side-bottom{display:block}
+ .sidebar-collapsed .sidebar{width:70px;padding:12px 7px}
+ .sidebar-collapsed .sidebar .brand b,.sidebar-collapsed .sidebar .brand-soft,.sidebar-collapsed .sidebar .side-heading{display:none}
+ .sidebar-collapsed .sidebar-top{flex-direction:column}
+ .sidebar-collapsed .sidebar-link{font-size:0;justify-content:center;gap:0}
+ .sidebar-collapsed .sidebar .nav-counter,.sidebar-collapsed .sidebar .side-bottom{display:none}
+}
+@media(max-width:600px){
+ .sidebar,.sidebar:not(.force-expanded){width:205px!important;padding:11px 7px!important}
+ .sidebar-collapsed .sidebar{width:59px!important;padding:10px 5px!important}
+ .sidebar:not(.force-expanded) .sidebar-top .brand{display:flex}
+ .sidebar-collapsed .sidebar-top .brand{display:none}
+}
