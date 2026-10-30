@@ -53,7 +53,7 @@ def _username() -> str:
 def _password_hash() -> str:
     stored = os.environ.get("XPPN_V2_ADMIN_PASSWORD_HASH", "")
     if stored:
-        parts = stored.split("$")
+        parts = stored.replace("$", ":").split(":")
         if len(parts) != 4 or parts[0] != "pbkdf2_sha256":
             raise RuntimeError("Invalid XPPN_V2_ADMIN_PASSWORD_HASH")
         try:
@@ -77,7 +77,7 @@ def _password_hash() -> str:
 def _password_ok(password: str) -> bool:
     value = _password_hash()
     if value:
-        _, iterations, salt, digest = value.split("$")
+        _, iterations, salt, digest = value.replace("$", ":").split(":")
         computed = hashlib.pbkdf2_hmac("sha256", password.encode(), bytes.fromhex(salt), int(iterations))
         return hmac.compare_digest(computed, bytes.fromhex(digest))
     return hmac.compare_digest(hashlib.sha256(password.encode()).digest(),
