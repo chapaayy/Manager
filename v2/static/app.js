@@ -169,7 +169,7 @@ function nodeModal(){
     '<p class="muted small">Это только карточка для будущего сценария установки. SSH и Docker пока не запускаются.</p>'+
     '<form><label>Название<input name="name" required maxlength="80" placeholder="Германия · DE-01"></label>'+
     '<label>Код сервера<input name="code" required maxlength="20" placeholder="DE1"></label>'+
-    '<label>Страна (код)<input name="country" required maxlength="2" value="DE"></label>'+
+    '<label>Страна<select name="country"><option value="RU">🇷🇺 Россия</option><option value="DE" selected>🇩🇪 Германия</option><option value="NL">🇳🇱 Нидерланды</option><option value="PL">🇵🇱 Польша</option><option value="LV">🇱🇻 Латвия</option><option value="US">🇺🇸 США</option></select></label>'+
     '<label>Домен<input name="domain" required placeholder="de1.example.com"></label>'+
     '<label>Назначение<select name="role"><option value="regular">Обычная нода</option><option value="entry">Вход моста</option><option value="exit">Выходная нода</option></select></label>'+
     '<div class="form-buttons"><button class="btn primary" type="submit">Сохранить запись</button></div></form>',
