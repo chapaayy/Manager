@@ -20,7 +20,8 @@ def as_endpoint(node: dict) -> Endpoint:
 
 
 def prepare_bridge_exit(bridge_id: str, exit_node_id: str, outgoing_uuid: str,
-                        requested_inbound_port: int | None = None) -> dict:
+                        requested_inbound_port: int | None = None,
+                        config_template_id: str | None = None) -> dict:
     bridge = storage.get_bridge(bridge_id)
     output = storage.get_node(exit_node_id)
     if output["role"] != "exit":
@@ -36,8 +37,17 @@ def prepare_bridge_exit(bridge_id: str, exit_node_id: str, outgoing_uuid: str,
     if current is None:
         if bridge["exits"]:
             raise TemplateError("Не хватает снимка действующего конфига. Сначала импортируй его.")
-        proposed = render_bridge(source, [e])
+        custom = None
+        if config_template_id:
+            from . import library
+            row = library.get_file(config_template_id)
+            if row["kind"] != "xray":
+                raise TemplateError("Для Xray нужен файл типа Xray JSON")
+            custom = json.loads(row["content"])
+        proposed = render_bridge(source, [e], template=custom)
     else:
+        if config_template_id:
+            raise TemplateError("Для уже работающего моста берём импортированный JSON, а не перезаписываем его шаблоном")
         proposed = extend_existing_bridge(current, source, e)
     after = safe_preview(proposed)
     before = safe_preview(current) if current is not None else {}
