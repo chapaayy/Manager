@@ -56,7 +56,8 @@ def test_one_panel_token_is_encrypted_and_never_returned(client):
         "url":"https://panel.gowayot.com","token":token,"outbound_ip":""})
     assert r.status_code==200,r.text
     assert r.json()["url"]=="https://panel.gowayot.com"
-    assert "token" not in json.dumps(r.json())
+    assert token not in json.dumps(r.json())
+    assert "token_enc" not in json.dumps(r.json())
     assert r.json()["has_token"]
     with storage.connect() as c:
         row=c.execute("SELECT token_enc FROM panel WHERE id=1").fetchone()
