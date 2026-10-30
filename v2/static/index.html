@@ -6,8 +6,8 @@
   <meta name="referrer" content="no-referrer">
   <meta name="theme-color" content="#09090b">
   <title>XPPN Manager 2.1 — рабочая область</title>
-  <link rel="stylesheet" href="/static/style.css?v=2.1.0">
-  <script src="/static/app.js?v=2.1.0" defer></script>
+  <link rel="stylesheet" href="/static/style.css?v=2.1.1">
+  <script src="/static/app.js?v=2.1.1" defer></script>
 </head>
 <body>
   <div id="login-screen" class="auth-overlay">
@@ -30,7 +30,7 @@
       <div class="sidebar-head">
         <div class="brand" title="XPPN Manager">
           <span class="logo-mark small"><svg><use href="/static/icons.svg#i-shield-check"></use></svg></span>
-          <span class="brand-name"><strong>XPPN</strong><small>MANAGER 2.1</small></span>
+          <span class="brand-name"><strong>XPPN</strong><small>MANAGER 2.1.1</small></span>
         </div>
         <button class="icon-button" id="toggle-sidebar" title="Свернуть меню" aria-label="Свернуть меню" type="button">
           <svg><use href="/static/icons.svg#i-panel-left-close"></use></svg>
@@ -117,9 +117,13 @@
               <div class="settings-head"><span class="feature-icon"><svg><use href="/static/icons.svg#i-network"></use></svg></span><div><h2>Remnawave</h2><p>Адрес API и токен настраиваются один раз</p></div></div>
               <form id="panel-form">
                 <label>Адрес панели<input id="panel-url" type="url" placeholder="https://panel.example.com" required autocomplete="url"></label>
-                <label>API-токен<input id="panel-token" type="password" placeholder="Оставь пустым, чтобы не менять сохранённый" autocomplete="off"></label>
+                <label>API-токен Remnawave<input id="panel-token" type="password" placeholder="Оставь пустым, чтобы не менять сохранённый" autocomplete="off"></label>
+                <details class="template-info" id="panel-caddy-details"><summary>Если Remnawave защищена Caddy / MFA</summary>
+                  <label>API-ключ портала Caddy (X-Api-Key)<input id="panel-caddy-key" type="password" autocomplete="off" placeholder="Дополнительный ключ, если используется Auth Portal"></label>
+                  <p>Не путай с обычным API-токеном Remnawave. Этот ключ создаётся в Auth Portal → API-keys. Если защиты Caddy нет, поле оставь пустым.</p>
+                </details>
                 <details class="template-info"><summary>Дополнительная настройка доступа к нодам</summary><label>Исходящий IPv4 панели<input id="panel-ip" placeholder="Только если отличается от IP домена"></label><p>IP нужен для ограничения управляющего порта 2222 на нодах, а не для подключения к API.</p></details>
-                <div class="form-buttons"><button type="submit" class="btn primary">Сохранить подключение</button><button id="panel-check" type="button" class="btn subtle"><svg><use href="/static/icons.svg#i-refresh-cw"></use></svg>Проверить API</button></div>
+                <div class="form-buttons"><button type="submit" class="btn primary">Сохранить и проверить API</button><button id="panel-check" type="button" class="btn subtle"><svg><use href="/static/icons.svg#i-refresh-cw"></use></svg>Проверить API</button></div>
               </form>
               <p id="panel-status" class="form-feedback"></p>
               <div class="panel-profile-area hidden" id="panel-profile-area">
