@@ -379,6 +379,9 @@ function renderPanel(){
   $("panel-url").value=state.panel.url||"";
   $("panel-ip").value=state.panel.outbound_ip||"";
   $("panel-token").value="";
+  $("panel-caddy-key").value="";
+  $("panel-caddy-key").placeholder=state.panel.has_caddy_api_key?
+    "Ключ Caddy сохранён · оставь пустым":"Если используется защита Caddy/MFA";
   $("panel-token").placeholder=state.panel.has_token?
     "Токен уже сохранён · оставь пустым":"Введи API-токен Remnawave";
   $("panel-status").textContent=state.panel.url?
@@ -386,9 +389,13 @@ function renderPanel(){
 }
 async function savePanel(){
   const body={url:$("panel-url").value.trim(),token:$("panel-token").value,
+              caddy_api_key:$("panel-caddy-key").value,
               outbound_ip:$("panel-ip").value.trim()};
-  try{state.panel=await api("/panel","PUT",body);renderPanel();
-    message("Настройки Remnawave сохранены. Изменений на VPS нет.");
+  try{
+    state.panel=await api("/panel","PUT",body);
+    renderPanel();
+    message("Настройки сохранены. Проверяем авторизацию API…");
+    await checkPanel();
   }catch(e){message(e.message,true)}
 }
 function showProfileInbounds(){
@@ -414,7 +421,11 @@ async function checkPanel(){
     $("panel-status").textContent="API доступен · "+panelProfiles.length+
       " профилей · ключ ноды "+(check.node_key_available?"получен":"не найден");
     $("panel-status").className="form-feedback success";
-  }catch(e){$("panel-status").textContent=e.message;$("panel-status").className="form-feedback error"}
+  }catch(e){
+    $("panel-status").textContent=e.message;
+    $("panel-status").className="form-feedback error";
+    if(/HTTP (401|403|30[1278])/.test(e.message))$("panel-caddy-details").open=true;
+  }
 }
 async function savePanelProfile(){
   const inbounds=[...document.querySelectorAll(".inbound-check:checked")].map(x=>x.value);
