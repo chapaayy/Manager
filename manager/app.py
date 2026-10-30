@@ -48,7 +48,9 @@ class Probe(BaseModel):
     port: int=Field(default=22,ge=1,le=65535)
 class ReadOnlyPreflight(Probe):
     password: str=Field(min_length=1,max_length=1024)
-    fingerprint: str=Field(pattern=r'^SHA256:[A-Za-z0-9+/]{43}
+    fingerprint: str=Field(pattern=r'^SHA256:[A-Za-z0-9+/]{43}$')
+
+class Enroll(Probe):
     project_id: str="default"
     profile_id: str=""
     preset: str=Field(default="agent",pattern=r"^(agent|node|full)$")
