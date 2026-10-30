@@ -83,9 +83,7 @@ async function start(){
     const collapsed=localStorage.getItem("xppn-v2-collapsed");
     $("sidebar").classList.toggle("collapsed",collapsed==="1"||(collapsed===null&&innerWidth<1000));
   }catch{}
-  $("placeholder-preview").innerHTML=highlightTokens(
-    '{\n  "inbounds": [\n    {\n      "tag": "{{source.code}}_{{exits.0.code}}_VLESS_TLS_IN"\n    }\n  ],\n  "outbounds": [{\n    "address": "{{exits.0.domain}}",\n    "id": "{{exits.0.uuid}}"\n  }]\n}'
-  );
+  renderVariablePreview();
   api("/template/variables").then(x=>{
     $("template-variable-list").innerHTML=x.variables.map(v=>
       '<div class="variable-pill">'+esc("{{"+v.key+"}}")+'<small>'+esc(v.description)+'</small></div>'
@@ -244,11 +242,18 @@ async function openPlanId(id){
   try{openPlan(await api("/plans/"+encodeURIComponent(id)))}
   catch(e){message(e.message,true)}
 }
+function renderVariablePreview(){
+  const fallback='{\\n  "inbounds":[{"tag":"{{source.code}}_{{exits.0.code}}_VLESS_TLS_IN"}],\\n  "outbounds":[{"address":"{{exits.0.domain}}","id":"{{exits.0.uuid}}"}]\\n}';
+  const source=$("config-content").value||fallback;
+  const clipped=source.length>30000?source.slice(0,30000)+"\\n… предпросмотр ограничен 30 000 символами":source;
+  $("placeholder-preview").innerHTML=highlightTokens(clipped);
+}
 function markConfigDirty(){
   const now=JSON.stringify({
     name:$("config-name").value,kind:$("config-kind").value,content:$("config-content").value
   });
   configDirty=now!==configBase;
+  renderVariablePreview();
   $("config-hint").textContent=configDirty?"● Несохранённые изменения":"Файл хранится в библиотеке; никакие VPS не изменены.";
 }
 function setConfigClean(){
