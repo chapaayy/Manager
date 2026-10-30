@@ -214,8 +214,15 @@ def validate_rendered(config: dict) -> None:
             raise TemplateError(f"Routing ссылается на несуществующий outbound: {rule.get('outboundTag')}")
         if any(tag not in valid_in for tag in rule.get("inboundTag", [])):
             raise TemplateError("Routing ссылается на несуществующий inbound")
-    encoded = json.dumps(config, ensure_ascii=False)
-    if "{{" in encoded or "}}" in encoded:
+    def has_placeholder(value):
+        if isinstance(value, str):
+            return re.search(r"\{\{[A-Za-z0-9.*_-]+\}\}", value) is not None
+        if isinstance(value, dict):
+            return any(has_placeholder(v) for v in value.values())
+        if isinstance(value, list):
+            return any(has_placeholder(v) for v in value)
+        return False
+    if has_placeholder(config):
         raise TemplateError("В итоговом конфиге остались незаполненные переменные")
 
 
