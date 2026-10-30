@@ -106,7 +106,7 @@ def get_profiles(pid):
         ins=[]
         # Current API variants can omit inbounds from config-profiles list.
         raw_ins=row.get('inbounds')
-        if (not isinstance(raw_ins,list) or (raw_ins and not isinstance(raw_ins[0],dict))) and isinstance(row.get('uuid'),str):
+        if (not isinstance(raw_ins,list) or not raw_ins or not isinstance(raw_ins[0],dict)) and isinstance(row.get('uuid'),str):
             details=request(pid,'GET',f"/api/config-profiles/{row['uuid']}/inbounds")
             response=details.get('response',{})
             raw_ins=response.get('inbounds',[]) if isinstance(response,dict) else []
