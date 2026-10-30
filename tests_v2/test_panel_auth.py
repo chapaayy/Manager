@@ -49,11 +49,8 @@ def test_remnawave_requests_both_headers_without_revealing_values(panel_db,monke
                       token="sample-token-for-Remnawave",
                       caddy_api_key="secret-caddy-api-key")
     monkeypatch.setattr(remnawave.socket,"getaddrinfo",lambda host,port,**kwargs:[
-        (2,1,6,"",("198.51.100.33",443))
+        (2,1,6,"",("1.1.1.1",443))
     ])
-    # Use a genuinely global address, not an RFC 5737 documentation subnet.
-    monkeypatch.setattr(remnawave.ipaddress.ip_address,
-                        lambda ip:type("IP",(),{"is_global":True})())
     calls=[]
     class Connection:
         def __init__(self,hostname,ip):
@@ -98,11 +95,9 @@ def test_no_caddy_key_no_extra_header(panel_db, monkeypatch):
     monkeypatch.setattr(remnawave.socket,"getaddrinfo",lambda *a,**kw:[
         (2,1,6,"",("1.1.1.1",443))
     ])
-    headers=[]
     class Connection:
         def __init__(self,*args):pass
         def request(self,method,path,headers:dict):
-            headers_list = globals() # no secrets copied into logs
             captured.update(headers)
         def getresponse(self):
             return type("Resp",(),{"status":200,"read":lambda self,n:b'{"response":{}}'})()
