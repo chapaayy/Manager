@@ -109,3 +109,43 @@ def test_app_http_login_requires_correct_username(tmp_path,monkeypatch):
         assert login.status_code==200
         assert login.json()["csrf"]
         assert c.get("/api/dashboard").status_code==200
+
+
+
+def test_install_cli_accepts_admin_and_hashes_password(tmp_path):
+    """Reproduce bash install: python -m v2.setup_env --username admin with NUL stdin."""
+    import subprocess
+    import sys
+    env=tmp_path / ".env.preview"
+    run=subprocess.run(
+        [sys.executable, "-m", "v2.setup_env", "--file", str(env),
+         "--domain", "nodeist.gowayot.com", "--username", "admin"],
+        input=b"long-example-password-for-tests\0",
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+        timeout=20,
+    )
+    assert run.returncode==0, run.stderr.decode(errors="replace")
+    assert read_env(env)[1]["XPPN_V2_ADMIN_USER"]=="admin"
+
+
+def test_installer_and_runtime_accept_same_non_ascii_alphanumeric_username(tmp_path):
+    from v2.app import _username
+    import os
+    env=tmp_path / ".env.preview"
+    configure(env,"newnode.gowayot.com","админ","long-example-password-for-tests")
+    _, values=read_env(env)
+    old=os.environ.get("XPPN_V2_ADMIN_USER")
+    try:
+        os.environ["XPPN_V2_ADMIN_USER"]=values["XPPN_V2_ADMIN_USER"]
+        assert _username()=="админ"
+    finally:
+        if old is None:
+            os.environ.pop("XPPN_V2_ADMIN_USER",None)
+        else:
+            os.environ["XPPN_V2_ADMIN_USER"]=old
+
+
+def test_hidden_unicode_login_character_is_explained(tmp_path):
+    with pytest.raises(SetupError,match="U\\+200B"):
+        configure(tmp_path / ".env.preview","newnode.gowayot.com","admin\u200b",
+                  "long-example-password-for-tests")
