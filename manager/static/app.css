@@ -429,3 +429,14 @@ body{font-size:14px;background:#09090b}
 @media(max-width:900px){.wizard-layout{grid-template-columns:1fr}.wizard-panel{padding:19px}.wizard-rail{gap:0}.wizard-note{display:none}}
 @media(max-width:600px){.preset-list{grid-template-columns:1fr}.wizard-panel{padding:15px}.setup-summary{align-items:flex-start}.setup-summary-icon{width:32px;height:32px}.setup-summary .btn{font-size:11px;padding:8px 10px}.wizard-footer .btn{min-width:0}.wizard-technical{padding:12px}}
 @media(prefers-reduced-motion:reduce){.wizard-step:not(.hidden),.wizard-spinner{animation:none}.btn:not(:disabled){transition:none}}
+
+
+/* v1.8.1: show network restriction only when needed, after API verification. */
+.wizard-egress-setup{padding:15px 16px;margin:15px 0;background:#19191d;border:1px solid #404047;border-radius:10px}
+.wizard-egress-setup>strong{font-size:13px;color:#f3f3f5}
+.wizard-egress-setup>p{font-size:12px;line-height:1.65;margin:8px 0 15px;color:#b5b5c0}
+.wizard-egress-setup>.checkbox-row{padding:12px 13px;background:#242428;border:1px solid #4a4a53;border-radius:9px;color:#e8e8ee;align-items:flex-start}
+.wizard-egress-setup>.checkbox-row span{font-size:12px;line-height:1.6}
+.wizard-egress-setup .wizard-technical{margin:13px 0 0}
+.wizard-egress-setup .wizard-technical label{margin:13px 0}
+.wizard-egress-setup .wizard-technical input{width:100%;margin-top:7px}
