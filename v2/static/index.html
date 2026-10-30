@@ -83,7 +83,7 @@
               <textarea id="config-content" spellcheck="false" aria-label="Редактор конфигурации" placeholder="Вставь JSON или создай конфигурацию…"></textarea>
               <div class="editor-actions"><span class="muted" id="config-hint">Здесь можно хранить разные версии для разных нод.</span><button class="btn subtle hidden" id="config-delete"><svg><use href="/static/icons.svg#i-x"></use></svg>Удалить</button><button class="btn primary" id="config-save"><svg><use href="/static/icons.svg#i-save"></use></svg>Сохранить</button></div>
               <details class="template-info"><summary>Как работают заменяемые переменные в Xray?</summary>
-                <div class="variable-sample"><pre id="placeholder-preview"></pre></div>
+                <div class="form-buttons"><button class="btn subtle" type="button" id="config-load-bridge">Загрузить образец Xray Bridge</button></div><div class="variable-sample"><pre id="placeholder-preview"></pre></div>
                 <div id="template-variable-list" class="variable-list"></div>
                 <p>Переменные выделены цветом. При подготовке ноды менеджер генерирует значения и показывает diff. Простое текстовое сохранение в библиотеке не изменяет VPN.</p>
               </details>
