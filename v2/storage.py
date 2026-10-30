@@ -115,6 +115,28 @@ def init_db():
             created_at INTEGER NOT NULL
         );
         CREATE INDEX IF NOT EXISTS idx_plans_bridge ON plans(bridge_id,created_at DESC);
+        CREATE TABLE IF NOT EXISTS library_configs (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            kind TEXT NOT NULL CHECK(kind IN ('xray','nginx','nginx_compose','node_compose')),
+            content_enc TEXT NOT NULL,
+            revision INTEGER NOT NULL DEFAULT 1,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS presets (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            description TEXT NOT NULL DEFAULT '',
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS preset_items (
+            preset_id TEXT NOT NULL REFERENCES presets(id) ON DELETE CASCADE,
+            config_id TEXT NOT NULL REFERENCES library_configs(id) ON DELETE RESTRICT,
+            kind TEXT NOT NULL,
+            PRIMARY KEY(preset_id,kind)
+        );
         CREATE TABLE IF NOT EXISTS events (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             time INTEGER NOT NULL,
