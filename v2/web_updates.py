@@ -16,8 +16,8 @@ import urllib.request
 
 SHARED = Path("/updater")
 GITHUB_HEAD = (
-    "https://api.github.com/repos/chapaayy/Manager/commits/"
-    "v2%2Frebuild-single-panel"
+    "https://api.github.com/repos/chapaayy/Manager/commits?"
+    "sha=v2%2Frebuild-single-panel&per_page=1"
 )
 SHA_RE = re.compile(r"[0-9a-f]{40}\Z")
 
@@ -65,7 +65,7 @@ def check_available() -> dict:
             if response.status != 200:
                 raise ValueError("GitHub API unavailable")
             data = json.load(response)
-        remote = data.get("sha", "")
+        remote = data[0].get("sha", "") if isinstance(data, list) and data else ""
         if not SHA_RE.fullmatch(remote):
             raise ValueError("Invalid upstream commit")
     except (ValueError, OSError, urllib.error.URLError, json.JSONDecodeError):
