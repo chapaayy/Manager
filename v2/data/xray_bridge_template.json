@@ -1,0 +1,198 @@
+{
+  "log": {
+    "error": "/var/log/remnanode/error.log",
+    "access": "/var/log/remnanode/access.log",
+    "loglevel": "warning"
+  },
+  "inbounds": [
+    {
+      "tag": "{{source.code}}_{{exit.code}}_VLESS_TLS_IN",
+      "port": 443,
+      "listen": "0.0.0.0",
+      "protocol": "vless",
+      "settings": {
+        "clients": [],
+        "fallbacks": [
+          {
+            "dest": "127.0.0.1:8080"
+          }
+        ],
+        "decryption": "none"
+      },
+      "sniffing": {
+        "enabled": true,
+        "destOverride": [
+          "http",
+          "tls",
+          "quic"
+        ]
+      },
+      "streamSettings": {
+        "network": "raw",
+        "security": "tls",
+        "tlsSettings": {
+          "alpn": [
+            "http/1.1"
+          ],
+          "certificates": [
+            {
+              "keyFile": "/opt/nginx/certs/{{source.domain}}_privkey.key",
+              "certificateFile": "/opt/nginx/certs/{{source.domain}}_fullchain.pem"
+            }
+          ],
+          "rejectUnknownSni": true
+        }
+      }
+    },
+    {
+      "tag": "{{source.code}}_FILTER_VLESS_TLS_IN",
+      "port": 8443,
+      "listen": "0.0.0.0",
+      "protocol": "vless",
+      "settings": {
+        "clients": [],
+        "fallbacks": [
+          {
+            "dest": "127.0.0.1:8080"
+          }
+        ],
+        "decryption": "none"
+      },
+      "sniffing": {
+        "enabled": true,
+        "destOverride": [
+          "http",
+          "tls",
+          "quic"
+        ]
+      },
+      "streamSettings": {
+        "network": "raw",
+        "security": "tls",
+        "tlsSettings": {
+          "alpn": [
+            "http/1.1"
+          ],
+          "certificates": [
+            {
+              "keyFile": "/opt/nginx/certs/{{source.domain}}_privkey.key",
+              "certificateFile": "/opt/nginx/certs/{{source.domain}}_fullchain.pem"
+            }
+          ],
+          "rejectUnknownSni": true
+        }
+      }
+    }
+  ],
+  "outbounds": [
+    {
+      "tag": "TO_{{exit.code}}_VLESS_TLS_OUT",
+      "protocol": "vless",
+      "settings": {
+        "vnext": [
+          {
+            "port": 443,
+            "users": [
+              {
+                "id": "{{bridge.user_id}}",
+                "flow": "xtls-rprx-vision",
+                "encryption": "none"
+              }
+            ],
+            "address": "{{exit.domain}}"
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "raw",
+        "security": "tls",
+        "tlsSettings": {
+          "alpn": [
+            "http/1.1"
+          ],
+          "serverName": "{{exit.domain}}",
+          "fingerprint": "firefox",
+          "allowInsecure": false
+        }
+      }
+    },
+    {
+      "tag": "DIRECT",
+      "protocol": "freedom"
+    },
+    {
+      "tag": "BLOCKED",
+      "protocol": "blackhole"
+    }
+  ],
+  "routing": {
+    "rules": [
+      {
+        "ip": [
+          "geoip:private"
+        ],
+        "type": "field",
+        "outboundTag": "BLOCKED"
+      },
+      {
+        "domain": [
+          "geosite:private"
+        ],
+        "type": "field",
+        "outboundTag": "BLOCKED"
+      },
+      {
+        "protocol": [
+          "bittorrent"
+        ],
+        "type": "field",
+        "outboundTag": "BLOCKED"
+      },
+      {
+        "domain": [
+          "geosite:youtube"
+        ],
+        "type": "field",
+        "inboundTag": [
+          "{{source.code}}_FILTER_VLESS_TLS_IN"
+        ],
+        "outboundTag": "TO_{{exit.code}}_VLESS_TLS_OUT"
+      },
+      {
+        "ip": [
+          "geoip:ru"
+        ],
+        "type": "field",
+        "inboundTag": [
+          "{{source.code}}_FILTER_VLESS_TLS_IN"
+        ],
+        "outboundTag": "DIRECT"
+      },
+      {
+        "domain": [
+          "geosite:category-ru"
+        ],
+        "type": "field",
+        "inboundTag": [
+          "{{source.code}}_FILTER_VLESS_TLS_IN"
+        ],
+        "outboundTag": "DIRECT"
+      },
+      {
+        "type": "field",
+        "inboundTag": [
+          "{{source.code}}_FILTER_VLESS_TLS_IN"
+        ],
+        "outboundTag": "TO_{{exit.code}}_VLESS_TLS_OUT"
+      },
+      {
+        "type": "field",
+        "inboundTag": [
+          "{{source.code}}_{{exit.code}}_VLESS_TLS_IN"
+        ],
+        "outboundTag": "TO_{{exit.code}}_VLESS_TLS_OUT"
+      }
+    ],
+    "domainStrategy": "IPIfNonMatch"
+  }
+}
