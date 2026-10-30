@@ -72,6 +72,7 @@ def init_db():
             url TEXT NOT NULL DEFAULT '',
             outbound_ip TEXT NOT NULL DEFAULT '',
             token_enc TEXT NOT NULL DEFAULT '',
+            caddy_api_key_enc TEXT NOT NULL DEFAULT '',
             config_profile_uuid TEXT NOT NULL DEFAULT '',
             inbound_uuids_json TEXT NOT NULL DEFAULT '[]',
             updated_at INTEGER NOT NULL DEFAULT 0
@@ -146,6 +147,10 @@ def init_db():
         );
         INSERT OR IGNORE INTO panel(id) VALUES(1);
         """)
+        # Add new credentials without resetting an existing v2 database.
+        columns = {r["name"] for r in c.execute("PRAGMA table_info(panel)").fetchall()}
+        if "caddy_api_key_enc" not in columns:
+            c.execute("ALTER TABLE panel ADD COLUMN caddy_api_key_enc TEXT NOT NULL DEFAULT ''")
 
 
 def event(c, action: str, target: str, message: str):
@@ -161,26 +166,31 @@ def get_panel() -> dict:
     return {
         "url": r["url"], "outbound_ip": r["outbound_ip"],
         "has_token": bool(r["token_enc"]),
+        "has_caddy_api_key": bool(r["caddy_api_key_enc"]),
         "config_profile_uuid": r["config_profile_uuid"],
         "inbound_uuids": json.loads(r["inbound_uuids_json"]),
         "updated_at": r["updated_at"],
     }
 
 
-def set_panel(*, url: str, outbound_ip: str = "", token: str | None = None):
+def set_panel(*, url: str, outbound_ip: str = "", token: str | None = None,
+              caddy_api_key: str | None = None):
     with transaction() as c:
-        row = c.execute("SELECT token_enc FROM panel WHERE id=1").fetchone()
+        row = c.execute("SELECT url,token_enc,caddy_api_key_enc FROM panel WHERE id=1").fetchone()
         previous = row["token_enc"]
-        current_url = c.execute("SELECT url FROM panel WHERE id=1").fetchone()["url"]
+        current_url = row["url"]
+        current_caddy_key = row["caddy_api_key_enc"] if current_url == url else ""
+        if caddy_api_key is not None:
+            current_caddy_key = encrypt(caddy_api_key) if caddy_api_key else ""
         if current_url and current_url != url and token is None:
             raise ValueError("При смене домена панели повторно введи API-токен")
         if token is not None:
             previous = encrypt(token) if token else ""
-        c.execute("""UPDATE panel SET url=?, outbound_ip=?, token_enc=?,
+        c.execute("""UPDATE panel SET url=?, outbound_ip=?, token_enc=?,caddy_api_key_enc=?,
                   config_profile_uuid=CASE WHEN url<>? THEN '' ELSE config_profile_uuid END,
                   inbound_uuids_json=CASE WHEN url<>? THEN '[]' ELSE inbound_uuids_json END,
                   updated_at=? WHERE id=1""",
-                  (url, outbound_ip, previous, url, url, int(time.time())))
+                  (url, outbound_ip, previous, current_caddy_key, url, url, int(time.time())))
         event(c, "panel.update", "panel", "Updated single panel connection")
     return get_panel()
 
@@ -189,6 +199,12 @@ def get_panel_token() -> str:
     with connect() as c:
         row = c.execute("SELECT token_enc FROM panel WHERE id=1").fetchone()
     return decrypt(row["token_enc"]) if row and row["token_enc"] else ""
+
+
+def get_caddy_api_key() -> str:
+    with connect() as c:
+        row = c.execute("SELECT caddy_api_key_enc FROM panel WHERE id=1").fetchone()
+    return decrypt(row["caddy_api_key_enc"]) if row and row["caddy_api_key_enc"] else ""
 
 
 def set_panel_profile(profile_uuid: str, inbound_uuids: list[str]):
