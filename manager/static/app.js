@@ -624,7 +624,7 @@ function applySidebarCollapsed(collapsed){
   toggle.setAttribute('aria-label',collapsed?'Развернуть меню':'Свернуть меню');
   toggle.title=collapsed?'Развернуть меню':'Свернуть меню';
 }
-try{applySidebarCollapsed(localStorage.getItem('xppn:sidebarCollapsed')==='1')}catch{applySidebarCollapsed(false)}
+try{const saved=localStorage.getItem('xppn:sidebarCollapsed');applySidebarCollapsed(saved===null?window.matchMedia('(max-width:850px)').matches:saved==='1')}catch{applySidebarCollapsed(false)}
 toggle.onclick=()=>{
   const collapsed=!side.classList.contains('sidebar-collapsed');
   applySidebarCollapsed(collapsed);
