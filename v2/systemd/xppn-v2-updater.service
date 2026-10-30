@@ -1,0 +1,19 @@
+[Unit]
+Description=XPPN v2 controlled host update and health verification
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+WorkingDirectory=/opt/xppn-manager-v2
+ExecStart=/usr/bin/python3 /usr/local/libexec/xppn-v2-updater.py
+TimeoutStartSec=650
+UMask=0077
+NoNewPrivileges=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
