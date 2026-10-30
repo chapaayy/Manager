@@ -1023,3 +1023,8 @@ def retry_panel_registration(node_id: str, _=Depends(write_access)):
     store.log_install(node_id,'Оператор запросил повторную регистрацию. Работающую ноду на VPS не переустанавливаем.')
     executor.submit(auto_register_after_install,node_id)
     return {'ok':True}
+
+
+# Independent reusable configuration library and multi-file presets.
+from . import config_library
+config_library.register(app,admin,write_access)
