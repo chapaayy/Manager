@@ -678,7 +678,7 @@ async function prepareWizardTemplates(preferredMode){
   if(!p)return;
   const id=$('wizard-profile').value;
   profilesCache=await api('/projects/'+encodeURIComponent(p.id)+'/profiles');
-  const subset=profilesCache.filter(x=>x.mode===mode && (mode!=='full'||x.transport==='tls-raw'));
+  const subset=profilesCache.filter(x=>x.mode===mode && (mode==='agent'?x.transport==='none':x.transport==='tls-raw'));
   $('wizard-profile').innerHTML=subset.map(x=>'<option value="'+escapeHtml(x.id)+'">'+escapeHtml(x.name)+'</option>').join('');
   const selected=subset.find(x=>x.id===id)||subset.find(x=>x.transport==='tls-raw')||subset[0];
   if(selected)$('wizard-profile').value=selected.id;
@@ -773,6 +773,7 @@ validateWizard=function(){
   for(const id of ['server-name','server-ip','server-password']){
     if(!$(id).value.trim())throw Error('Укажи название, IP-адрес и пароль root.');
   }
+  if(preset()!=='agent'&&$('server-name').value.trim().length<3)throw Error('Название ноды для Remnawave должно содержать минимум 3 символа.');
   const port=Number($('server-port').value);
   if(!Number.isInteger(port)||port<1||port>65535)throw Error('SSH-порт должен быть от 1 до 65535.');
   if(preset()!=='agent'){
