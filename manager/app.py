@@ -157,38 +157,8 @@ app.mount('/assets',StaticFiles(directory=str(Path(__file__).parent/'static')),n
 def me(request:Request):
     return {'authenticated':bool(request.session.get('authenticated')),'csrf':request.session.get('csrf') if request.session.get('authenticated') else None,'hub_configured':bool(HUB_URL),'user':request.session.get('user') if request.session.get('authenticated') else None}
 
-# Login attempts are kept separately from SSH/enrolment rate limiting. A successful
-# login MUST NOT count towards the 15-minute limit (v1.1.0 mistakenly counted all
-# requests, including successful ones). Never trust arbitrary X-Forwarded-For here:
-# the reverse proxy must be explicitly configured as a trusted source first.
-def login_failure_key(remote: str) -> str:
-    return 'login_fail:' + remote
-
-def check_login_failures(key: str, limit: int = 10) -> None:
-    now = int(time.time())
-    with store.connect() as c:
-        c.execute('DELETE FROM attempts WHERE ts<?', (now - 900,))
-        row = c.execute('SELECT COUNT(*) AS n, MIN(ts) AS oldest FROM attempts WHERE ip=?', (key,)).fetchone()
-    if row['n'] >= limit:
-        remaining = max(1, int(row['oldest']) + 900 - now)
-        minutes = (remaining + 59) // 60
-        raise HTTPException(429,
-            f'Слишком много неверных попыток. Повтори через {minutes} мин.',
-            headers={'Retry-After': str(remaining)})
-
-def record_login_failure(key: str) -> None:
-    with store.connect() as c:
-        c.execute('INSERT INTO attempts VALUES(?,?)', (key, int(time.time())))
-
-def clear_login_failures(key: str) -> None:
-    with store.connect() as c:
-        c.execute('DELETE FROM attempts WHERE ip=?', (key,))
-
 @app.post('/api/login')
 def login(data:Login, request:Request):
-    remote=request.client.host if request.client else 'unknown'
-    key=login_failure_key(remote)
-    check_login_failures(key)
     with store.connect() as c:
         row=c.execute('SELECT * FROM admins LIMIT 1').fetchone()
     if not row: raise HTTPException(503,'Initialize an admin account from the server console')
@@ -196,9 +166,7 @@ def login(data:Login, request:Request):
     try: good=ph.verify(row['password_hash'],data.password)
     except (argon_exc.VerifyMismatchError,argon_exc.InvalidHashError): pass
     if not good or not secrets.compare_digest(row['username'],data.username):
-        record_login_failure(key)
         raise HTTPException(401,'Неверный логин или пароль')
-    clear_login_failures(key)
     request.session.clear()
     request.session['authenticated']=True
     request.session['user']=row['username']
