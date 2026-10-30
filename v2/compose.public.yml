@@ -1,0 +1,26 @@
+services:
+  caddy-v2:
+    image: caddy:2.10.2-alpine
+    restart: unless-stopped
+    depends_on:
+      - manager-v2
+    environment:
+      XPPN_V2_DOMAIN: ${XPPN_V2_DOMAIN:?Set XPPN_V2_DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile.public:/etc/caddy/Caddyfile:ro
+      - v2-caddy-data:/data
+      - v2-caddy-config:/config
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    pids_limit: 160
+    mem_limit: 256m
+volumes:
+  v2-caddy-data:
+  v2-caddy-config:
