@@ -318,3 +318,16 @@ body{font-size:14px;background:#09090b}
 @media(max-width:1100px){.library-layout{grid-template-columns:245px minmax(0,1fr)}.preset-workspace{grid-template-columns:340px minmax(0,1fr)}}
 @media(max-width:850px){.library-layout,.preset-workspace{grid-template-columns:1fr}.library-browser{min-height:0}.library-files{max-height:230px}.library-editor-fields{grid-template-columns:1fr 1fr}.node-section-head{align-items:flex-start;flex-direction:column}.sidebar{width:74px;padding:12px 7px}.sidebar:not(.force-expanded){width:74px}.sidebar-link{font-size:0;justify-content:center}.sidebar .brand b,.sidebar .brand-soft,.sidebar .side-heading{display:none}.sidebar-top{flex-direction:column;align-items:center}.sidebar-top .brand{margin:0}.sidebar-top .sidebar-toggle{margin:0}.sidebar .nav-counter{display:none}.side-bottom{display:none}}
 @media(max-width:600px){.workspace{padding:0 13px 55px!important}.sidebar{width:59px!important;padding:10px 5px!important}.sidebar-top .brand{display:none}.sidebar-toggle{width:36px;height:36px}.sidebar-link{padding:11px 0}.stats{grid-template-columns:repeat(3,minmax(0,1fr))}.library-editor-fields{grid-template-columns:1fr}.library-editor{padding:13px}.library-editor-actions .btn{flex:1}.preset-editor-panel{padding:14px}.config-toolbar label{min-width:100%}.node-section-head .btn{width:100%}}
+
+
+/* Proper alignment for offline Lucide icons, including compact controls. */
+.btn:has(.lucide-icon){display:inline-flex;align-items:center;justify-content:center;gap:7px}
+.btn .lucide-icon{width:15px;height:15px}
+.editor-disclosure summary:has(.lucide-icon){display:flex;align-items:center;gap:10px}
+.editor-disclosure summary .lucide-icon{width:17px;height:17px}
+.component-symbol .lucide-icon{width:20px;height:20px}
+.server-icon .lucide-icon,.bundle-card-icon .lucide-icon,.library-file-glyph .lucide-icon{width:19px;height:19px}
+.server-config-link:has(.lucide-icon){display:inline-flex;align-items:center;gap:9px}
+.server-config-link .lucide-icon{width:16px;height:16px}
+.config-fileicon .lucide-icon,.config-empty-symbol .lucide-icon{width:21px;height:21px}
+.preset-icon .lucide-icon{width:22px;height:22px}
