@@ -6,8 +6,8 @@
   <meta name="referrer" content="no-referrer">
   <meta name="theme-color" content="#09090b">
   <title>XPPN Manager 2.1 — рабочая область</title>
-  <link rel="stylesheet" href="/static/style.css?v=2.1.1">
-  <script src="/static/app.js?v=2.1.1" defer></script>
+  <link rel="stylesheet" href="/static/style.css?v=2.2.0">
+  <script src="/static/app.js?v=2.2.0" defer></script>
 </head>
 <body>
   <div id="login-screen" class="auth-overlay">
@@ -30,7 +30,7 @@
       <div class="sidebar-head">
         <div class="brand" title="XPPN Manager">
           <span class="logo-mark small"><svg><use href="/static/icons.svg#i-shield-check"></use></svg></span>
-          <span class="brand-name"><strong>XPPN</strong><small>MANAGER 2.1.1</small></span>
+          <span class="brand-name"><strong>XPPN</strong><small>MANAGER 2.2</small></span>
         </div>
         <button class="icon-button" id="toggle-sidebar" title="Свернуть меню" aria-label="Свернуть меню" type="button">
           <svg><use href="/static/icons.svg#i-panel-left-close"></use></svg>
@@ -42,6 +42,7 @@
         <button class="nav-link" data-page="configs" title="Конфигурации" type="button"><svg><use href="/static/icons.svg#i-file-code"></use></svg><span>Конфигурации</span></button>
         <button class="nav-link" data-page="presets" title="Пресеты" type="button"><svg><use href="/static/icons.svg#i-layers"></use></svg><span>Пресеты</span></button>
         <button class="nav-link" data-page="settings" title="Настройки" type="button"><svg><use href="/static/icons.svg#i-settings-2"></use></svg><span>Настройки</span></button>
+        <button class="nav-link" data-page="updates" title="Обновления" type="button"><svg><use href="/static/icons.svg#i-refresh-cw"></use></svg><span>Обновления</span></button>
       </nav>
       <div class="sidebar-bottom">
         <span class="phase-dot"></span><span class="phase-label">Режим предпросмотра</span>
@@ -134,6 +135,36 @@
               </div>
             </section>
             <aside class="panel info-panel"><svg class="info-icon"><use href="/static/icons.svg#i-shield-check"></use></svg><h3>Безопасный предпросмотр</h3><p>Действующие VPN-конфиги и ключи не изменяются при редактировании библиотеки или создании плана моста. Применение будет подключено отдельно после проверки совместимости и отката.</p><p>Глубокая проверка сетевой доступности из регионов потребует независимых измерительных узлов и не подменяется проверкой с одного VPS.</p></aside>
+          </div>
+        </section>
+        <section id="page-updates" class="page hidden">
+          <div class="page-heading">
+            <div><p class="eyebrow">ОБСЛУЖИВАНИЕ ПАНЕЛИ</p><h1>Обновления</h1>
+            <p class="subheading">Проверяй новые версии и устанавливай их прямо здесь. Домен, настройки и база данных сохраняются.</p></div>
+          </div>
+          <div class="settings-layout">
+            <section class="panel settings-card">
+              <div class="settings-head">
+                <span class="feature-icon"><svg><use href="/static/icons.svg#i-refresh-cw"></use></svg></span>
+                <div><h2>Обновление XPPN Manager</h2><p>GitHub · ветка v2/rebuild-single-panel</p></div>
+              </div>
+              <div class="metrics update-metrics">
+                <div class="metric"><span>Установленная версия</span><strong id="update-installed" class="update-sha">—</strong></div>
+                <div class="metric"><span>Версия в GitHub</span><strong id="update-remote" class="update-sha">—</strong></div>
+              </div>
+              <p id="update-status" class="form-feedback">Проверяем состояние…</p>
+              <div class="form-buttons update-actions">
+                <button class="btn subtle" type="button" id="update-check"><svg><use href="/static/icons.svg#i-refresh-cw"></use></svg>Проверить обновления</button>
+                <button class="btn primary" type="button" id="update-start" disabled><svg><use href="/static/icons.svg#i-arrow-right"></use></svg>Установить обновление</button>
+              </div>
+              <p class="muted small" id="update-help">Перед обновлением менеджер делает резервную копию базы, затем проверяет запуск новой версии. Если проверка не пройдёт, пытается восстановить предыдущий код.</p>
+            </section>
+            <aside class="panel info-panel">
+              <svg class="info-icon"><use href="/static/icons.svg#i-shield-check"></use></svg>
+              <h3>Безопасное обновление</h3>
+              <p>Операцию выполняет отдельная служба на сервере. Веб-панель не получает доступ к Docker или командам root.</p>
+              <p>Обновляется только XPPN Manager — конфигурации действующих VPN-нод не изменяются.</p>
+            </aside>
           </div>
         </section>
       </main>
