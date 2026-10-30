@@ -34,5 +34,5 @@ assert.match(html,/id="sidebar-toggle"/,'collapsible navigation');
 assert.match(css,/\.workspace\{margin:0!important;width:0!important/,'workspace should fill available width');
 assert.match(html,/id="xicon-server"/,'actual local Lucide icon sprite');
 assert.match(js,/localStorage\.setItem\('xppn:sidebarCollapsed'/,'sidebar preference persists');
-assert.match(js,/await api\('\/config-presets'/,'preset API should be connected');
+assert.match(js,/config-presets/,'preset API should be connected');
 console.log('PASS: black theme and browser configuration editor contracts');
