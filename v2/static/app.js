@@ -196,14 +196,16 @@ function bridgeExitModal(id){
     '<form><label>Выходная нода<select name="exit_id">'+exits.map(n=>
     '<option value="'+esc(n.id)+'">'+esc(n.code)+' · '+esc(n.domain)+'</option>').join("")+
     '</select></label>'+
+    (!bridge.has_snapshot?'<label>Шаблон Xray <span class="muted">· для нового моста</span><select name="config_template_id"><option value="">Стандартный образец XPPN</option>'+state.configs.filter(f=>f.kind==="xray").map(f=>'<option value="'+esc(f.id)+'">'+esc(f.name)+'</option>').join("")+'</select></label>':'')+
     '<label>UUID межсерверного VLESS <span class="muted">· необязательно</span><input name="outgoing_uuid" placeholder="Пусто = создать новый UUID" autocomplete="off"></label>'+
-    '<label>Дополнительный TCP-порт <span class="muted">· автоматически</span><input name="inbound_port" type="number" min="8444" max="8999" placeholder="8444"></label>'+
+    (bridge.has_snapshot?'<label>Дополнительный TCP-порт <span class="muted">· автоматически</span><input name="inbound_port" type="number" min="8444" max="8999" placeholder="8444"></label>':'')+
     '<p class="muted small">UUID должен совпадать с пользователем принимающего outbound на выходном сервере. Автоматическая синхронизация обеих сторон пока не включена.</p>'+
     '<div class="form-buttons"><button type="submit" class="btn primary">Подготовить изменения</button></div></form>',
     async fd=>{
       const data={exit_id:fd.get("exit_id")};
       if(fd.get("outgoing_uuid"))data.outgoing_uuid=fd.get("outgoing_uuid");
       if(fd.get("inbound_port"))data.inbound_port=Number(fd.get("inbound_port"));
+      if(fd.get("config_template_id"))data.config_template_id=fd.get("config_template_id");
       const plan=await api("/bridges/"+encodeURIComponent(id)+"/plans","POST",data);
       setTimeout(()=>openPlan(plan),80);
       message("Черновик моста подготовлен без изменений на VPS.");
@@ -466,6 +468,18 @@ function bindEvents(){
     }catch(e){message(e.message,true)}
   };
   $("new-config").onclick=()=>resetConfig();
+  $("config-load-bridge").onclick=async()=>{
+    if(!discardConfig())return;
+    try{
+      const sample=await api("/template/default");
+      resetConfig(true);
+      $("config-name").value=sample.name;
+      $("config-kind").value="xray";
+      $("config-content").value=sample.content;
+      markConfigDirty();
+      message("Загружен образец. Переменные выделены ниже, файл пока не сохранён.");
+    }catch(e){message(e.message,true)}
+  };
   $("config-search").addEventListener("input",renderConfigList);
   $("config-files").addEventListener("click",e=>{
     const button=e.target.closest("[data-open-config]");
