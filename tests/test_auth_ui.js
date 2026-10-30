@@ -21,5 +21,5 @@ ctx.authUI(false);
 assert.equal(elems['login-screen'].hidden,true,'After login: login hidden');
 assert.equal(elems['app-screen'].hidden,false,'After login: dashboard visible');
 const html=fs.readFileSync(path.join(root,'manager/static/index.html'),'utf8');
-assert(html.includes('/assets/app.js?v=1.7.0'),'JS cache busting is required');
+assert(html.includes('/assets/app.js?v=1.8.0'),'JS cache busting is required');
 console.log('PASS: login/logout screen visibility and static JS version');
