@@ -98,3 +98,29 @@ def test_previews_hide_credentials_and_show_real_change():
     values=variables_map(source(),[nl])
     assert any(x["key"]=="source.domain" for x in values)
     assert all(nl.user_id not in x["preview"] for x in values)
+
+
+
+def test_full_editable_xray_template_renders_all_highlighted_fields():
+    from pathlib import Path
+    from v2.template_engine import render_template_document
+    sample=json.loads((Path(__file__).resolve().parents[1] /
+                      "v2/data/xray_bridge_template.json").read_text(encoding="utf-8"))
+    de=dest()
+    output=render_template_document(source(),de,sample)
+    assert output["inbounds"][0]["tag"]=="RUS1_DE1_VLESS_TLS_IN"
+    assert output["inbounds"][1]["tag"]=="RUS1_FILTER_VLESS_TLS_IN"
+    assert output["outbounds"][0]["settings"]["vnext"][0]["address"]=="de1.gowayot.com"
+    assert output["outbounds"][0]["settings"]["vnext"][0]["users"][0]["id"]==de.user_id
+    assert "rus1.gowayot.com_fullchain.pem" in output["inbounds"][0]["streamSettings"]["tlsSettings"]["certificates"][0]["certificateFile"]
+    assert output["routing"]["rules"][3]["inboundTag"]==["RUS1_FILTER_VLESS_TLS_IN"]
+    assert "{{" not in json.dumps(output)
+
+def test_unknown_or_mismatched_user_template_is_rejected():
+    from pathlib import Path
+    from v2.template_engine import render_template_document
+    sample=json.loads((Path(__file__).resolve().parents[1] /
+                      "v2/data/xray_bridge_template.json").read_text(encoding="utf-8"))
+    sample["log"]["loglevel"]="{{undocumented.variable}}"
+    with pytest.raises(TemplateError):
+        render_template_document(source(),dest(),sample)
