@@ -35,6 +35,8 @@ def prepare_bridge_exit(bridge_id: str, exit_node_id: str, outgoing_uuid: str,
              inbound_port=requested_inbound_port)
     current = storage.get_snapshot(bridge_id)
     if current is None:
+        if requested_inbound_port is not None:
+            raise TemplateError("Первый выход моста использует фиксированные 443 и 8443; порт выбирать не нужно")
         if bridge["exits"]:
             raise TemplateError("Не хватает снимка действующего конфига. Сначала импортируй его.")
         custom = None
