@@ -23,7 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from pydantic import BaseModel, Field
 
-from . import library, remnawave, service, storage, web_updates
+from . import bundled, library, remnawave, service, storage, web_updates
 from .template_engine import Endpoint, TemplateError, safe_preview, variables_map
 
 STATIC = Path(__file__).resolve().parent / "static"
@@ -94,6 +94,7 @@ def startup():
     _username()
     _password_hash()
     storage.init_db()
+    bundled.seed_defaults()
 
 
 @app.middleware("http")
