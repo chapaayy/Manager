@@ -63,8 +63,8 @@ async function refresh(){
   renderPresets();
   renderPanel();
 }
-async function signIn(password){
-  const result=await api("/auth/login","POST",{password});
+async function signIn(username,password){
+  const result=await api("/auth/login","POST",{username,password});
   csrf=result.csrf;
   setAuthorized(true);
   await refresh();
@@ -431,7 +431,7 @@ function bindEvents(){
     e.preventDefault();
     const btn=e.currentTarget.querySelector("button");btn.disabled=true;
     $("login-error").textContent="";
-    try{await signIn($("login-password").value);$("login-password").value=""}
+    try{await signIn($("login-username").value.trim(),$("login-password").value);$("login-password").value=""}
     catch(err){$("login-error").textContent=err.message}
     finally{btn.disabled=false}
   });
