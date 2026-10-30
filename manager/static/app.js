@@ -11,8 +11,8 @@ function authUI(showLogin){$('login-screen').classList.toggle('hidden',!showLogi
 async function init(){const me=await api('/me');if(!me.authenticated){authUI(true);return}csrf=me.csrf;authUI(false);showPage('servers');await loadNodes()}
 $('login-form').onsubmit=async e=>{e.preventDefault();$('login-error').textContent='';try{const d=await api('/login','POST',{username:$('login-user').value.trim(),password:$('login-pass').value});csrf=d.csrf;$('login-pass').value='';authUI(false);showPage('servers');await loadNodes()}catch(e){$('login-error').textContent=errorText(e)}};
 $('logout').onclick=async()=>{try{await api('/logout','POST',{})}finally{csrf='';stopStream();authUI(true)}};
-$('nav-overview').onclick=()=>showPage('overview');$('nav-configs').onclick=()=>showPage('configs');$('nav-logs').onclick=()=>showPage('logs');$('nav-monitoring').onclick=()=>showPage('monitoring');$('nav-updates').onclick=()=>showPage('updates');$('nav-settings').onclick=()=>showPage('settings');$('nav-projects').onclick=()=>showPage('projects');$('nav-servers').onclick=()=>showPage('servers');$('nav-add').onclick=()=>showPage('add');$('top-add').onclick=()=>showPage('add');$('go-back').onclick=()=>showPage('servers');$('cancel-add').onclick=()=>showPage('servers');$('refresh').onclick=()=>loadNodes().catch(e=>toast(errorText(e)));
-function showPage(page){if(page!=='detail'){stopStream();stopLiveLogs()}if(page!=='logs')logCenterActive=false;for(const p of ['servers','add','detail','projects','overview','configs','logs','monitoring','updates','settings'])$(p+'-page').classList.toggle('hidden',p!==page);for(const n of ['servers','add','projects','overview','configs','logs','monitoring','updates','settings'])$('nav-'+n).classList.toggle('active',page===n||(page==='detail'&&n==='servers'));$('breadcrumb').textContent={servers:'Ноды',add:'Новая нода',detail:'Управление',projects:'Проекты',overview:'Обзор',configs:'Конфигурации',logs:'Логи',monitoring:'Мониторинг',updates:'Обновления',settings:'Настройки'}[page];if(page==='add'){setWizardStep(1);refreshWizardProjects().catch(e=>toast(errorText(e)))}if(page==='projects')loadProjectsUI().catch(e=>toast(errorText(e)));if(page==='servers')loadNodes().catch(e=>toast(errorText(e)));if(page==='overview')loadOverview().catch(e=>toast(errorText(e)));if(page==='monitoring')loadMonitoring().catch(e=>toast(errorText(e)));if(page==='logs'){logCenterActive=true;loadLogCenter().catch(e=>toast(errorText(e)))}if(page==='configs')loadConfigCenter().catch(e=>toast(errorText(e)));if(page==='updates')loadUpdateStatus().catch(e=>toast(errorText(e)));if(page==='settings')loadSettings().catch(e=>toast(errorText(e)))}
+$('nav-presets').onclick=()=>showPage('presets');$('nav-overview').onclick=()=>showPage('overview');$('nav-configs').onclick=()=>showPage('configs');$('nav-logs').onclick=()=>showPage('logs');$('nav-monitoring').onclick=()=>showPage('monitoring');$('nav-updates').onclick=()=>showPage('updates');$('nav-settings').onclick=()=>showPage('settings');$('nav-projects').onclick=()=>showPage('projects');$('nav-servers').onclick=()=>showPage('servers');$('nav-add').onclick=()=>showPage('add');$('top-add').onclick=()=>showPage('add');$('go-back').onclick=()=>showPage('servers');$('cancel-add').onclick=()=>showPage('servers');$('refresh').onclick=()=>loadNodes().catch(e=>toast(errorText(e)));
+function showPage(page){if(page!=='detail'){stopStream();stopLiveLogs()}if(page!=='logs')logCenterActive=false;for(const p of ['servers','add','detail','projects','overview','configs','presets','logs','monitoring','updates','settings'])$(p+'-page').classList.toggle('hidden',p!==page);for(const n of ['servers','add','projects','overview','configs','presets','logs','monitoring','updates','settings'])$('nav-'+n).classList.toggle('active',page===n||(page==='detail'&&n==='servers'));$('breadcrumb').textContent={servers:'Ноды',add:'Новая нода',detail:'Управление',projects:'Проекты',overview:'Обзор',configs:'Конфигурации',presets:'Пресеты',logs:'Логи',monitoring:'Мониторинг',updates:'Обновления',settings:'Настройки'}[page];if(page==='add'){setWizardStep(1);refreshWizardProjects().catch(e=>toast(errorText(e)))}if(page==='projects')loadProjectsUI().catch(e=>toast(errorText(e)));if(page==='servers')loadNodes().catch(e=>toast(errorText(e)));if(page==='overview')loadOverview().catch(e=>toast(errorText(e)));if(page==='monitoring')loadMonitoring().catch(e=>toast(errorText(e)));if(page==='logs'){logCenterActive=true;loadLogCenter().catch(e=>toast(errorText(e)))}if(page==='configs'){loadConfigCenter().catch(e=>toast(errorText(e)));loadLibraryPanel().catch(e=>toast(errorText(e)))}if(page==='presets')loadPresetBundles().catch(e=>toast(errorText(e)));if(page==='updates')loadUpdateStatus().catch(e=>toast(errorText(e)));if(page==='settings')loadSettings().catch(e=>toast(errorText(e)))}
 function inventory(r){return r?.components||{}}
 function installed(r,c){return !!inventory(r)[c]?.installed}
 function containerPresent(r,c){return !!inventory(r)[c]?.container}
@@ -436,4 +436,185 @@ showPage=function(page){
   }
   if(page!=='configs')++configFetchSerial;
   return originalShowPage(page);
+};
+
+
+/* v1.7: saved-file library, multi-file presets, and persistent sidebar. */
+let libraryFiles=[],libraryId=null,libraryRevision=0,libraryBaseline='',libraryDirty=false;
+let presetBundles=[],presetBundleId=null,presetDirty=false;
+const libTypes={nginx:'nginx.conf',nginx_compose:'Nginx Compose',node_compose:'Remnawave Compose'};
+const libraryFormData=()=>({name:$('lib-name').value.trim(),kind:$('lib-kind').value,content:$('lib-content').value});
+function markLibraryDirty(){
+  libraryDirty=JSON.stringify(libraryFormData())!==libraryBaseline;
+  $('lib-edit-hint').textContent=libraryDirty?'● Есть несохранённые изменения':'Файл хранится на главном сервере. Сам по себе не меняет VPN-ноды.';
+}
+function librarySetClean(){libraryBaseline=JSON.stringify(libraryFormData());libraryDirty=false;markLibraryDirty();}
+function libraryConfirmDiscard(){return !libraryDirty||confirm('В библиотечном редакторе есть несохранённые изменения. Отменить их?');}
+['lib-name','lib-kind','lib-content'].forEach(id=>$(id).addEventListener('input',markLibraryDirty));
+$('lib-search').oninput=()=>renderLibraryList();
+function renderLibraryList(){
+  const term=$('lib-search').value.trim().toLowerCase();
+  const items=libraryFiles.filter(f=>(f.name+' '+libTypes[f.kind]).toLowerCase().includes(term));
+  $('lib-files').innerHTML=items.length?items.map(f=>`<button class="library-file ${f.id===libraryId?'active':''}" data-file="${escapeHtml(f.id)}" type="button"><span class="library-file-glyph">⌁</span><span><strong>${escapeHtml(f.name)}</strong><small>${escapeHtml(libTypes[f.kind]||f.kind)} · v${f.revision}</small></span></button>`).join(''):'<p class="empty-note">Файлов пока нет. Создай первый конфиг прямо здесь.</p>';
+  document.querySelectorAll('#lib-files [data-file]').forEach(b=>b.onclick=()=>openLibraryFile(b.dataset.file));
+}
+function resetLibraryEditor(force=false){
+  if(!force&&!libraryConfirmDiscard())return;
+  libraryId=null;libraryRevision=0;
+  $('lib-name').value='';$('lib-kind').value='nginx';$('lib-kind').disabled=false;
+  $('lib-content').value='';
+  $('lib-edit-caption').textContent='Новый конфиг';$('lib-edit-revision').textContent='Не сохранён';
+  $('lib-delete').classList.add('hidden');librarySetClean();renderLibraryList();
+}
+$('lib-new').onclick=()=>resetLibraryEditor();
+async function openLibraryFile(id){
+  if(!libraryConfirmDiscard())return;
+  try{
+    const f=await api('/config-library/'+encodeURIComponent(id));
+    libraryId=f.id;libraryRevision=f.revision;
+    $('lib-name').value=f.name;$('lib-kind').value=f.kind;$('lib-kind').disabled=true;
+    $('lib-content').value=f.content;
+    $('lib-edit-caption').textContent=f.name;$('lib-edit-revision').textContent='Версия '+f.revision;
+    $('lib-delete').classList.remove('hidden');librarySetClean();renderLibraryList();
+  }catch(e){toast(errorText(e))}
+}
+async function loadLibraryPanel(openId=null){
+  libraryFiles=await api('/config-library');
+  if(openId){await openLibraryFile(openId);return}
+  if(libraryId&&!libraryFiles.some(f=>f.id===libraryId))resetLibraryEditor(true);
+  renderLibraryList();
+}
+$('lib-save').onclick=async()=>{
+  const data=libraryFormData();
+  if(!data.name||!data.content.trim())return toast('Укажи название и текст конфига');
+  if(data.content.length>100000)return toast('Файл слишком большой для библиотеки (до 100 КБ)');
+  const btn=$('lib-save');btn.disabled=true;
+  try{
+    const id=libraryId;
+    const saved=await api(id?'/config-library/'+encodeURIComponent(id):'/config-library',id?'PUT':'POST',id?{...data,revision:libraryRevision}:data);
+    libraryDirty=false;libraryId=saved.id;
+    await loadLibraryPanel(saved.id);
+    toast('Файл сохранён в библиотеке');
+  }catch(e){toast(errorText(e))}finally{btn.disabled=false}
+};
+$('lib-delete').onclick=async()=>{
+  if(!libraryId||!confirm('Удалить файл из библиотеки? Файлы, входящие в пресеты, сначала нужно убрать из них.'))return;
+  try{
+    await api('/config-library/'+encodeURIComponent(libraryId),'DELETE');
+    libraryDirty=false;resetLibraryEditor(true);await loadLibraryPanel();
+    toast('Файл удалён');
+  }catch(e){toast(errorText(e))}
+};
+$('lib-from-node').onclick=()=>{
+  if($('hub-config-editor').classList.contains('hidden'))return toast('Сначала открой конфиг подключённой ноды ниже');
+  if(!libraryConfirmDiscard())return;
+  resetLibraryEditor(true);
+  $('lib-kind').value=$('hub-config-name').value;
+  $('lib-name').value='Копия '+($('hub-config-node').selectedOptions[0]?.textContent||'ноды')+' · '+(libTypes[$('hub-config-name').value]||'конфиг');
+  $('lib-content').value=$('hub-config-text').value;
+  markLibraryDirty();$('lib-name').focus();
+  toast('Копия в редакторе. Нажми «Сохранить файл»');
+};
+$('lib-to-node').onclick=async()=>{
+  if(!libraryId)return toast('Выбери сохранённый файл из библиотеки');
+  const id=$('hub-config-node').value;
+  if(!id||$('hub-config-editor').classList.contains('hidden'))return toast('Нужно сначала открыть конфиг подключённой ноды');
+  if(configDirty&&!confirm('Заменить несохранённые изменения на текст из библиотеки?'))return;
+  try{
+    const f=await api('/config-library/'+encodeURIComponent(libraryId));
+    if(f.kind!==$('hub-config-name').value)return toast('Типы файла и конфига ноды различаются. Выбери соответствующий файл на ноде.');
+    if(!confirm('Вставить «'+f.name+'» в текстовый редактор ноды? На VPS ничего не изменится до применения.'))return;
+    $('hub-config-text').value=f.content;configEditChanged();
+    $('hub-config-text').scrollIntoView({behavior:'smooth',block:'center'});
+    toast('Файл вставлен. Сначала сохрани черновик, затем примени к ноде.');
+  }catch(e){toast(errorText(e))}
+};
+function resetPresetEditor(){
+  presetBundleId=null;presetDirty=false;
+  $('preset-bundle-form').reset();$('preset-editor-title').textContent='Новый пресет';
+  $('preset-editor-state').textContent='Не сохранён';
+}
+$('preset-new').onclick=resetPresetEditor;
+$('preset-cancel').onclick=resetPresetEditor;
+['preset-bundle-name','preset-bundle-description','preset-file-nginx','preset-file-nginx_compose','preset-file-node_compose'].forEach(id=>$(id).oninput=()=>{presetDirty=true;$('preset-editor-state').textContent='Изменён'});
+function presetOptions(kind,chosen=''){
+  return '<option value="">Без этого файла</option>'+libraryFiles.filter(f=>f.kind===kind).map(f=>`<option value="${escapeHtml(f.id)}" ${f.id===chosen?'selected':''}>${escapeHtml(f.name)} · v${f.revision}</option>`).join('');
+}
+function renderPresetSelectors(selected={}){
+  for(const kind of Object.keys(libTypes))$('preset-file-'+kind).innerHTML=presetOptions(kind,selected[kind]||'');
+}
+async function loadPresetBundles(){
+  [libraryFiles,presetBundles]=await Promise.all([api('/config-library'),api('/config-presets')]);
+  const selected={};
+  if(presetBundleId){
+    const old=presetBundles.find(p=>p.id===presetBundleId);
+    for(const item of old?.items||[])selected[item.kind]=item.config_id;
+  }
+  renderPresetSelectors(selected);renderPresetCards();
+}
+function renderPresetCards(){
+  $('preset-count').textContent=presetBundles.length+' набора';
+  $('preset-cards').innerHTML=presetBundles.length?presetBundles.map(p=>`<article class="bundle-card">
+    <div class="bundle-card-header"><span class="bundle-card-icon">▤</span><div><h3>${escapeHtml(p.name)}</h3><p>${escapeHtml(p.description||'Пользовательский набор конфигураций')}</p></div></div>
+    <div class="bundle-files">${p.items.map(i=>`<button type="button" data-open-library="${escapeHtml(i.config_id)}" class="bundle-file"><span>${escapeHtml(libTypes[i.kind])}</span><strong>${escapeHtml(i.config_name)}</strong></button>`).join('')}</div>
+    <div class="bundle-card-actions"><button type="button" data-edit-preset="${escapeHtml(p.id)}" class="btn secondary sm">Настроить</button><button type="button" data-delete-preset="${escapeHtml(p.id)}" class="btn secondary sm">Удалить</button></div>
+  </article>`).join(''):'<div class="empty-note">Пресетов пока нет. Создай конфиги во вкладке «Конфигурации», затем собери их здесь.</div>';
+  document.querySelectorAll('[data-edit-preset]').forEach(b=>b.onclick=()=>editPreset(b.dataset.editPreset));
+  document.querySelectorAll('[data-delete-preset]').forEach(b=>b.onclick=()=>deletePreset(b.dataset.deletePreset));
+  document.querySelectorAll('[data-open-library]').forEach(b=>b.onclick=()=>{const id=b.dataset.openLibrary;showPage('configs');loadLibraryPanel(id).catch(e=>toast(errorText(e)));});
+}
+function editPreset(id){
+  const p=presetBundles.find(x=>x.id===id);if(!p)return;
+  if(presetDirty&&!confirm('Отменить несохранённые изменения другого пресета?'))return;
+  presetBundleId=id;presetDirty=false;
+  $('preset-bundle-name').value=p.name;$('preset-bundle-description').value=p.description;
+  const selected=Object.fromEntries(p.items.map(i=>[i.kind,i.config_id]));
+  renderPresetSelectors(selected);
+  $('preset-editor-title').textContent=p.name;$('preset-editor-state').textContent='Сохранён';
+  $('preset-bundle-name').focus();
+}
+$('preset-bundle-form').onsubmit=async e=>{
+  e.preventDefault();
+  const ids=Object.keys(libTypes).map(k=>$('preset-file-'+k).value).filter(Boolean);
+  if(!ids.length)return toast('Добавь хотя бы один файл в пресет');
+  const body={name:$('preset-bundle-name').value.trim(),description:$('preset-bundle-description').value.trim(),config_ids:ids};
+  const id=presetBundleId;
+  try{
+    await api(id?'/config-presets/'+encodeURIComponent(id):'/config-presets',id?'PUT':'POST',body);
+    resetPresetEditor();await loadPresetBundles();toast('Пресет сохранён');
+  }catch(e){toast(errorText(e))}
+};
+async function deletePreset(id){
+  const p=presetBundles.find(x=>x.id===id);
+  if(!p||!confirm('Удалить пресет «'+p.name+'»? Сами файлы библиотеки сохранятся.'))return;
+  try{
+    await api('/config-presets/'+encodeURIComponent(id),'DELETE');
+    if(presetBundleId===id)resetPresetEditor();
+    await loadPresetBundles();toast('Пресет удалён, файлы не затронуты');
+  }catch(e){toast(errorText(e))}
+}
+const side=$('app-screen'),toggle=$('sidebar-toggle');
+function applySidebarCollapsed(collapsed){
+  side.classList.toggle('sidebar-collapsed',collapsed);
+  toggle.setAttribute('aria-expanded',String(!collapsed));
+  toggle.setAttribute('aria-label',collapsed?'Развернуть меню':'Свернуть меню');
+  toggle.title=collapsed?'Развернуть меню':'Свернуть меню';
+}
+try{applySidebarCollapsed(localStorage.getItem('xppn:sidebarCollapsed')==='1')}catch{applySidebarCollapsed(false)}
+toggle.onclick=()=>{
+  const collapsed=!side.classList.contains('sidebar-collapsed');
+  applySidebarCollapsed(collapsed);
+  try{localStorage.setItem('xppn:sidebarCollapsed',collapsed?'1':'0')}catch{}
+};
+const earlierPage=showPage;
+showPage=function(page){
+  if(page!=='configs'&&libraryDirty&&!$('configs-page').classList.contains('hidden')){
+    if(!confirm('В библиотеке есть несохранённый конфиг. Закрыть страницу без сохранения?'))return;
+    libraryDirty=false;
+  }
+  if(page!=='presets'&&presetDirty&&!$('presets-page').classList.contains('hidden')){
+    if(!confirm('В пресете есть несохранённые изменения. Закрыть без сохранения?'))return;
+    presetDirty=false;
+  }
+  return earlierPage(page);
 };
