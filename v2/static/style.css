@@ -14,3 +14,24 @@
 .update-actions{justify-content:flex-start;margin:18px 0}
 .update-actions button{min-height:43px}
 @media(max-width:600px){.update-metrics{grid-template-columns:1fr}.update-actions button{flex:1}}
+
+/* v2.3: spacious collections; editors only inside dedicated dialogs. */
+.library-toolbar{display:flex;justify-content:space-between;align-items:center;gap:18px;margin:28px 0 20px}
+.library-toolbar .field-label{flex:1;max-width:420px}
+.library-toolbar input{margin-top:7px}
+.library-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,320px),1fr));gap:15px;align-items:start}
+.library-grid>.empty-state{min-height:280px}
+.library-tile{display:flex;width:100%;align-items:center;gap:15px;text-align:left;color:var(--text);background:#18181c;border:1px solid #38383f;border-radius:13px;padding:20px;min-height:100px;transition:background .15s,border-color .15s}
+.library-tile:hover{background:#222228;border-color:#666670}
+.library-tile .feature-icon{width:43px;height:43px}
+.library-tile-content{flex:1;min-width:0;display:grid;gap:7px}
+.library-tile-content strong{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.library-tile-content small{font-size:11px;color:#a5a6b1}
+.library-dialog{width:min(96vw,1160px);max-width:none;padding:23px}
+.library-dialog .panel,.preset-dialog .panel{border:0;background:transparent;padding:0}
+.library-dialog .code-workspace{min-height:0}
+.library-dialog #config-content{min-height:420px;height:min(54vh,670px);max-height:70vh}
+.preset-dialog{width:min(93vw,590px);max-width:none}
+.preset-dialog .preset-form-panel{min-width:0}
+#preset-cards.library-grid{grid-template-columns:repeat(auto-fill,minmax(min(100%,325px),1fr))}
+@media(max-width:620px){.library-dialog{padding:12px}.library-dialog #config-content{min-height:300px}.library-toolbar{align-items:flex-start;flex-direction:column}.library-toolbar .field-label{width:100%;max-width:100%}.library-grid{grid-template-columns:1fr}.library-tile{padding:15px}}
