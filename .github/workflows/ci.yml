@@ -25,3 +25,23 @@ jobs:
           bash -n v2/preview-install.sh
       - name: Validate Xray transformations, HTTP API and security
         run: python -m pytest -q tests_v2
+      - name: Build v2 Docker image and test HTTP startup
+        run: |
+          docker build -f v2/Dockerfile -t xppn-v2-preview:ci .
+          docker run -d --name xppn-v2-smoke \
+            -e XPPN_V2_DB=/tmp/xppn-v2-ci.db \
+            -e XPPN_V2_ADMIN_PASSWORD=ci-only-secure-password-123456 \
+            -e XPPN_V2_SESSION_SECRET=ci-only-session-secret-012345678901234567890123 \
+            -e XPPN_DATA_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= \
+            -e XPPN_V2_COOKIE_SECURE=0 \
+            -p 127.0.0.1:8790:8000 xppn-v2-preview:ci
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do
+            if curl -fsS http://127.0.0.1:8790/api/health | grep -q '"ok":true'; then
+              docker rm -f xppn-v2-smoke
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs xppn-v2-smoke
+          docker rm -f xppn-v2-smoke
+          exit 1
