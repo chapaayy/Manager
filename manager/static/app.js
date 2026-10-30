@@ -302,6 +302,7 @@ function configSelectionChanged() {
 }
 $('hub-config-node').onchange=configSelectionChanged;
 $('hub-config-name').onchange=configSelectionChanged;
+$('hub-config-load').onclick=()=>{if(configDirty&&!confirm('Отменить несохранённые изменения и загрузить файл заново?'))return;loadStoredConfig().catch(e=>toast(errorText(e)));};
 loadConfigCenter=async function(){
   await ensureHubNodes();
   if(selectedNode && nodesCache.some(n=>n.id===selectedNode)) $('hub-config-node').value=selectedNode;
