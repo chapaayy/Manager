@@ -144,7 +144,7 @@ function renderTab(){
   bindActions();if($('live-logs-toggle'))$('live-logs-toggle').onchange=e=>{if(e.target.checked)startLiveLogs();else stopLiveLogs()};
  }else if(selectedTab==='configs'){
   el.innerHTML='<h2>Центральный редактор конфигураций</h2><p class="muted">Копии файлов и история сохраняются на главном сервере. Для первой загрузки достаточно один раз синхронизировать файл с ноды.</p><button class="btn primary" id="open-global-configs">Открыть редактор</button>';
-  $('open-global-configs').onclick=()=>{showPage('configs');$('hub-config-node').value=selectedNode;loadStoredConfig().catch(e=>toast(errorText(e)))};
+  $('open-global-configs').onclick=()=>showPage('configs');
  }else if(selectedTab==='logs'){
   el.innerHTML='<h2>Логи ноды</h2><p class="muted">Docker, Xray, Nginx, systemd и правила хранения логов.</p><button class="btn primary" id="open-global-logs">Открыть логи</button>';
   $('open-global-logs').onclick=()=>{showPage('logs');$('hub-log-node').value=selectedNode};
@@ -427,3 +427,12 @@ loadNodes=async function(){
 };
 const originalCapabilityTabs=capabilityTabs;
 capabilityTabs=function(node){const tabs=originalCapabilityTabs(node);tabs.configs=true;return tabs;};
+const originalShowPage=showPage;
+showPage=function(page){
+  if(page!=='configs'&&!$('configs-page').classList.contains('hidden')&&configDirty){
+    if(!confirm('В редакторе остался несохранённый текст. Закрыть без сохранения?'))return;
+    configDirty=false;
+  }
+  if(page!=='configs')++configFetchSerial;
+  return originalShowPage(page);
+};
