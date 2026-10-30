@@ -22,7 +22,7 @@ jobs:
           python -m compileall -q manager agent tests
           node --check manager/static/app.js
           node tests/test_auth_ui.js
-          bash -n deploy/*.sh
+          bash -n install.sh deploy/*.sh
       - name: Unit tests
         env:
           XPPN_SESSION_SECRET: xppn-ci-only-placeholder-0123456789-0123456789
