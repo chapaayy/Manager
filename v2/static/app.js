@@ -135,7 +135,7 @@ function renderNodes(){
         '<span class="feature-icon">'+icon("git-branch")+'</span>'+
         '<span class="bridge-title"><strong>'+esc(main.code)+' · '+esc(b.name)+
         '</strong><small>'+esc(main.domain)+' · '+b.exits.length+' связанных нод</small></span>'+
-        '<span class="tiny-chip">'+(b.snapshot_enc?"Xray":"Bridge")+'</span>'+
+        '<span class="tiny-chip">'+(b.has_snapshot?"Xray сохранён":"Bridge")+'</span>'+
         '<span class="bridge-chevron">'+icon("chevron-down")+'</span></button>'+
         (open?'<div class="bridge-children">'+(children||'<p class="muted small">Пока нет подключённых выходов.</p>')+pending+
           '<div class="bridge-footer">'+
