@@ -224,8 +224,11 @@ def update_panel(body: PanelData, _=Depends(write_access)):
             raise HTTPException(422, str(e) if "публичным" in str(e) else "Некорректный исходящий IPv4") from None
     if body.token and len(body.token) < 16:
         raise HTTPException(422, "API-токен слишком короткий")
-    return storage.set_panel(url=url, outbound_ip=outbound,
-                             token=body.token if body.token else None)
+    try:
+        return storage.set_panel(url=url, outbound_ip=outbound,
+                                 token=body.token if body.token else None)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from None
 
 
 @app.post("/api/panel/check")
