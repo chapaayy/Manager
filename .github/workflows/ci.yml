@@ -32,6 +32,7 @@ jobs:
         run: |
           python -m compileall -q v2 tests_v2
           node --check v2/static/app.js
+          node --check v2/static/node-detail.js
           node --check v2/static/vps.js
           node tests_v2/test_ui.js
           bash -n v2/preview-install.sh v2/install.sh v2/activate-web-updates.sh v2/data/remote-install.sh

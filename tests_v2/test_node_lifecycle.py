@@ -23,6 +23,11 @@ def setup(tmp_path,monkeypatch):
                                remote_uuid=remote_uuid,profile_uuid=profile_uuid)
     token=agent_transport.issue_token(n["id"])
     agent_transport.heartbeat(n["id"],{"version":"1.1.0","metrics":{}})
+    # Legacy cleanup tests control their queue; remove only the new harmless
+    # automatic first TLS check. Its behavior is covered separately.
+    with storage.transaction() as db:
+        db.execute("DELETE FROM manager_agent_jobs WHERE node_id=? AND action='cert.status'",
+                   (n["id"],))
     return n,remote_uuid,profile_uuid,token
 
 

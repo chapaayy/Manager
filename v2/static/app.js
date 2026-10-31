@@ -55,12 +55,17 @@ async function refresh(){
   const [dashboard,configs,presets]=await Promise.all([
     api("/dashboard"),api("/configs"),api("/presets")
   ]);
+  // Supplemental state may fail without making the server list unusable.
+  const extra=await Promise.allSettled([api("/agents"),api("/node-certificates")]);
+  if(extra[0].status==="fulfilled")nodeOverviewAgents=extra[0].value.agents||[];
+  if(extra[1].status==="fulfilled")nodeOverviewCerts=extra[1].value.nodes||[];
   state.panel=dashboard.panel;
   state.nodes=dashboard.nodes;
   state.bridges=dashboard.bridges;
   state.configs=configs;
   state.presets=presets;
   renderNodes();
+  if(selectedNodeId&&["overview","tls"].includes(selectedNodeTab))renderNodeWorkspace();
   renderConfigList();
   renderPresets();
   renderPanel();
@@ -390,10 +395,10 @@ function renderNodes(){
       const open=expanded.has(b.id);
       const main=b.entry;
       const children=b.exits.map(e=>
-        '<div class="bridge-child">'+icon("server")+
-        '<div class="child-body"><strong>'+esc(e.code)+' · '+esc(e.name)+'</strong><small>'+
-          esc(e.domain)+' · TCP/'+esc(e.inbound_port)+'</small></div>'+
-        '<span class="tiny-chip success">Связан</span></div>'
+        '<button type="button" class="bridge-child" data-node-open="'+esc(e.id)+'">'+icon("server")+
+        '<span class="child-body"><strong>'+esc(e.code)+' · '+esc(e.name)+'</strong><small>'+
+          esc(e.domain)+' · TCP/'+esc(e.inbound_port)+'</small>'+nodeListBadges(e.id)+'</span>'+
+        '<span class="tiny-chip success">Открыть ноду</span></button>'
       ).join("");
       const pending=b.plans.map(p=>
         '<button class="bridge-child" data-action="open-plan" data-plan="'+esc(p.id)+'" type="button">'+
@@ -408,6 +413,7 @@ function renderNodes(){
         '</strong><small>'+esc(main.domain)+' · '+b.exits.length+' связанных нод</small></span>'+
         '<span class="tiny-chip">'+(b.has_snapshot?"Xray сохранён":"Bridge")+'</span>'+
         '<span class="bridge-chevron">'+icon("chevron-down")+'</span></button>'+
+        '<div class="bridge-node-shortcut"><button type="button" class="btn subtle" data-node-open="'+esc(main.id)+'">Открыть '+esc(main.code)+'</button></div>'+
         (open?'<div class="bridge-children">'+(children||'<p class="muted small">Пока нет подключённых выходов.</p>')+pending+
           '<div class="bridge-footer">'+
           '<button class="btn subtle" data-action="bridge-exit" data-bridge="'+esc(b.id)+'">'+icon("plus")+' Добавить выход</button>'+
@@ -420,9 +426,9 @@ function renderNodes(){
   $("other-nodes").innerHTML=others.length?others.map(n=>
     '<div class="node-card"><span class="feature-icon">'+icon("server")+'</span><div><strong>'+
     esc(n.code)+' · '+esc(n.name)+'</strong><p>'+esc(n.domain)+' · '+esc(labels[n.role])+
-    '</p></div><span class="tiny-chip '+(n.status==="registered"||n.status==="ready"?"success":"warning")+'">'+
+    '</p>'+nodeListBadges(n.id)+'</div><span class="tiny-chip '+(n.status==="registered"||n.status==="ready"?"success":"warning")+'">'+
     esc(n.archived?"Архив":n.lifecycle_phase?"Удаление: "+n.lifecycle_phase:n.status==="planned"?"Черновик":n.status)+'</span>'+
-    '<button type="button" class="btn subtle" data-node-lifecycle="'+esc(n.id)+'">Управление</button>'+
+    '<button type="button" class="btn primary" data-node-open="'+esc(n.id)+'">Открыть ноду</button>'+
     (n.status==="planned"?
        '<button type="button" class="btn subtle" data-delete-draft="'+esc(n.id)+'">Удалить черновик</button>':"")+
     (n.status==="planned" && (n.role==="regular"||n.role==="exit")?
@@ -756,6 +762,7 @@ async function startUpdate(){
 }
 
 function bindEvents(){
+  bindNodeWorkspace();
   $("login-form").addEventListener("submit",async e=>{
     e.preventDefault();
     const btn=e.currentTarget.querySelector("button");btn.disabled=true;

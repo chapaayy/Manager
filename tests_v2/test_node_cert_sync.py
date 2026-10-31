@@ -24,6 +24,11 @@ def ready_node(tmp_path,monkeypatch):
                                remote_uuid=str(uuid.uuid4()),profile_uuid=str(uuid.uuid4()))
     agent_transport.issue_token(n["id"])
     agent_transport.heartbeat(n["id"],{"version":"1.1.0","metrics":{}})
+    # These existing tests control the certificate jobs explicitly. Initial
+    # auto-queue behavior is covered by test_node_cert_autostart.py instead.
+    with storage.transaction() as db:
+        db.execute("DELETE FROM manager_agent_jobs WHERE node_id=? AND action='cert.status'",
+                   (n["id"],))
     return n
 
 

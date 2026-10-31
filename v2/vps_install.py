@@ -345,6 +345,8 @@ def complete_panel_registration(node_id: str, source: Endpoint):
                     "Remnawave подтвердила подключение и работу Xray ("+
                     (health["xray_version"] or "активен")+
                     "). Для клиентского доступа настрой Hosts и Internal Squads.")
+                from . import node_cert_sync
+                node_cert_sync.queue_initial_check(node_id)
                 break
         except remnawave.PanelError:
             pass

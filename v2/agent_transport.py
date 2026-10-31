@@ -102,6 +102,9 @@ def heartbeat(node_id: str, data: dict) -> dict:
     with storage.transaction() as db:
         db.execute("UPDATE manager_agents SET last_seen=?,version=?,last_status_json=? WHERE node_id=?",
                    (now,version,json.dumps(metrics,separators=(",",":")),node_id))
+    # First TLS verification is queued immediately on the first ready heartbeat.
+    from . import node_cert_sync
+    node_cert_sync.queue_initial_check(node_id)
     return {"ok":True,"next_poll_seconds":5}
 
 

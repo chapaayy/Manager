@@ -6,6 +6,8 @@ const html=fs.readFileSync("v2/static/index.html","utf8");
 const js=fs.readFileSync("v2/static/app.js","utf8");
 const css=fs.readFileSync("v2/static/style.css","utf8");
 new vm.Script(js);
+const nodeDetail=fs.readFileSync("v2/static/node-detail.js","utf8");
+new vm.Script(nodeDetail);
 const vps=fs.readFileSync("v2/static/vps.js","utf8");
 new vm.Script(vps);
 const ids=[...html.matchAll(/\bid="([^"]+)"/g)].map(m=>m[1]);
@@ -20,7 +22,7 @@ for(const id of [
   assert(unique.has(id),"Required UI element: "+id);
 }
 assert.match(html,/\/static\/icons\.svg/);
-assert.match(html,/\/static\/app\.js\?v=2\.5\.1/);
+assert.match(html,/\/static\/app\.js\?v=2\.5\.2/);
 assert.match(css,/\.sidebar\.collapsed/);
 assert.match(css,/\.workspace\{flex:1;min-width:0;width:0/);
 assert.match(css,/prefers-reduced-motion/);
@@ -37,6 +39,11 @@ assert(!html.includes("wizard-project"),"Multi-panel project control must be abs
 assert(!js.includes("projectCache"),"Multi-panel project JavaScript must be absent");
 console.log("PASS: clean single-panel v2 interface wiring and layout");
 
+assert.doesNotMatch(html,/data-page="agents"/,"No Agents sidebar item");
+assert.doesNotMatch(html,/data-page="node-certs"/,"No TLS sidebar item");
+assert.match(html,/id="node-detail"/,"Node detail in Nodes page");
+assert.match(nodeDetail,/function openNodeWorkspace/,"Unified node workspace");
+assert.match(nodeDetail,/function nodeCertText/,"Inline certificate state");
 assert.match(js,/async function nodeLifecycleModal/,"Node lifecycle confirmation UI exists");
 assert.match(js,/\/removal-preview/,"Deletion preview inspects Remnawave assignments");
 assert.match(js,/\/remove","POST"/,"Deletion uses one scoped API operation");
