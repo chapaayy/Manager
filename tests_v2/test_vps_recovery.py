@@ -90,7 +90,7 @@ def test_resume_cannot_repeat_create_profile_after_uncertain_creation(failed_job
                         lambda *a,**kw: (_ for _ in ()).throw(AssertionError("Duplicate")))
     with pytest.raises(ValueError,match="уже существует профиль"):
         vps_install.complete_panel_registration(failed_job["id"],
-            Endpoint("RUS10","rus10.gowayot.com","RU"),"cert","key")
+            Endpoint("RUS10","rus10.gowayot.com","RU"))
 
 
 def test_successful_panel_resume_persists_profile_and_remote_id(failed_job,monkeypatch):
@@ -104,7 +104,7 @@ def test_successful_panel_resume_persists_profile_and_remote_id(failed_job,monke
     monkeypatch.setattr(remnawave,"register_node",lambda *args:"remote-node-id")
     monkeypatch.setattr(remnawave,"node_health",
         lambda *args:{"connected":True,"xray_running":True,"xray_version":"25.1"})
-    vps_install.complete_panel_registration(failed_job["id"],source,"cert","key")
+    vps_install.complete_panel_registration(failed_job["id"],source)
     job=storage.get_install_job(failed_job["id"])
     assert job["stage"]=="ready"
     assert job["profile_uuid"]=="profile-id"

@@ -183,17 +183,13 @@ def preview_plan(source: Endpoint) -> dict:
         "domainStrategy":"IPIfNonMatch"},
     }
     validate_rendered(proposed)
-    # Remnawave resolves file references on its Panel backend, not on this
-    # VPS. Preview the real *profile shape* without ever returning private
-    # material to a browser.
-    proposed["inbounds"][0]["streamSettings"]["tlsSettings"]["certificates"]=[{
-        "key":["<PRIVATE KEY: issued by Certbot on VPS, sent via Remnawave API>"],
-        "certificate":["<CERTIFICATE CHAIN: issued by Certbot on VPS>"],
-    }]
+    # The Remnawave backend attempts to expand the paths; on ENOENT it
+    # returns the original file-backed object unchanged to Node/Xray.
+    # Files exist ONLY in the remnanode container on the VPS.
     return {
       "name":config_profile_name(source),
       "xray":proposed,
-      "tls_profile_mode":"inline_pem_required_by_remnawave_panel_api",
+      "tls_profile_mode":"node_local_paths",
       "tls_node_files":"/opt/nginx/certs/",
       "nginx":(ROOT/"nginx.conf").read_text(encoding="utf-8").replace("{{source.domain}}",source.domain),
       "files":[
@@ -206,9 +202,9 @@ def preview_plan(source: Endpoint) -> dict:
         {"key":"source.code","value":source.code},
         {"key":"source.domain","value":source.domain},
         {"key":"inbound.tag","value":tag},
-        {"key":"tls.certificate","value":"Certbot на VPS; профиль Remnawave получает PEM через HTTPS API"}
+        {"key":"tls.certificate","value":"Certbot только на ноде; профиль хранит keyFile/certificateFile"}
       ],
-      "note":"Сертификат и приватный ключ хранятся файлами на VPS; Remnawave также хранит копию PEM в Xray Config Profile. Это требование текущей API-схемы. file paths в профиле Remnawave разрешаются на Panel backend, НЕ на ноде. В предпросмотре приватный ключ никогда не показывается."
+      "note":"Приватный ключ выпускается и хранится на VPS ноды. В отдельном Xray-профиле Remnawave только пути keyFile/certificateFile. Панель не меняем, volumes туда не добавляем; при недоступном пути на панели Remnawave сохраняет файловые ссылки для Xray ноды."
     }
 
 
@@ -233,16 +229,11 @@ def render_files(source: Endpoint, secret_key: str, panel_ip: str) -> dict:
     }
 
 
-def xray_config(source: Endpoint, cert: str, private_key: str) -> dict:
+def xray_config(source: Endpoint) -> dict:
     """One VLESS TLS RAW direct exit, using settings from the supplied working bridge."""
     inbound = new_inbound(source.code+"_VLESS_TLS_IN",443,source.domain)
-    certificates = inbound["streamSettings"]["tlsSettings"]["certificates"]
-    # Remnawave Panel resolves keyFile/certificateFile on its own VPS.
-    # A node-local path here would break TLS configuration delivery.
-    # Keep the node-owned Certbot files as the source of truth and send
-    # the current PEM only via the authenticated Remnawave API.
-    # Never expose this generated config to the browser.
-    certificates[:] = [{"certificate": cert.strip().splitlines(), "key": private_key.strip().splitlines()}]
+    # new_inbound already uses the same node-local path as the remnanode
+    # Docker bind mount; never include inline PEM in a Panel profile.
     config = {
         "log": {"error":"/var/log/remnanode/error.log",
                 "access":"/var/log/remnanode/access.log","loglevel":"warning"},
@@ -311,20 +302,8 @@ def _stage_files(t, files: dict):
         sftp.close()
 
 
-def _read_remote_file(t, path: str, max_bytes: int = 20000) -> str:
-    sftp=paramiko.SFTPClient.from_transport(t)
-    try:
-        with sftp.file(path,"rb") as src:
-            data=src.read(max_bytes + 1)
-            if len(data)>max_bytes:
-                raise ValueError("Получен слишком большой сертификат")
-            return data.decode("ascii")
-    finally:
-        sftp.close()
 
-
-def complete_panel_registration(node_id: str, source: Endpoint,
-                                certificate: str, private_key: str):
+def complete_panel_registration(node_id: str, source: Endpoint):
     """Continue from the panel phase only. Never install or rewrite VPS services."""
     name = config_profile_name(source)
     inbound_tag = source.code + "_VLESS_TLS_IN"
@@ -342,7 +321,7 @@ def complete_panel_registration(node_id: str, source: Endpoint,
             raise ValueError("В Remnawave уже существует профиль с таким именем. "
                              "Проверь его вручную, чтобы избежать дубликатов.")
         storage.set_install_status(node_id, "installing", "Создаём отдельный Xray Config Profile")
-        profile = remnawave.create_profile(name, xray_config(source, certificate, private_key))
+        profile = remnawave.create_profile(name, xray_config(source))
         storage.set_install_status(node_id, "installing",
                                    "Профиль создан, готовим регистрацию ноды",
                                    profile_uuid=profile["uuid"])
@@ -411,14 +390,10 @@ def resume_registration(node_id: str, password: str):
         t, _ = ssh_open(job["ip"], job["port"], password, job["ssh_fingerprint"])
         try:
             verify_existing_install(t, source)
-            certificate = _read_remote_file(
-                t, f"/opt/nginx/certs/{source.domain}_fullchain.pem")
-            private_key = _read_remote_file(
-                t, f"/opt/nginx/certs/{source.domain}_privkey.key")
         finally:
             t.close()
         stage("installing", "VPS проверен, продолжаем с Remnawave")
-        complete_panel_registration(node_id, source, certificate, private_key)
+        complete_panel_registration(node_id, source)
     except Exception as exc:
         if isinstance(exc, (ValueError, TemplateError, remnawave.PanelError)):
             detail = str(exc)
@@ -478,9 +453,7 @@ def deploy(node_id: str, ip: str, port: int, password: str,
             stage("installing","Устанавливаем Docker, Nginx, TLS и Remnawave Node")
             # No user-controlled command text, no secrets on command line.
             run_install_script(t, lambda step: stage("installing", step))
-            stage("installing","Получаем выпущенный TLS-сертификат")
-            certificate=_read_remote_file(t,f"/opt/nginx/certs/{source.domain}_fullchain.pem")
-            private_key=_read_remote_file(t,f"/opt/nginx/certs/{source.domain}_privkey.key")
+            stage("installing","Certbot хранит TLS-файлы на VPS; PEM не передаётся на панель")
             # Final and only SSH phase. Agent installation is mandatory for
             # new VPS deployments; all later tasks use the outbound agent.
             stage("installing","Устанавливаем Node Manager Agent")
@@ -488,7 +461,7 @@ def deploy(node_id: str, ip: str, port: int, password: str,
             agent_bootstrap.install_on_transport(t,node_id)
         finally:
             t.close()
-        complete_panel_registration(node_id,source,certificate,private_key)
+        complete_panel_registration(node_id,source)
     except Exception as exc:
         # Never put SSH password, API token, PEM keys or SECRET_KEY in DB/logs.
         # Error messages from remote commands are intentionally reduced to exception class.

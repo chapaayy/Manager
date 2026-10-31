@@ -103,7 +103,7 @@ func execute(job *Task) Response {
     }
     allowed:=map[string]bool{"docker.status":true,"docker.logs":true,
         "docker.restart":true,"logs.read":true,"service.status":true,"service.restart":true,
-        "cert.status":true,"cert.export":true,"config.read":true,"config.apply":true,
+        "cert.status":true,"config.read":true,"config.apply":true,
         "node.cleanup":true,"node.cleanup.finish":true}
     if !allowed[job.Action] {resp.Error="unsupported operation";return resp}
     if job.Payload==nil {job.Payload=map[string]interface{}{}}

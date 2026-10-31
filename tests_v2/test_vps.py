@@ -42,16 +42,17 @@ def test_starter_bundle_contains_working_example_nginx_and_compose(db):
 
 def test_rendered_node_tls_has_no_old_bridge_routes_or_plaintext_secrets():
     from v2.vps_install import xray_config
-    x=xray_config(Endpoint("DE1","de1.gowayot.com","DE"),
-      "-----BEGIN CERTIFICATE-----\nAAA\n-----END CERTIFICATE-----",
-      "-----BEGIN PRIVATE KEY-----\nBBB\n-----END PRIVATE KEY-----")
+    x=xray_config(Endpoint("DE1","de1.gowayot.com","DE"))
     validate_rendered(x)
     assert len(x["inbounds"])==1
     assert x["inbounds"][0]["port"]==443
     assert x["inbounds"][0]["settings"]["fallbacks"][0]["dest"]=="127.0.0.1:8080"
     assert x["routing"]["rules"][-1]["outboundTag"]=="DIRECT"
-    assert all("TO_DE1" not in json.dumps(z) for z in x["outbounds"])
-    assert x["inbounds"][0]["streamSettings"]["tlsSettings"]["certificates"][0]["key"][0]=="-----BEGIN PRIVATE KEY-----"
+    cert=x["inbounds"][0]["streamSettings"]["tlsSettings"]["certificates"][0]
+    assert cert["keyFile"]=="/opt/nginx/certs/de1.gowayot.com_privkey.key"
+    assert cert["certificateFile"]=="/opt/nginx/certs/de1.gowayot.com_fullchain.pem"
+    assert "key" not in cert and "certificate" not in cert
+    assert "PRIVATE KEY" not in json.dumps(x)
 
 
 @pytest.mark.parametrize("bad",["127.0.0.1","10.0.0.1","192.168.1.1","::1","0.0.0.0","256.256.256.256"])
@@ -117,35 +118,22 @@ def test_remnawave_node_health_requires_actual_xray_telemetry(monkeypatch):
 
 
 
-def test_remnawave_install_preview_never_promises_node_local_keyfile():
-    """The preview mirrors the actual Remnawave API payload's certificate shape."""
+def test_preview_matches_real_node_local_profile():
     from v2.vps_install import preview_plan
     data=preview_plan(Endpoint("RUS10","rus10.gowayot.com","RU"))
     cert=data["xray"]["inbounds"][0]["streamSettings"]["tlsSettings"]["certificates"][0]
-    assert "keyFile" not in cert and "certificateFile" not in cert
-    assert "key" in cert and "certificate" in cert
-    assert "PRIVATE KEY: issued by Certbot" in str(cert["key"])
-    assert "-----BEGIN PRIVATE KEY-----" not in str(data)
-    assert data["tls_profile_mode"]=="inline_pem_required_by_remnawave_panel_api"
-    assert "Panel backend" in data["note"]
-    assert "Remnawave" in data["note"]
+    assert cert=={"keyFile":"/opt/nginx/certs/rus10.gowayot.com_privkey.key",
+                  "certificateFile":"/opt/nginx/certs/rus10.gowayot.com_fullchain.pem"}
+    assert data["tls_profile_mode"]=="node_local_paths"
+    assert "панел" in data["note"].lower()
 
 
-def test_only_node_local_certfile_paths_are_blocked_in_remnawave_api():
-    from v2.remnawave import guard_node_only_tls_paths, PanelError
-    import pytest
-    def config(certificate):
-        return {"inbounds":[{"streamSettings":{"tlsSettings":{
-            "certificates":[certificate]}}}]}
-    for key in ("keyFile","certificateFile"):
-        with pytest.raises(PanelError,match="Панель читает"):
-            guard_node_only_tls_paths(config({
-                key:"/opt/nginx/certs/rus10.gowayot.com_privkey.key"}))
-        with pytest.raises(PanelError,match="Панель читает"):
-            guard_node_only_tls_paths(config({
-                key:"/etc/letsencrypt/live/rus10.gowayot.com/privkey.pem"}))
-    # The official Panel-mounted location is not arbitrarily rejected.
+def test_profile_api_guard_allows_node_paths():
+    from v2.remnawave import guard_node_only_tls_paths,PanelError
+    def config(cert):
+        return {"inbounds":[{"streamSettings":{"tlsSettings":{"certificates":[cert]}}}]}
     guard_node_only_tls_paths(config({
-        "keyFile":"/var/lib/remnawave/configs/xray/ssl/privkey.key",
-        "certificateFile":"/var/lib/remnawave/configs/xray/ssl/fullchain.pem"}))
-    guard_node_only_tls_paths(config({"key":["PRIVATE"],"certificate":["CERT"]}))
+        "keyFile":"/opt/nginx/certs/rus10.gowayot.com_privkey.key",
+        "certificateFile":"/opt/nginx/certs/rus10.gowayot.com_fullchain.pem"}))
+    with pytest.raises(PanelError):
+        guard_node_only_tls_paths(config({"keyFile":"/tmp/other.key"}))
