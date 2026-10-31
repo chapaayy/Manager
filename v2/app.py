@@ -356,7 +356,9 @@ def vps_preview(body: VpsPreviewData, _=Depends(write_access)):
     try:
         endpoint=Endpoint(body.code.upper().strip(),body.domain.lower().strip(),
                           body.country.upper().strip())
-        return vps_install.preview_plan(endpoint,body.preset_id,body.role)
+        from . import preset_deploy
+        selected=body.preset_id or preset_deploy.default_preset_id()
+        return vps_install.preview_plan(endpoint,selected,body.role)
     except (TemplateError,ValueError) as e:
         raise HTTPException(422,str(e)) from None
 
