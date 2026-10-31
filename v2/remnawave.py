@@ -201,3 +201,26 @@ def register_node(name: str, address: str, country: str,
     if not isinstance(created,dict) or not isinstance(created.get("uuid"),str):
         raise PanelError("Remnawave не подтвердила создание ноды")
     return created["uuid"]
+
+
+
+def node_health(node_uuid: str) -> dict:
+    """Inspect panel telemetry; only an explicit active connection is accepted."""
+    rows = request("GET", "/api/nodes").get("response")
+    if not isinstance(rows, list):
+        raise PanelError("Не удалось получить состояния нод")
+    row = next((n for n in rows if isinstance(n, dict) and n.get("uuid")==node_uuid), None)
+    if row is None:
+        raise PanelError("Remnawave ещё не показывает новую ноду в списке")
+    connected = row.get("isConnected")
+    if connected is None:
+        connected = row.get("is_connected")
+    # Do not infer readiness from presence alone.
+    version = row.get("xrayVersion")
+    versions = row.get("versions")
+    if not version and isinstance(versions, dict):
+        version = versions.get("xray")
+    uptime = row.get("xrayUptime")
+    return {"connected": connected is True,
+            "xray_running": bool(version) or (isinstance(uptime,(int,float)) and uptime>0),
+            "xray_version": str(version or "")[:50]}
