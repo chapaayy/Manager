@@ -23,7 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from pydantic import BaseModel, Field
 
-from . import bundled, certificates, library, remnawave, service, storage, vps_install, web_updates
+from . import bundled, certificates, library, panel_delivery, remnawave, service, storage, vps_install, web_updates
 from .template_engine import Endpoint, TemplateError, safe_preview, variables_map
 
 STATIC = Path(__file__).resolve().parent / "static"
@@ -497,6 +497,25 @@ def certificate_restore(node_id: str, body: CertificateRestoreData, _=Depends(wr
         return certificates.restore_profile(node_id, body.confirm_restore)
     except (certificates.CertError, remnawave.PanelError, LookupError) as e:
         raise HTTPException(422, str(e)) from None
+
+
+class RemotePanelCertEnrollData(BaseModel):
+    ip: str = Field(min_length=7,max_length=45)
+    port: int = Field(default=22,ge=1,le=65535)
+    fingerprint: str = Field(min_length=40,max_length=80)
+    password: str = Field(min_length=1,max_length=512)
+    confirm_panel_access: bool = False
+
+
+@app.post("/api/certificates/panel/enroll")
+def certificate_panel_enroll(body: RemotePanelCertEnrollData, _=Depends(write_access)):
+    try:
+        return panel_delivery.enroll(body.ip,body.port,body.fingerprint,body.password,
+                                     body.confirm_panel_access)
+    except (panel_delivery.DeliveryError,ValueError) as e:
+        raise HTTPException(422,str(e)) from None
+    except Exception:
+        raise HTTPException(502,"Не удалось установить защищённое соединение с VPS панели") from None
 
 
 @app.post("/api/nodes")
