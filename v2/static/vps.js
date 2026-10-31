@@ -30,6 +30,9 @@ async function probeVps(event){
     vpsInspection=await api("/vps/probe","POST",{
       ip:data.ip,port:data.port,domain:data.domain,password:data.password
     });
+    const preview=await api("/vps/preview","POST",{
+      code:data.code,domain:data.domain,country:data.country
+    });
     vpsPayload=data;
     document.getElementById("vps-fields").classList.add("hidden");
     document.getElementById("vps-preflight").classList.remove("hidden");
@@ -42,7 +45,13 @@ async function probeVps(event){
       '<p>SSH fingerprint: <code>'+esc(info.fingerprint)+'</code></p>'+
       (info.warnings.length?'<p class="wizard-errors">'+info.warnings.map(esc).join("; ")+'</p>':
         '<p>Порты 80/443/2222 свободны, DNS совпадает с VPS.</p>')+
-      '<p class="muted small">Будут установлены Docker, Nginx, TLS и Remnawave Node, создан отдельный Xray Config Profile.</p>';
+      '<p class="muted small">Будут установлены Docker, Nginx, TLS и Remnawave Node, создан отдельный Xray Config Profile.</p>'+
+      '<details class="template-info"><summary>Посмотреть замены и файлы перед установкой</summary>'+
+      preview.variables.map(x=>'<div class="wizard-mapping"><code>'+esc(x.key)+'</code><span>→</span><strong>'+esc(x.value)+'</strong></div>').join("")+
+      '<p class="muted small">'+esc(preview.note)+'</p>'+
+      '<h3>Результат Xray</h3><pre class="wizard-preview">'+esc(JSON.stringify(preview.xray,null,2))+'</pre>'+
+      '<h3>Nginx</h3><pre class="wizard-preview">'+esc(preview.nginx)+'</pre>'+
+      '<p>Файлы: '+preview.files.map(esc).join(", ")+'</p></details>';
     document.getElementById("vps-install").disabled=true;
   }catch(e){message(e.message,true)}
   finally{button.disabled=false;button.textContent="Проверить SSH, DNS и порты"}
