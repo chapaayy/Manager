@@ -95,6 +95,20 @@ def report(node_id,data):
             remnawave.restart_node(job["remote_uuid"])
         except remnawave.PanelError:
             raise LocalTLSError("Не удалось перезапустить Xray этой ноды через Remnawave API") from None
+        # API ACK alone does not prove that renewed files were loaded.
+        # Do not advance the stored fingerprint until Node/Xray is healthy.
+        healthy=False
+        for attempt in range(10):
+            time.sleep(2)
+            try:
+                telemetry=remnawave.node_health(job["remote_uuid"])
+                if telemetry["connected"] and telemetry["xray_running"]:
+                    healthy=True
+                    break
+            except remnawave.PanelError:
+                pass
+        if not healthy:
+            raise LocalTLSError("После обновления TLS Xray не подтвердил запуск; отпечаток не обновлён")
     update_status(node_id,fp,expires,changed)
     return {"expires_at":expires,"fingerprint":fp,"updated":changed,"mode":"node_local_paths"}
 
