@@ -468,6 +468,11 @@ def deploy(node_id: str, ip: str, port: int, password: str,
             stage("installing","Получаем выпущенный TLS-сертификат")
             certificate=_read_remote_file(t,f"/opt/nginx/certs/{source.domain}_fullchain.pem")
             private_key=_read_remote_file(t,f"/opt/nginx/certs/{source.domain}_privkey.key")
+            # Final and only SSH phase. Agent installation is mandatory for
+            # new VPS deployments; all later tasks use the outbound agent.
+            stage("installing","Устанавливаем Node Manager Agent")
+            from . import agent_bootstrap
+            agent_bootstrap.install_on_transport(t,node_id)
         finally:
             t.close()
         complete_panel_registration(node_id,source,certificate,private_key)
