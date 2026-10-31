@@ -29,7 +29,7 @@ def test_remote_mode_requires_enrollment_and_enable(db):
 def test_cannot_enroll_without_explicit_consent(db):
     with pytest.raises(panel_delivery.DeliveryError,match="Подтверди"):
         panel_delivery.enroll("1.1.1.1",22,"SHA256:"+"a"*43,"password",False)
-    with pytest.raises(panel_delivery.DeliveryError,match="публичный"):
+    with pytest.raises(ValueError,match="публичный"):
         panel_delivery.enroll("127.0.0.1",22,"SHA256:"+"a"*43,"password",True)
 
 
