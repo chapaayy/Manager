@@ -6,8 +6,9 @@
   <meta name="referrer" content="no-referrer">
   <meta name="theme-color" content="#09090b">
   <title>XPPN Manager 2.3 — рабочая область</title>
-  <link rel="stylesheet" href="/static/style.css?v=2.3.1">
-  <script src="/static/app.js?v=2.5.1" defer></script>
+  <link rel="stylesheet" href="/static/style.css?v=2.3.2">
+  <script src="/static/app.js?v=2.5.2" defer></script>
+  <script src="/static/node-detail.js?v=1.0.0" defer></script>
   <script src="/static/vps.js?v=2.3.1" defer></script>
 </head>
 <body>
@@ -40,8 +41,6 @@
       <p class="nav-heading">РАБОЧЕЕ ПРОСТРАНСТВО</p>
       <nav aria-label="Разделы">
         <button class="nav-link active" data-page="nodes" title="Ноды" type="button"><svg><use href="/static/icons.svg#i-server"></use></svg><span>Ноды</span></button>
-        <button class="nav-link" data-page="agents" title="Агенты VPS" type="button"><svg><use href="/static/icons.svg#i-activity"></use></svg><span>Агенты VPS</span></button>
-        <button class="nav-link" data-page="node-certs" title="Сертификаты нод" type="button"><svg><use href="/static/icons.svg#i-shield-check"></use></svg><span>Сертификаты нод</span></button>
         <button class="nav-link" data-page="configs" title="Конфигурации" type="button"><svg><use href="/static/icons.svg#i-file-code"></use></svg><span>Конфигурации</span></button>
         <button class="nav-link" data-page="presets" title="Пресеты" type="button"><svg><use href="/static/icons.svg#i-layers"></use></svg><span>Пресеты</span></button>
         <button class="nav-link" data-page="settings" title="Настройки" type="button"><svg><use href="/static/icons.svg#i-settings-2"></use></svg><span>Настройки</span></button>
@@ -58,6 +57,7 @@
       </header>
       <main>
         <section id="page-nodes" class="page">
+          <div id="nodes-home">
           <div class="page-heading">
             <div><p class="eyebrow">ИНФРАСТРУКТУРА</p><h1>Ноды и мосты</h1><p class="subheading">Все серверы и связи в одном месте. Раскрой мост, чтобы увидеть подключённые направления.</p></div>
             <div class="heading-actions"><button class="btn subtle" id="new-bridge" type="button"><svg><use href="/static/icons.svg#i-git-branch"></use></svg>Создать мост</button><button class="btn primary" id="new-node" type="button"><svg><use href="/static/icons.svg#i-plus"></use></svg>Добавить VPS</button></div>
@@ -71,7 +71,9 @@
           <div id="bridge-list" class="bridge-list"><div class="skeleton h160"></div></div>
           <div class="section-title standalone-heading"><h2>Другие серверы</h2><label class="muted"><input id="nodes-show-archived" type="checkbox"> Показать архив</label></div>
           <div id="other-nodes" class="node-grid"></div>
-          <p class="inline-info"><svg><use href="/static/icons.svg#i-circle-alert"></use></svg>«Добавить VPS» проверяет чистый сервер по SSH и запускает установку после подтверждения. Для неудачных попыток доступны продолжение и удаление записи без изменения VPS.</p>
+          <p class="inline-info"><svg><use href="/static/icons.svg#i-circle-alert"></use></svg>Выбери ноду, чтобы открыть все её настройки, TLS, логи и управление в одном месте.</p>
+          </div>
+          <div id="node-detail" class="hidden"></div>
         </section>
 
         <section id="page-agents" class="page hidden">
