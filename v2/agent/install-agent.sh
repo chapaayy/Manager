@@ -55,20 +55,18 @@ User=nodemanager
 Group=nodemanager
 EnvironmentFile=/etc/node-manager/agent.env
 ExecStart=/usr/local/bin/node-manager-agent
+# Fail setup immediately if privilege elevation is broken inside this sandbox.
+ExecStartPost=/usr/bin/sudo -n /usr/local/libexec/node-manager-helper service.status
 Restart=always
 RestartSec=5
 WorkingDirectory=/
-ProtectSystem=strict
-ProtectHome=true
-PrivateTmp=true
-PrivateDevices=true
-ProtectKernelTunables=true
-ProtectKernelModules=true
-ProtectControlGroups=true
-CapabilityBoundingSet=
+# Privilege boundary: unprivileged Go agent -> sudo allowlisted, root-owned
+# helper. Systemd namespace/seccomp hardening is deliberately NOT enabled here:
+# several directives imply NoNewPrivileges/nosuid and break sudo setuid.
+# Use a separate root socket service to reintroduce sandboxing later.
+NoNewPrivileges=no
 AmbientCapabilities=
-RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
-LockPersonality=true
+UMask=0077
 MemoryMax=120M
 [Install]
 WantedBy=multi-user.target
