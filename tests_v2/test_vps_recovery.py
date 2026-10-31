@@ -85,7 +85,7 @@ def test_resume_rejects_missing_service_or_wrong_domain(monkeypatch):
 def test_resume_cannot_repeat_create_profile_after_uncertain_creation(failed_job, monkeypatch):
     from v2 import remnawave
     monkeypatch.setattr(remnawave,"list_profiles",lambda:[{
-        "name":"XPPN RUS10 · RU · VLESS TLS","uuid":"someone-profile","inbounds":[]}])
+        "name":"XPPN RUS10 RU VLESS TLS","uuid":"someone-profile","inbounds":[]}])
     monkeypatch.setattr(remnawave,"create_profile",
                         lambda *a,**kw: (_ for _ in ()).throw(AssertionError("Duplicate")))
     with pytest.raises(ValueError,match="уже существует профиль"):
@@ -116,3 +116,41 @@ def test_partial_resume_cannot_delete_working_node(failed_job):
                                remote_uuid="remnawave-node")
     with pytest.raises(ValueError):
         storage.delete_failed_install(failed_job["id"])
+
+
+def test_new_xray_profile_name_has_only_remnawave_allowed_characters():
+    import re
+    source=Endpoint("RUS10","rus10.gowayot.com","RU")
+    expected="XPPN RUS10 RU VLESS TLS"
+    assert vps_install.config_profile_name(source)==expected
+    assert vps_install.preview_plan(source)["name"]==expected
+    assert re.fullmatch(r"[A-Za-z0-9_ -]+",expected)
+
+
+@pytest.mark.parametrize("invalid",[
+    "XPPN RUS10 · RU · VLESS TLS",
+    "XPPN RUS10 / RU",
+    "XPPN RUS10 🇷🇺",
+    "XPPN RUS10\\nRU",
+])
+def test_remnawave_rejects_invalid_profile_name_before_api(invalid,monkeypatch):
+    from v2 import remnawave
+    def forbidden(*args,**kwargs):
+        raise AssertionError("API was called with invalid profile name")
+    monkeypatch.setattr(remnawave,"request",forbidden)
+    with pytest.raises(remnawave.PanelError,match="Название профиля"):
+        remnawave.create_profile(invalid,{"inbounds":[]})
+
+
+def test_remnawave_accepts_valid_profile_name(monkeypatch):
+    from v2 import remnawave
+    expected="XPPN RUS10 RU VLESS TLS"
+    def fake_request(method,path,body):
+        assert (method,path)==("POST","/api/config-profiles")
+        assert body["name"]==expected
+        return {"response":{"uuid":"profile-uuid"}}
+    monkeypatch.setattr(remnawave,"request",fake_request)
+    monkeypatch.setattr(remnawave,"list_profiles",
+                        lambda:[{"uuid":"profile-uuid","name":expected,"inbounds":[]}])
+    result=remnawave.create_profile(expected,{"inbounds":[]})
+    assert result["uuid"]=="profile-uuid"
