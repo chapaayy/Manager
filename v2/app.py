@@ -23,7 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from pydantic import BaseModel, Field
 
-from . import agent_bootstrap, agent_transport, bundled, library, node_cert_sync, remnawave, service, storage, vps_install, web_updates
+from . import agent_bootstrap, agent_transport, bundled, library, node_cert_sync, node_lifecycle, remnawave, service, storage, vps_install, web_updates
 from .template_engine import Endpoint, TemplateError, safe_preview, variables_map
 
 STATIC = Path(__file__).resolve().parent / "static"
@@ -547,6 +547,63 @@ def create_node(body: NodeData, _=Depends(write_access)):
             country=endpoint.country, role=body.role)
     except (ValueError, sqlite3.IntegrityError) as e:
         _fail(e)
+
+
+class NodeArchiveData(BaseModel):
+    archived: bool
+
+
+class NodeLifecycleConfirm(BaseModel):
+    code: str = Field(min_length=2,max_length=32)
+    delete_profile: bool = True
+
+
+@app.get("/api/nodes/{node_id}/lifecycle")
+def lifecycle_preview(node_id: str, _=Depends(read_access)):
+    try:
+        return node_lifecycle.preview(node_id)
+    except LookupError as e:
+        raise HTTPException(404,str(e)) from None
+
+
+@app.put("/api/nodes/{node_id}/archive")
+def lifecycle_archive(node_id: str,body: NodeArchiveData,_=Depends(write_access)):
+    try:
+        return node_lifecycle.archive(node_id,body.archived)
+    except (node_lifecycle.LifecycleError,LookupError) as e:
+        raise HTTPException(422,str(e)) from None
+
+
+@app.post("/api/nodes/{node_id}/forget")
+def lifecycle_forget(node_id: str,body: NodeLifecycleConfirm,_=Depends(write_access)):
+    try:
+        return node_lifecycle.forget(node_id,body.code)
+    except (node_lifecycle.LifecycleError,LookupError) as e:
+        raise HTTPException(422,str(e)) from None
+
+
+@app.post("/api/nodes/{node_id}/delete-remnawave")
+def lifecycle_remnawave(node_id: str,body: NodeLifecycleConfirm,_=Depends(write_access)):
+    try:
+        return node_lifecycle.delete_remnawave(node_id,body.code,body.delete_profile)
+    except (node_lifecycle.LifecycleError,LookupError) as e:
+        raise HTTPException(422,str(e)) from None
+
+
+@app.post("/api/nodes/{node_id}/full/start")
+def lifecycle_start(node_id: str,body: NodeLifecycleConfirm,_=Depends(write_access)):
+    try:
+        return node_lifecycle.begin_full(node_id,body.code,body.delete_profile)
+    except (node_lifecycle.LifecycleError,agent_transport.AgentError,LookupError) as e:
+        raise HTTPException(422,str(e)) from None
+
+
+@app.post("/api/nodes/{node_id}/full/advance")
+def lifecycle_advance(node_id: str,body: NodeLifecycleConfirm,_=Depends(write_access)):
+    try:
+        return node_lifecycle.advance_full(node_id,body.code)
+    except (node_lifecycle.LifecycleError,agent_transport.AgentError,LookupError) as e:
+        raise HTTPException(422,str(e)) from None
 
 
 @app.delete("/api/nodes/{node_id}")
