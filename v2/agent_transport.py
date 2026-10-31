@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from . import storage
 
 ALLOWED = {"system.status", "docker.status", "docker.restart", "docker.logs", "logs.read",
-           "service.status", "service.restart", "cert.status", "cert.export",
+           "service.status", "service.restart", "cert.status",
            "config.read", "config.apply", "node.cleanup", "node.cleanup.finish"}
 MAX_RESULT = 48000
 LEASE_SECONDS = 120
@@ -179,13 +179,16 @@ def report(node_id: str, body: dict) -> dict:
     if row is None or row["status"]!="leased":
         raise AgentError("Задание уже завершено или неизвестно")
     # Certificates are processed in memory and NEVER written to DB.
-    if row["action"]=="cert.export":
+    if row["action"] in ("cert.export","cert.status"):
         from . import node_cert_sync
         # Never propagate arbitrary helper errors or Remnawave API bodies:
         # they might contain PEM or other secrets.
         if ok:
             try:
-                outcome=node_cert_sync.apply_agent_export(node_id,result)
+                if row["action"]=="cert.export":
+                    raise node_cert_sync.CertificateSyncError(
+                        "Передача приватных TLS ключей отключена")
+                outcome=node_cert_sync.apply_agent_status(node_id,result)
                 result={"expires_at":outcome["expires_at"],"updated":outcome["updated"],
                         "fingerprint":outcome["fingerprint"]}
                 error=""
@@ -198,7 +201,7 @@ def report(node_id: str, body: dict) -> dict:
                 result={}
                 error="Внутренняя ошибка синхронизации TLS; профиль оставлен без автоматических изменений"
         else:
-            error="Агент не смог прочитать TLS-файлы на VPS. Проверь Certbot и права файлов"
+            error="Агент не смог проверить TLS-файлы на VPS. Проверь Certbot и права файлов"
             result={}
         if not ok:
             with storage.transaction() as db:
