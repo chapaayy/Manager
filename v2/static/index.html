@@ -81,9 +81,9 @@
           </div>
           <div class="panel" style="padding:20px;margin-bottom:20px">
             <h2>Файловые сертификаты для Remnawave</h2>
-            <p class="muted small">Сначала подключи Docker volume <code>xppn-v2-panel-certs</code> в контейнере Remnawave Panel по пути <code>/var/lib/remnawave/configs/xray/ssl/XPPN</code> (только чтение). Панель и менеджер должны работать на одном Docker-хосте. Если серверы разные, это подключение не работает.</p>
+            <p class="muted small"><strong>Разные VPS:</strong> нажми «Настроить удалённую панель». Менеджер установит на VPS панели отдельный ограниченный SSH-приёмник. Затем подключи папку <code>/opt/xppn-panel-certs</code> к Remnawave Panel по пути <code>/var/lib/remnawave/configs/xray/ssl/XPPN</code> только для чтения.</p><p class="muted small"><strong>Один Docker-хост:</strong> можешь подключить общий том <code>xppn-v2-panel-certs</code> по тому же пути. Оба варианта не требуют хранения root-пароля.</p>
             <p class="muted small">После подключения подтверди настройку. Файлы будут готовиться отдельно. <strong>Существующие Xray-профили автоматически не перезаписываются.</strong></p>
-            <div class="form-buttons"><button class="btn primary" type="button" id="cert-enable">Включить файловую синхронизацию</button><button class="btn subtle" type="button" id="cert-disable">Выключить</button></div>
+            <div class="form-buttons"><button class="btn subtle" type="button" id="cert-panel-enroll">Настроить удалённую панель</button><button class="btn primary" type="button" id="cert-enable">Включить файловую синхронизацию</button><button class="btn subtle" type="button" id="cert-disable">Выключить</button></div>
             <p id="cert-global-status" class="form-feedback"></p>
           </div>
           <div class="section-title"><h2>Сертификаты нод</h2><span class="muted">Автосинхронизация включается для каждой ноды отдельно</span></div>
