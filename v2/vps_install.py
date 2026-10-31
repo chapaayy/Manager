@@ -315,8 +315,6 @@ def complete_panel_registration(node_id: str, source: Endpoint,
     """Continue from the panel phase only. Never install or rewrite VPS services."""
     name = config_profile_name(source)
     inbound_tag = source.code + "_VLESS_TLS_IN"
-    from . import certificates
-    file_mode = False
     installation = storage.get_install_job(node_id)
     profiles = remnawave.list_profiles()
     saved_uuid = installation["profile_uuid"]
@@ -331,17 +329,7 @@ def complete_panel_registration(node_id: str, source: Endpoint,
             raise ValueError("В Remnawave уже существует профиль с таким именем. "
                              "Проверь его вручную, чтобы избежать дубликатов.")
         storage.set_install_status(node_id, "installing", "Создаём отдельный Xray Config Profile")
-        config = xray_config(source, certificate, private_key)
-        if certificates.enabled():
-            # Staged first. No file-backed profile is created before a verified
-            # certificate is available in the shared panel-mounted volume.
-            info = certificates.publish(source.code, certificate.encode("ascii"),
-                                        private_key.encode("ascii"), source.domain)
-            certificates.save_status(node_id, info, True)
-            tls = config["inbounds"][0]["streamSettings"]["tlsSettings"]
-            tls["certificates"] = [certificates.paths(source.code)]
-            file_mode = True
-        profile = remnawave.create_profile(name, config)
+        profile = remnawave.create_profile(name, xray_config(source, certificate, private_key))
         storage.set_install_status(node_id, "installing",
                                    "Профиль создан, готовим регистрацию ноды",
                                    profile_uuid=profile["uuid"])
@@ -354,12 +342,6 @@ def complete_panel_registration(node_id: str, source: Endpoint,
     storage.set_install_status(node_id, "registered",
         "Нода зарегистрирована, ожидается подтверждение её связи с Remnawave",
         remote_uuid=remote_id, profile_uuid=profile["uuid"])
-    if file_mode:
-        with storage.transaction() as db:
-            db.execute("""UPDATE node_certificates
-                          SET profile_mode='files',applied_fingerprint=fingerprint,
-                          last_applied=strftime('%s','now') WHERE node_id=?""",(node_id,))
-            storage.event(db,"cert.profile.files",node_id,"New VPS uses panel-mounted TLS files")
     # Mark ready only after telemetry confirms Xray.
     deadline = time.monotonic() + 45
     while time.monotonic() < deadline:
