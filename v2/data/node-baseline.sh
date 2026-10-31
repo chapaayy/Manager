@@ -10,11 +10,13 @@ ROTATE_FILE=/etc/logrotate.d/xppn-nginx
 
 install_bbr() {
   if [[ -e "$SYSCTL_FILE" ]]; then say bbr-existing-not-modified; return; fi
-  if ! command -v sysctl >/dev/null || ! command -v modprobe >/dev/null; then
+  if ! command -v sysctl >/dev/null; then
     say bbr-not-supported; return
   fi
-  modprobe tcp_bbr >/dev/null 2>&1 || true
-  modprobe sch_fq >/dev/null 2>&1 || true
+  if command -v modprobe >/dev/null; then
+    modprobe tcp_bbr >/dev/null 2>&1 || true
+    modprobe sch_fq >/dev/null 2>&1 || true
+  fi
   if ! sysctl -n net.ipv4.tcp_available_congestion_control 2>/dev/null | tr ' ' '\n' | grep -Fxq bbr; then
     say bbr-not-supported; return
   fi
@@ -46,7 +48,7 @@ CONF
 install_ssh_f2b() {
   if [[ -e "$F2B_FILE" ]]; then say fail2ban-existing-not-modified; return; fi
   local peer panel_ip ssh_ports
-  peer="$(printf '%s' "$SSH_CONNECTION" | awk '{print $1}')"
+  peer="$(printenv SSH_CONNECTION 2>/dev/null | awk '{print $1}' || true)"
   if [[ ! "$peer" =~ ^[0-9a-fA-F:.]+$ || -z "$peer" ]]; then
     say fail2ban-skipped-unknown-ssh-peer; return
   fi
@@ -77,7 +79,8 @@ ignoreip = 127.0.0.1/8 ::1 $peer $panel_ip
 CONF
   chmod 0644 "$F2B_FILE"
   if ! fail2ban-client -t >/dev/null 2>&1 ||
-     ! systemctl enable --now fail2ban.service >/dev/null 2>&1 ||
+     ! systemctl enable fail2ban.service >/dev/null 2>&1 ||
+     ! systemctl restart fail2ban.service >/dev/null 2>&1 ||
      ! fail2ban-client status sshd >/dev/null 2>&1; then
     rm -f -- "$F2B_FILE"
     systemctl disable --now fail2ban.service >/dev/null 2>&1 || true
