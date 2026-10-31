@@ -12,6 +12,7 @@ let csrf = "", currentPage = "nodes", currentConfig = null, configRevision = 0,
     panelProfiles = [], expanded = new Set(), toastTimer = null;
 let state = {panel:{},nodes:[],bridges:[],configs:[],presets:[]};
 let updateDetails = null, updatePolling = null;
+let showArchivedNodes=false;
 
 function message(text, error=false){
   const box = $("toast");
@@ -125,7 +126,7 @@ async function renderAgents(){
   const target=$("agents-list");
   try{
     const data=await api("/agents");
-    target.innerHTML=(data.agents||[]).map(n=>{
+    target.innerHTML=(data.agents||[]).filter(n=>showArchivedNodes||!state.nodes.find(x=>x.id===n.id)?.archived).map(n=>{
       const status=n.online?"Онлайн":n.revoked?"Доступ отозван":n.last_seen?"Нет связи":n.installed?"Ожидается первое подключение":"Не установлен";
       const m=n.metrics||{};
       const ram=m.MemTotal_bytes?Math.round((m.MemTotal_bytes-(m.MemAvailable_bytes||0))/m.MemTotal_bytes*100)+"%":"—";
@@ -144,6 +145,8 @@ async function renderAgents(){
         '<button class="btn subtle" data-agent-id="'+esc(n.id)+'" data-agent-action="config.read">Nginx</button>'+
         '<button class="btn subtle" data-agent-id="'+esc(n.id)+'" data-agent-action="docker.restart">Рестарт ноды</button>'+
         '<button class="btn subtle" data-agent-repair="'+esc(n.id)+'" title="Восстановление после ошибки sudo при первой установке">Исправить helper</button>'+
+        '<button class="btn subtle" data-node-lifecycle="'+esc(n.id)+'">Удаление</button>'+
+        (n.version==="1.0.0"?'<button class="btn subtle" data-agent-upgrade="'+esc(n.id)+'">Обновить агент 1.1</button>':'')+
         '<button class="btn subtle" data-agent-revoke="'+esc(n.id)+'">Отозвать доступ</button>':
         (!n.installed||n.revoked||!n.last_seen)?'<button class="btn primary" data-agent-install="'+esc(n.id)+'">'+(n.revoked?"Повторная регистрация":n.installed?"Повторить первичную установку":"Установить агент (один раз SSH)")+'</button>':'')+
         '</div>';
@@ -165,6 +168,72 @@ function agentRepairModal(id){
       await renderAgents();
     });
 }
+async function nodeLifecycleModal(id){
+  try{
+    const data=await api("/nodes/"+encodeURIComponent(id)+"/lifecycle");
+    const deps=Object.entries(data.dependencies||{}).filter(([,n])=>n>0);
+    const blocked=deps.length>0;
+    const phase=data.phase;
+    const options=phase?
+       '<option value="continue">Продолжить полное удаление</option>'+
+       (phase==="finalize_ack"?'<option value="forget">Завершить и убрать запись</option>':''):
+       '<option value="archive">'+(data.archived?"Вернуть из архива":"В архив")+'</option>'+
+       '<option value="forget">Убрать только из менеджера</option>'+
+       '<option value="remnawave">Удалить из Remnawave</option>'+
+       '<option value="full">Полностью очистить VPS и удалить всё управляемое</option>';
+    const description=blocked?"<p class=\"form-feedback error\">Есть связи с мостами или планы. Удаление заблокировано до их удаления.</p>":"";
+    const warning=phase==="finalize_ack"?
+       'Удаление агента запланировано. Его фактическое выполнение после отключения связи невозможно подтвердить через сам агент.':
+       'Полная очистка удаляет только Remnawave Node, Nginx, сертификат данного домена, правила установщика и наш агент. ОС, Docker, системный SSH и сама VPS у хостера остаются.';
+    openModal("Управление · "+data.code,"УДАЛЕНИЕ И АРХИВ",
+      '<p class="muted small">Нода: <strong>'+esc(data.code)+'</strong> · '+esc(data.domain)+'</p>'+
+      '<p class="muted small">'+esc(warning)+'</p>'+description+
+      '<form><label>Действие<select name="operation">'+options+'</select></label>'+
+      '<label>Подтверждение: введи код '+esc(data.code)+
+      '<input name="code" placeholder="'+esc(data.code)+'" required autocomplete="off"></label>'+
+      '<label class="check-row"><input type="checkbox" name="delete_profile" checked> Удалить отдельный Xray-профиль, если он никем другим не используется</label>'+
+      '<label class="check-row"><input type="checkbox" name="ack" required> Понимаю последствия для подключений и данных</label>'+
+      '<div class="form-buttons"><button type="submit" class="btn primary">Продолжить</button></div></form>',
+      async fd=>{
+        if(fd.get("code")!==data.code)throw Error("Неправильный код подтверждения");
+        const operation=fd.get("operation");
+        if(blocked&&["forget","remnawave","full","continue"].includes(operation))
+          throw Error("Сначала удали связи с мостами и планы");
+        if(!confirm("Подтверждаешь: "+operation+" для "+data.code+"?"))return;
+        const base="/nodes/"+encodeURIComponent(id);
+        const body={code:data.code,delete_profile:fd.get("delete_profile")==="on"};
+        if(operation==="archive"){
+          await api(base+"/archive","PUT",{archived:!data.archived});
+          message(data.archived?"Вернул из архива":"Нода перенесена в архив");
+        }else if(operation==="forget"){
+          await api(base+"/forget","POST",body);
+          message("Запись удалена из менеджера. VPS у хостера не затронута.");
+        }else if(operation==="remnawave"){
+          await api(base+"/delete-remnawave","POST",body);
+          message("Удаление через API Remnawave выполнено; VPS остаётся.");
+        }else{
+          if(operation==="full")await api(base+"/full/start","POST",body);
+          await continueFullNodeDeletion(id,data.code);
+        }
+        await refresh();await renderAgents();
+      });
+  }catch(e){message(e.message,true)}
+}
+async function continueFullNodeDeletion(id,code){
+  const base="/nodes/"+encodeURIComponent(id);
+  let prev="";
+  for(let i=0;i<45;i++){
+    const st=await api(base+"/full/advance","POST",{code});
+    if(st.phase!==prev){message("Удаление "+code+": "+st.phase);prev=st.phase;}
+    if(st.phase==="finalize_ack"){
+      message("Очистка VPS подтверждена; удаление агента запланировано. Заверши удаление записи отдельно.");
+      return;
+    }
+    await new Promise(resolve=>setTimeout(resolve,3000));
+  }
+  throw Error("Удаление ещё выполняется. Открой управление нодой и нажми «Продолжить».");
+}
+
 function agentBootstrapModal(id){
   const node=state.nodes.find(n=>n.id===id);
   if(!node)return;
@@ -274,12 +343,13 @@ function renderNodes(){
     }).join("");
   }
   const grouped=new Set(state.bridges.flatMap(b=>[b.entry_id,...b.exits.map(e=>e.id)]));
-  const others=state.nodes.filter(n=>!grouped.has(n.id));
+  const others=state.nodes.filter(n=>!grouped.has(n.id) && (showArchivedNodes||!n.archived));
   $("other-nodes").innerHTML=others.length?others.map(n=>
     '<div class="node-card"><span class="feature-icon">'+icon("server")+'</span><div><strong>'+
     esc(n.code)+' · '+esc(n.name)+'</strong><p>'+esc(n.domain)+' · '+esc(labels[n.role])+
     '</p></div><span class="tiny-chip '+(n.status==="registered"||n.status==="ready"?"success":"warning")+'">'+
-    esc(n.status==="planned"?"Черновик":n.status)+'</span>'+
+    esc(n.archived?"Архив":n.lifecycle_phase?"Удаление: "+n.lifecycle_phase:n.status==="planned"?"Черновик":n.status)+'</span>'+
+    '<button type="button" class="btn subtle" data-node-lifecycle="'+esc(n.id)+'">Управление</button>'+
     (n.status==="planned"?
        '<button type="button" class="btn subtle" data-delete-draft="'+esc(n.id)+'">Удалить черновик</button>':"")+
     (n.status==="planned" && (n.role==="regular"||n.role==="exit")?
@@ -632,8 +702,19 @@ function bindEvents(){
   $("update-check").onclick=checkUpdates;
   $("update-start").onclick=startUpdate;
   updatePolling=setInterval(()=>{if(currentPage==="updates")refreshUpdateStatus()},4500);
+  $("nodes-show-archived").onchange=e=>{
+    showArchivedNodes=!!e.target.checked;renderNodes();renderAgents();
+  };
+  $("other-nodes").addEventListener("click",e=>{
+    const btn=e.target.closest("[data-node-lifecycle]");
+    if(btn)nodeLifecycleModal(btn.dataset.nodeLifecycle);
+  });
   $("agents-refresh").onclick=renderAgents;
   $("agents-list").addEventListener("click",e=>{
+    const manage=e.target.closest("[data-node-lifecycle]");
+    if(manage){nodeLifecycleModal(manage.dataset.nodeLifecycle);return;}
+    const upgrade=e.target.closest("[data-agent-upgrade]");
+    if(upgrade){agentBootstrapModal(upgrade.dataset.agentUpgrade);return;}
     const repair=e.target.closest("[data-agent-repair]");
     if(repair){agentRepairModal(repair.dataset.agentRepair);return;}
     const revoke=e.target.closest("[data-agent-revoke]");
