@@ -142,14 +142,22 @@ def _delete_remnawave(node_id,delete_profile):
     job=storage.get_install_job(node_id)
     remote_uuid=job["remote_uuid"]
     profile_uuid=job["profile_uuid"]
-    if not remote_uuid:
-        return {"node_removed":False,"profile_removed":False,"already_unregistered":True}
+    if not remote_uuid and (not profile_uuid or not delete_profile):
+        return {"node_removed":False,"profile_removed":False,
+                "profile_retained":bool(profile_uuid)}
     try:
         rows=remnawave.request("GET","/api/nodes").get("response")
-        if not isinstance(rows,list):raise LifecycleError("Не удалось проверить ноды Remnawave")
-        found=any(isinstance(n,dict) and n.get("uuid")==remote_uuid for n in rows)
+        if not isinstance(rows,list):
+            raise LifecycleError("Не удалось проверить ноды Remnawave")
+        found=bool(remote_uuid and any(
+            isinstance(n,dict) and n.get("uuid")==remote_uuid for n in rows))
+        # Refuse before deleting anything if the profile has unknown owner
+        # or is shared. After deleting the node, verify once more.
         if delete_profile and profile_uuid:
-            _profile_used_by_other(rows,remote_uuid,profile_uuid) if found else _assert_unshared(rows,profile_uuid)
+            if found:
+                _profile_used_by_other(rows,remote_uuid,profile_uuid)
+            else:
+                _assert_unshared(rows,profile_uuid)
             profile=remnawave.detailed_profile(profile_uuid)
             expected=vps_install.config_profile_name(Endpoint(
                 node["code"],node["domain"],node["country"]))
@@ -157,17 +165,15 @@ def _delete_remnawave(node_id,delete_profile):
                 raise LifecycleError("Имя профиля изменено, автоматическое удаление запрещено")
         if found:
             remnawave.delete_node(remote_uuid)
-        # If profile removal fails, retain profile_uuid and report partial state,
-        # so retries do not remove unrelated nodes or forget where it is.
-        with storage.transaction() as db:
-            db.execute("UPDATE node_installations SET remote_uuid='' WHERE node_id=?",(node_id,))
-            storage.event(db,"node.remnawave.delete",node_id,"Unregistered "+node["code"])
+        if remote_uuid:
+            with storage.transaction() as db:
+                db.execute("UPDATE node_installations SET remote_uuid='' WHERE node_id=?",(node_id,))
+                storage.event(db,"node.remnawave.delete",node_id,"Unregistered "+node["code"])
         deleted_profile=False
         if delete_profile and profile_uuid:
             _assert_unshared(remnawave.request("GET","/api/nodes").get("response"),profile_uuid)
             remnawave.delete_profile(profile_uuid)
             deleted_profile=True
-        if deleted_profile:
             with storage.transaction() as db:
                 db.execute("UPDATE node_installations SET profile_uuid='' WHERE node_id=?",(node_id,))
                 storage.event(db,"node.profile.delete",node_id,"Removed dedicated profile")
