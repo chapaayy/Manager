@@ -1,0 +1,239 @@
+"""Node Manager Agent transport and task queue. NO SSH after provisioning.
+
+Agent identity: a random 256-bit bearer secret bound to a single node, stored
+as a SHA-256 digest. Transport relies on the existing HTTPS reverse proxy;
+keys are never returned to the admin UI after initial SSH bootstrap.
+"""
+import hashlib
+import hmac
+import json
+import re
+import secrets
+import time
+import uuid
+from datetime import datetime, timezone
+
+from . import storage
+
+ALLOWED = {"system.status", "docker.status", "docker.restart", "docker.logs",
+           "service.status", "service.restart", "cert.status", "cert.export",
+           "config.read", "config.apply"}
+MAX_RESULT = 48000
+LEASE_SECONDS = 120
+
+
+class AgentError(ValueError):
+    pass
+
+
+def initialize():
+    with storage.connect() as db:
+        db.executescript("""
+        CREATE TABLE IF NOT EXISTS manager_agents(
+          node_id TEXT PRIMARY KEY REFERENCES nodes(id) ON DELETE CASCADE,
+          token_hash TEXT NOT NULL,
+          version TEXT NOT NULL DEFAULT '',
+          last_seen INTEGER NOT NULL DEFAULT 0,
+          last_status_json TEXT NOT NULL DEFAULT '{}',
+          enabled INTEGER NOT NULL DEFAULT 1,
+          enrolled_at INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE TABLE IF NOT EXISTS manager_agent_jobs(
+          id TEXT PRIMARY KEY,
+          node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+          action TEXT NOT NULL,
+          payload_json TEXT NOT NULL DEFAULT '{}',
+          result_json TEXT NOT NULL DEFAULT '{}',
+          status TEXT NOT NULL DEFAULT 'queued',
+          error TEXT NOT NULL DEFAULT '',
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL,
+          expires_at INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS manager_agent_jobs_node
+          ON manager_agent_jobs(node_id,status,created_at);
+        """)
+
+
+def issue_token(node_id: str) -> str:
+    """Only for a user-authorized first SSH setup or one-time migration."""
+    storage.get_node(node_id)
+    token = secrets.token_urlsafe(48)
+    digest = hashlib.sha256(token.encode()).hexdigest()
+    now = int(time.time())
+    with storage.transaction() as db:
+        db.execute("""INSERT INTO manager_agents
+          (node_id,token_hash,enrolled_at,enabled,last_seen)
+          VALUES(?,?,?,1,0)
+          ON CONFLICT(node_id) DO UPDATE SET
+          token_hash=excluded.token_hash,enrolled_at=excluded.enrolled_at,
+          enabled=1,last_seen=0,version='',last_status_json='{}'""",
+          (node_id,digest,now))
+        # Discard old jobs for revoked/replaced agent identity.
+        db.execute("UPDATE manager_agent_jobs SET status='failed',error='Agent credentials rotated' "
+                   "WHERE node_id=? AND status IN ('queued','leased')",(node_id,))
+        storage.event(db,"agent.enroll",node_id,"Node agent credentials issued")
+    return token
+
+
+def authenticate(node_id: str, auth_header: str) -> bool:
+    if not isinstance(node_id,str) or not re.fullmatch(r"[0-9a-fA-F-]{36}",node_id):
+        return False
+    if not isinstance(auth_header,str) or not auth_header.startswith("Bearer "):
+        return False
+    token=auth_header[7:]
+    if not 32 <= len(token) <= 192:
+        return False
+    with storage.connect() as db:
+        row=db.execute("SELECT token_hash,enabled FROM manager_agents WHERE node_id=?",
+                       (node_id,)).fetchone()
+    return bool(row and row["enabled"] and hmac.compare_digest(
+        row["token_hash"],hashlib.sha256(token.encode()).hexdigest()))
+
+
+def heartbeat(node_id: str, data: dict) -> dict:
+    if not isinstance(data,dict):
+        raise AgentError("Неверный heartbeat")
+    version=str(data.get("version",""))[:40]
+    metrics=data.get("metrics",{})
+    if not isinstance(metrics,dict) or len(json.dumps(metrics)) > 4000:
+        raise AgentError("Слишком большой heartbeat")
+    now=int(time.time())
+    with storage.transaction() as db:
+        db.execute("UPDATE manager_agents SET last_seen=?,version=?,last_status_json=? WHERE node_id=?",
+                   (now,version,json.dumps(metrics,separators=(",",":")),node_id))
+    return {"ok":True,"next_poll_seconds":5}
+
+
+def enqueue(node_id: str, action: str, payload: dict | None = None,
+            ttl: int = 300) -> dict:
+    if action not in ALLOWED:
+        raise AgentError("Неподдерживаемая операция агента")
+    node=storage.get_node(node_id)
+    if node["status"] != "ready":
+        raise AgentError("Нода должна быть установлена")
+    payload=payload or {}
+    if not isinstance(payload,dict) or len(json.dumps(payload)) > 50000:
+        raise AgentError("Некорректные параметры задания")
+    if not 30 <= ttl <= 900:
+        raise AgentError("Недопустимое время ожидания")
+    now=int(time.time())
+    with storage.transaction() as db:
+        agent=db.execute("SELECT enabled FROM manager_agents WHERE node_id=?",
+                         (node_id,)).fetchone()
+        if not agent or not agent["enabled"]:
+            raise AgentError("На VPS ещё не установлен агент")
+        outstanding=db.execute("""SELECT COUNT(*) FROM manager_agent_jobs
+                       WHERE node_id=? AND status IN ('queued','leased')""",(node_id,)).fetchone()[0]
+        if outstanding>=8:
+            raise AgentError("Очередь задач ноды заполнена")
+        jid=str(uuid.uuid4())
+        db.execute("""INSERT INTO manager_agent_jobs
+             (id,node_id,action,payload_json,created_at,updated_at,expires_at)
+             VALUES(?,?,?,?,?,?,?)""",
+             (jid,node_id,action,json.dumps(payload,separators=(",",":")),now,now,now+ttl))
+        storage.event(db,"agent.task",node_id,"Queued "+action)
+    return {"id":jid,"node_id":node_id,"action":action,"status":"queued"}
+
+
+def poll(node_id: str) -> dict:
+    now=int(time.time())
+    with storage.transaction() as db:
+        db.execute("UPDATE manager_agent_jobs SET status='expired',updated_at=? "
+                   "WHERE node_id=? AND status='queued' AND expires_at<?",
+                   (now,node_id,now))
+        # Leased jobs are NOT retried: execution could already have happened.
+        db.execute("UPDATE manager_agent_jobs SET status='failed',error='Agent result timeout',"
+                   "updated_at=? WHERE node_id=? AND status='leased' AND updated_at<?",
+                   (now,node_id,now-LEASE_SECONDS))
+        row=db.execute("""SELECT id,action,payload_json FROM manager_agent_jobs
+                          WHERE node_id=? AND status='queued' ORDER BY created_at,id LIMIT 1""",
+                       (node_id,)).fetchone()
+        if not row:
+            return {"job":None,"next_poll_seconds":5}
+        db.execute("UPDATE manager_agent_jobs SET status='leased',updated_at=? WHERE id=?",
+                   (now,row["id"]))
+    return {"job":{"id":row["id"],"action":row["action"],
+                   "payload":json.loads(row["payload_json"])},"next_poll_seconds":1}
+
+
+def report(node_id: str, body: dict) -> dict:
+    if not isinstance(body,dict):
+        raise AgentError("Неверный отчёт агента")
+    jid=body.get("id")
+    if not isinstance(jid,str) or not re.fullmatch(r"[0-9a-f-]{36}",jid):
+        raise AgentError("Неверный идентификатор задания")
+    ok=body.get("ok")
+    result=body.get("result",{})
+    if not isinstance(ok,bool) or not isinstance(result,dict):
+        raise AgentError("Неверный результат задания")
+    with storage.connect() as db:
+        row=db.execute("SELECT action,status FROM manager_agent_jobs WHERE id=? AND node_id=?",
+                       (jid,node_id)).fetchone()
+    if row is None or row["status"]!="leased":
+        raise AgentError("Задание уже завершено или неизвестно")
+    # Certificates are processed in memory and NEVER written to DB.
+    if row["action"]=="cert.export" and ok:
+        from . import node_cert_sync
+        # The certificate and private key go only to Remnawave via HTTPS API.
+        # Do not include errors from that API which could contain PEM.
+        try:
+            outcome=node_cert_sync.apply_agent_export(node_id,result)
+            result={"expires_at":outcome["expires_at"],"updated":outcome["updated"],
+                    "fingerprint":outcome["fingerprint"]}
+        except Exception:
+            ok=False
+            result={}
+            error="Не удалось проверить или применить TLS сертификат через API"
+        else:
+            error=""
+    else:
+        error=str(body.get("error",""))[:250]
+        if "key" in result or "certificate" in result or "chain" in result:
+            raise AgentError("Секретные данные запрещены в журнале задания")
+        if len(json.dumps(result)) > MAX_RESULT:
+            result={"truncated":True}
+    now=int(time.time())
+    with storage.transaction() as db:
+        db.execute("""UPDATE manager_agent_jobs SET status=?,result_json=?,error=?,
+                      updated_at=? WHERE id=? AND node_id=? AND status='leased'""",
+                   ("done" if ok else "failed",json.dumps(result,separators=(",",":")),
+                    "" if ok else error,now,jid,node_id))
+        storage.event(db,"agent.result",node_id,row["action"]+(" completed" if ok else " failed"))
+    return {"ok":True}
+
+
+def nodes_status() -> list[dict]:
+    now=int(time.time())
+    with storage.connect() as db:
+        rows=db.execute("""SELECT n.id,n.code,n.domain,a.enabled,a.version,a.last_seen,
+                           a.last_status_json FROM nodes n
+                           LEFT JOIN manager_agents a ON n.id=a.node_id
+                           ORDER BY n.code""").fetchall()
+    return [{"id":r["id"],"code":r["code"],"domain":r["domain"],
+            "installed":r["enabled"] is not None,
+            "online":bool(r["enabled"] and r["last_seen"] and now-r["last_seen"]<45),
+            "version":r["version"] or "", "last_seen":r["last_seen"] or 0,
+            "metrics":json.loads(r["last_status_json"] or "{}")}
+            for r in rows]
+
+
+def job_status(node_id: str, job_id: str) -> dict:
+    with storage.connect() as db:
+        row=db.execute("""SELECT id,action,status,result_json,error,created_at,updated_at
+                          FROM manager_agent_jobs WHERE node_id=? AND id=?""",
+                       (node_id,job_id)).fetchone()
+    if not row:raise LookupError("Задание не найдено")
+    return {"id":row["id"],"action":row["action"],"status":row["status"],
+            "result":json.loads(row["result_json"] or "{}"),
+            "error":row["error"],"created_at":row["created_at"],
+            "updated_at":row["updated_at"]}
+
+
+def revoke(node_id: str):
+    with storage.transaction() as db:
+        db.execute("UPDATE manager_agents SET enabled=0 WHERE node_id=?",(node_id,))
+        db.execute("UPDATE manager_agent_jobs SET status='failed',error='Agent revoked' "
+                   "WHERE node_id=? AND status IN ('queued','leased')",(node_id,))
+        storage.event(db,"agent.revoked",node_id,"Agent credential revoked")
+    return {"revoked":True,"node_id":node_id}
