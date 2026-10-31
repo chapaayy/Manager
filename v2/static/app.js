@@ -133,10 +133,44 @@ async function refreshCertificates(){
         '</span><button class="btn subtle" type="button" data-cert-sync="'+esc(n.id)+
         '" '+(!ready?"disabled":"")+'>Синхронизировать</button>'+
         '<button class="btn subtle" type="button" data-cert-enroll="'+esc(n.id)+
-        '" '+(!ready?"disabled":"")+'>Автосинхронизация</button></div>';
+        '" '+(!ready?"disabled":"")+'>Автосинхронизация</button>'+
+        (n.staged&&n.node_status==="ready"&&n.profile_mode==="inline"?
+          '<button class="btn primary" type="button" data-cert-migrate="'+esc(n.id)+'">Перейти на файлы</button>':"")+
+        (n.profile_mode==="files"?
+          '<button class="btn subtle" type="button" data-cert-restore="'+esc(n.id)+'">Откатить Xray</button>':"")+
+        '</div>';
     }).join("")||'<p class="muted">Нет серверов для синхронизации.</p>';
   }catch(e){target.textContent=e.message;target.className="form-feedback error";}
 }
+async function certMigrationModal(id, restore=false){
+  const node=state.nodes.find(n=>n.id===id);
+  if(!node)return;
+  try{
+    if(restore){
+      if(!confirm("Восстановить предыдущий Xray-конфиг "+node.code+"? Будет перезапуск ноды и кратковременный разрыв соединений."))return;
+      await api("/certificates/"+encodeURIComponent(id)+"/restore","POST",{confirm_restore:true});
+      message("Запрошен откат Xray "+node.code+". Проверь работу клиентов.");
+      await refreshCertificates();return;
+    }
+    const plan=await api("/certificates/"+encodeURIComponent(id)+"/migration");
+    openModal("Переключить "+node.code+" на файловые сертификаты","XRAY / ПРОВЕРКА",
+      '<p>Изменится <strong>только путь к TLS-сертификату</strong> внутри штатного inbound.</p>'+
+      '<p class="muted small">Профиль: '+esc(plan.profile_uuid)+'</p>'+
+      '<p class="muted small">Ключ: <code>'+esc(plan.panel_paths.keyFile)+'</code></p>'+
+      '<p class="muted small">Сертификат: <code>'+esc(plan.panel_paths.certificateFile)+'</code></p>'+
+      '<p class="inline-info">Том должен быть подключён к Remnawave Panel. Сохранится зашифрованная резервная копия прежнего конфига. Потребуется перезапуск Xray, возможен разрыв подключений.</p>'+
+      '<form><label class="check-row"><input type="checkbox" required name="confirmed"> Подтверждаю переключение работающей ноды</label>'+
+      '<div class="form-buttons"><button type="submit" class="btn primary">Применить и перезапустить</button></div></form>',
+      async fd=>{
+        await api("/certificates/"+encodeURIComponent(id)+"/migration","POST",{
+          sha256:plan.sha256,confirm_change:fd.get("confirmed")==="on"
+        });
+        message("Файловые сертификаты включены для "+node.code+". Проверь работу Xray.");
+        await refreshCertificates();
+      });
+  }catch(e){message(e.message,true)}
+}
+
 function certSyncModal(id, auto=false){
   const node=state.nodes.find(n=>n.id===id);
   if(!node)return;
@@ -634,6 +668,10 @@ function bindEvents(){
   };
   $("cert-nodes").addEventListener("click",e=>{
     const sync=e.target.closest("[data-cert-sync]");
+    const migrate=e.target.closest("[data-cert-migrate]");
+    const restore=e.target.closest("[data-cert-restore]");
+    if(migrate){certMigrationModal(migrate.dataset.certMigrate);return}
+    if(restore){certMigrationModal(restore.dataset.certRestore,true);return}
     const auto=e.target.closest("[data-cert-enroll]");
     if(sync)certSyncModal(sync.dataset.certSync,false);
     else if(auto)certSyncModal(auto.dataset.certEnroll,true);
