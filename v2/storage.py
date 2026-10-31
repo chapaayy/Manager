@@ -130,6 +130,12 @@ def init_db():
             updated_at INTEGER NOT NULL
         );
         CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_installed_vps_ip ON node_installations(ip);
+        CREATE TABLE IF NOT EXISTS certificate_settings (
+            id INTEGER PRIMARY KEY CHECK(id=1),
+            enabled INTEGER NOT NULL DEFAULT 0,
+            updated_at INTEGER NOT NULL DEFAULT 0
+        );
+        INSERT OR IGNORE INTO certificate_settings(id) VALUES(1);
         CREATE TABLE IF NOT EXISTS node_certificates (
             node_id TEXT PRIMARY KEY REFERENCES nodes(id) ON DELETE CASCADE,
             sync_key_enc TEXT NOT NULL DEFAULT '',
