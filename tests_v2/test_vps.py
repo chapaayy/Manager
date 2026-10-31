@@ -42,16 +42,17 @@ def test_starter_bundle_contains_working_example_nginx_and_compose(db):
 
 def test_rendered_node_tls_has_no_old_bridge_routes_or_plaintext_secrets():
     from v2.vps_install import xray_config
-    x=xray_config(Endpoint("DE1","de1.gowayot.com","DE"),
-      "-----BEGIN CERTIFICATE-----\nAAA\n-----END CERTIFICATE-----",
-      "-----BEGIN PRIVATE KEY-----\nBBB\n-----END PRIVATE KEY-----")
+    x=xray_config(Endpoint("DE1","de1.gowayot.com","DE"))
     validate_rendered(x)
     assert len(x["inbounds"])==1
     assert x["inbounds"][0]["port"]==443
     assert x["inbounds"][0]["settings"]["fallbacks"][0]["dest"]=="127.0.0.1:8080"
     assert x["routing"]["rules"][-1]["outboundTag"]=="DIRECT"
-    assert all("TO_DE1" not in json.dumps(z) for z in x["outbounds"])
-    assert x["inbounds"][0]["streamSettings"]["tlsSettings"]["certificates"][0]["key"][0]=="-----BEGIN PRIVATE KEY-----"
+    cert=x["inbounds"][0]["streamSettings"]["tlsSettings"]["certificates"][0]
+    assert cert["keyFile"]=="/opt/nginx/certs/de1.gowayot.com_privkey.key"
+    assert cert["certificateFile"]=="/opt/nginx/certs/de1.gowayot.com_fullchain.pem"
+    assert "key" not in cert and "certificate" not in cert
+    assert "PRIVATE KEY" not in json.dumps(x)
 
 
 @pytest.mark.parametrize("bad",["127.0.0.1","10.0.0.1","192.168.1.1","::1","0.0.0.0","256.256.256.256"])
