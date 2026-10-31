@@ -94,18 +94,11 @@ async function installVps(){
   }catch(e){message(e.message,true);updateVpsConsent()}
 }
 async function forgetFailedVps(id){
-  const node=state.nodes.find(n=>n.id===id);
-  if(!node||!["failed","interrupted"].includes(node.status))
-    return message("Нельзя удалять активную или рабочую ноду.",true);
-  if(!confirm("Убрать "+node.code+" из менеджера?\\n\\nУдалится только запись и история неудачной установки. Docker, сертификаты, Remnawave и файлы на VPS останутся без изменений. Если VPS частично настроен, он останется таким же."))
-    return;
-  try{
-    await api("/vps/jobs/"+encodeURIComponent(id)+"/forget","POST",{confirm_local_only:true});
-    const modal=document.getElementById("modal");
-    if(modal.open)modal.close();
-    await refresh();
-    message("Запись "+node.code+" убрана. Сам VPS не изменён.");
-  }catch(e){message(e.message,true)}
+  // Failed installations can already have a Remnawave node or orphaned profile.
+  // Use the same scoped API-removal wizard instead of silently forgetting them.
+  const modal=document.getElementById("modal");
+  if(modal.open)modal.close();
+  await nodeLifecycleModal(id);
 }
 async function showVpsJob(id,focusRetry=false){
   try{
@@ -124,7 +117,7 @@ async function showVpsJob(id,focusRetry=false){
         '<label class="check-row"><input name="confirm_existing" type="checkbox" required value="yes"> Продолжить с настройки Remnawave без переустановки VPS</label>'+
         '<div class="form-buttons"><button type="submit" class="btn primary">Продолжить подключение</button></div>'+
         '</form>':'')+
-      (terminal?'<div class="form-buttons"><button type="button" class="btn subtle" id="forget-failed-vps">Убрать запись из менеджера</button></div>':'')+
+      (terminal?'<div class="form-buttons"><button type="button" class="btn subtle" id="forget-failed-vps">Удалить ноду…</button></div>':'')+
       '<p class="muted small">Регистрация ещё не означает доступность клиентских подключений. Для них необходимы Hosts и Internal Squads.</p>';
     openModal("Установка "+(node?node.code:"VPS"),"СОСТОЯНИЕ СЕРВЕРА",details,
       canRecover?async fd=>{

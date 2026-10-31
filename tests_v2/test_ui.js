@@ -20,7 +20,7 @@ for(const id of [
   assert(unique.has(id),"Required UI element: "+id);
 }
 assert.match(html,/\/static\/icons\.svg/);
-assert.match(html,/\/static\/app\.js\?v=2\.5\.0/);
+assert.match(html,/\/static\/app\.js\?v=2\.5\.1/);
 assert.match(css,/\.sidebar\.collapsed/);
 assert.match(css,/\.workspace\{flex:1;min-width:0;width:0/);
 assert.match(css,/prefers-reduced-motion/);
@@ -38,13 +38,15 @@ assert(!js.includes("projectCache"),"Multi-panel project JavaScript must be abse
 console.log("PASS: clean single-panel v2 interface wiring and layout");
 
 assert.match(js,/async function nodeLifecycleModal/,"Node lifecycle confirmation UI exists");
-assert.match(js,/continueFullNodeDeletion/,"Full cleanup is resumable in the UI");
+assert.match(js,/\/removal-preview/,"Deletion preview inspects Remnawave assignments");
+assert.match(js,/\/remove","POST"/,"Deletion uses one scoped API operation");
+assert.doesNotMatch(js,/continueFullNodeDeletion/,"UI must not invoke VPS full cleanup");
+assert.doesNotMatch(js,/\/full\/start/,"UI must not start destructive VPS cleanup");
+assert.match(js,/shared_profile_confirmation|shared_confirmation/,"Shared profile requires explicit confirmation");
+assert.match(js,/Удалить запись из XPPN Manager/,"Manager removal is always explicit");
+assert.match(js,/toggle-node-archive/,"Archive remains available");
+assert.match(vps,/await nodeLifecycleModal\(id\)/,"Failed install removal uses the same wizard");
 assert.match(html,/nodes-show-archived/,"Archived nodes can be shown");
-
-assert.match(js,/Уже удалена — убрать запись из менеджера/,"Offline VPS prompts local deletion");
-assert.match(js,/value="full" disabled/,"Offline VPS cannot trigger agent-only cleanup");
-assert.match(js,/value="abandon"/,"An interrupted deletion has explicit local-only recovery");
-assert.match(js,/node-lifecycle-profile-option/,"Profile removal checkbox has contextual visibility");
 
 assert.match(js,/migrateNodeTLSModal/,"UI supports per-node TLS path migration");
 assert.match(js,/data-tls-migrate/,"TLS migration is visible only as an explicit action");

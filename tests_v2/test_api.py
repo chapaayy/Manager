@@ -9,7 +9,7 @@ import pytest
 from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 from v2.app import app
-from v2 import storage
+from v2 import storage, remnawave
 from v2.template_engine import Endpoint,Exit,render_bridge
 
 
@@ -248,3 +248,21 @@ def test_duplicate_domains_have_human_readable_message(client):
     assert r.status_code==422
     assert "уже добавлен" in r.json()["detail"]
     assert "UNIQUE constraint" not in r.text
+
+
+def test_manager_only_removal_api_rejects_old_vps_wipe(client, monkeypatch):
+    node = add_node(client, "RUS10", "regular", "rus10.gowayot.com", "RU")
+    monkeypatch.setattr(remnawave, "request",
+                        lambda *_args: pytest.fail("No Remnawave call for local removal"))
+    preview = client.get("/api/nodes/" + node["id"] + "/removal-preview")
+    assert preview.status_code == 200, preview.text
+    assert preview.json()["remnawave_available"] is True
+    old = client.post("/api/nodes/" + node["id"] + "/full/start", json={"code": "RUS10"})
+    assert old.status_code == 410
+    old = client.post("/api/nodes/" + node["id"] + "/full/advance", json={"code": "RUS10"})
+    assert old.status_code == 410
+    removed = client.post("/api/nodes/" + node["id"] + "/remove", json={
+        "code": "RUS10", "remove_remote": False, "delete_profile": False})
+    assert removed.status_code == 200, removed.text
+    assert removed.json()["vps_touched"] is False
+    assert all(n["id"] != node["id"] for n in storage.list_nodes())

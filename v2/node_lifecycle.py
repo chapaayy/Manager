@@ -29,6 +29,18 @@ def initialize():
         """)
 
 
+def disable_pending_vps_cleanup():
+    """Cancel legacy queued VPS wipe commands on startup; never issue new ones."""
+    with storage.transaction() as db:
+        db.execute(
+            """UPDATE manager_agent_jobs
+               SET status='failed',error='Legacy VPS cleanup disabled by Manager',
+                   updated_at=?
+               WHERE action IN ('node.cleanup','node.cleanup.finish')
+                 AND status='queued'""",
+            (int(time.time()),))
+
+
 def _row(node_id):
     with storage.connect() as db:
         row=db.execute("SELECT * FROM node_lifecycle WHERE node_id=?",(node_id,)).fetchone()
