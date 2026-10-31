@@ -142,7 +142,8 @@ async function renderAgents(){
         '<button class="btn subtle" data-agent-id="'+esc(n.id)+'" data-agent-action="logs.read">Xray логи</button>'+
         '<button class="btn subtle" data-agent-id="'+esc(n.id)+'" data-agent-action="cert.status">Certbot</button>'+
         '<button class="btn subtle" data-agent-id="'+esc(n.id)+'" data-agent-action="config.read">Nginx</button>'+
-        '<button class="btn subtle" data-agent-id="'+esc(n.id)+'" data-agent-action="docker.restart">Рестарт ноды</button>':
+        '<button class="btn subtle" data-agent-id="'+esc(n.id)+'" data-agent-action="docker.restart">Рестарт ноды</button>'+
+        '<button class="btn subtle" data-agent-revoke="'+esc(n.id)+'">Отозвать доступ</button>':
         !n.installed?'<button class="btn primary" data-agent-install="'+esc(n.id)+'">Установить агент (один раз SSH)</button>':'')+
         '</div>';
     }).join("")||'<p class="muted">Серверов пока нет.</p>';
@@ -616,6 +617,14 @@ function bindEvents(){
   updatePolling=setInterval(()=>{if(currentPage==="updates")refreshUpdateStatus()},4500);
   $("agents-refresh").onclick=renderAgents;
   $("agents-list").addEventListener("click",e=>{
+    const revoke=e.target.closest("[data-agent-revoke]");
+    if(revoke){
+      const id=revoke.dataset.agentRevoke;
+      if(!confirm("Отозвать доступ агента этой VPS? Она больше не сможет управляться через менеджер до повторной регистрации."))return;
+      api("/agents/"+encodeURIComponent(id)+"/revoke","POST",{confirmed:true})
+        .then(()=>renderAgents()).catch(err=>message(err.message,true));
+      return;
+    }
     const install=e.target.closest("[data-agent-install]");
     const action=e.target.closest("[data-agent-action]");
     if(install)agentBootstrapModal(install.dataset.agentInstall);
