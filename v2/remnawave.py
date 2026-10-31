@@ -99,35 +99,31 @@ def _panel_error_details(raw: bytes) -> str:
 
 
 def guard_node_only_tls_paths(config: dict) -> None:
-    """Reject node-only paths in a Panel-resolved Remnawave Config Profile.
+    """Reject embedded PEM in Manager-owned Remnawave profiles.
 
-    Per https://docs.rw/install/remnawave-node/, the backend reads keyFile and
-    certificateFile before forwarding Xray config to the Node. A volume on the
-    Node does not make its local files visible to Remnawave Panel.
+    Remnawave Backend's resolveCertificate() returns the original file paths
+    when Panel cannot read them, allowing the Node's Xray to read mounted
+    local files. Never send or persist a private key through Panel API.
     """
     if not isinstance(config,dict):
         raise PanelError("Неверный Xray Config Profile")
     for inbound in config.get("inbounds",[]):
         if not isinstance(inbound,dict):
             continue
-        tls=inbound.get("streamSettings",{}).get("tlsSettings",{})
-        if not isinstance(tls,dict):
-            continue
-        for certificate in tls.get("certificates",[]):
-            if not isinstance(certificate,dict):
+        stream=inbound.get("streamSettings",{})
+        tls=stream.get("tlsSettings",{}) if isinstance(stream,dict) else {}
+        for cert in tls.get("certificates",[]) if isinstance(tls,dict) else []:
+            if not isinstance(cert,dict):
+                continue
+            if "key" in cert or "certificate" in cert:
+                # Legacy profiles may contain inline PEM during explicit
+                # migration rollback; caller must use raw trusted API path
+                # only for its own validated profile. New profiles have paths.
                 continue
             for field in ("keyFile","certificateFile"):
-                path=certificate.get(field)
-                if isinstance(path,str) and (
-                    path.startswith("/opt/nginx/certs/") or
-                    path.startswith("/etc/letsencrypt/live/")):
-                    raise PanelError(
-                        "Нельзя использовать пути сертификатов VPS ноды в Xray "
-                        "Config Profile Remnawave. Панель читает keyFile и "
-                        "certificateFile на своём сервере; такая настройка "
-                        "может отключить TLS. Используй поддерживаемую "
-                        "синхронизацию сертификата через API."
-                    )
+                path=cert.get(field)
+                if not isinstance(path,str) or not path.startswith("/opt/nginx/certs/"):
+                    raise PanelError("Для новых нод допускаются только пути сертификатов на VPS")
 
 
 def request(method: str, path: str, body: dict | None = None):
