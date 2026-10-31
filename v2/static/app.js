@@ -126,7 +126,7 @@ async function renderAgents(){
   try{
     const data=await api("/agents");
     target.innerHTML=(data.agents||[]).map(n=>{
-      const status=n.online?"Онлайн":n.revoked?"Доступ отозван":n.installed?"Нет связи":"Не установлен";
+      const status=n.online?"Онлайн":n.revoked?"Доступ отозван":n.last_seen?"Нет связи":n.installed?"Ожидается первое подключение":"Не установлен";
       const m=n.metrics||{};
       const ram=m.MemTotal_bytes?Math.round((m.MemTotal_bytes-(m.MemAvailable_bytes||0))/m.MemTotal_bytes*100)+"%":"—";
       return '<div class="node-card" style="flex-wrap:wrap"><span class="feature-icon">'+icon("server")+'</span>'+
@@ -144,7 +144,7 @@ async function renderAgents(){
         '<button class="btn subtle" data-agent-id="'+esc(n.id)+'" data-agent-action="config.read">Nginx</button>'+
         '<button class="btn subtle" data-agent-id="'+esc(n.id)+'" data-agent-action="docker.restart">Рестарт ноды</button>'+
         '<button class="btn subtle" data-agent-revoke="'+esc(n.id)+'">Отозвать доступ</button>':
-        (!n.installed||n.revoked)?'<button class="btn primary" data-agent-install="'+esc(n.id)+'">'+(n.revoked?"Повторная регистрация":"Установить агент (один раз SSH)")+'</button>':'')+
+        (!n.installed||n.revoked||!n.last_seen)?'<button class="btn primary" data-agent-install="'+esc(n.id)+'">'+(n.revoked?"Повторная регистрация":n.installed?"Повторить первичную установку":"Установить агент (один раз SSH)")+'</button>':'')+
         '</div>';
     }).join("")||'<p class="muted">Серверов пока нет.</p>';
   }catch(e){target.textContent=e.message;target.className="form-feedback error";}
