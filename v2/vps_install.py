@@ -160,6 +160,11 @@ def preflight(ip: str, port: int, password: str, domain: str, expected_fp: str |
     }
 
 
+def config_profile_name(source: Endpoint) -> str:
+    """Name accepted by Remnawave: only ASCII letters, digits, _, - and spaces."""
+    return f"XPPN {source.code} {source.country} VLESS TLS"
+
+
 def preview_plan(source: Endpoint) -> dict:
     """Public dry-run of the first direct VLESS TLS VPS; no credentials or SSH."""
     tag=source.code+"_VLESS_TLS_IN"
@@ -179,7 +184,7 @@ def preview_plan(source: Endpoint) -> dict:
     }
     validate_rendered(proposed)
     return {
-      "name":f"XPPN {source.code} · {source.country} · VLESS TLS",
+      "name":config_profile_name(source),
       "xray":proposed,
       "nginx":(ROOT/"nginx.conf").read_text(encoding="utf-8").replace("{{source.domain}}",source.domain),
       "files":[
@@ -308,7 +313,7 @@ def _read_remote_file(t, path: str, max_bytes: int = 20000) -> str:
 def complete_panel_registration(node_id: str, source: Endpoint,
                                 certificate: str, private_key: str):
     """Continue from the panel phase only. Never install or rewrite VPS services."""
-    name = f"XPPN {source.code} · {source.country} · VLESS TLS"
+    name = config_profile_name(source)
     inbound_tag = source.code + "_VLESS_TLS_IN"
     installation = storage.get_install_job(node_id)
     profiles = remnawave.list_profiles()
