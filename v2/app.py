@@ -507,7 +507,7 @@ class RemotePanelCertEnrollData(BaseModel):
     confirm_panel_access: bool = False
 
 
-@app.post("/api/certificates/panel/enroll")
+@app.post("/api/panel-certificates/enroll")
 def certificate_panel_enroll(body: RemotePanelCertEnrollData, _=Depends(write_access)):
     try:
         return panel_delivery.enroll(body.ip,body.port,body.fingerprint,body.password,
