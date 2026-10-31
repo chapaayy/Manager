@@ -266,3 +266,22 @@ def test_manager_only_removal_api_rejects_old_vps_wipe(client, monkeypatch):
     assert removed.status_code == 200, removed.text
     assert removed.json()["vps_touched"] is False
     assert all(n["id"] != node["id"] for n in storage.list_nodes())
+
+
+def test_vps_preview_uses_selected_direct_or_bridge_library_preset(client):
+    presets=client.get("/api/presets").json()
+    direct=next(p for p in presets if p["mode"]=="direct")
+    bridge=next(p for p in presets if p["mode"]=="bridge")
+    base={"code":"RUS10","domain":"rus10.gowayot.com","country":"RU"}
+    for preset,role,inbounds in ((direct,"regular",1),(bridge,"entry",2)):
+        response=client.post("/api/vps/preview",json={
+            **base,"preset_id":preset["id"],"role":role})
+        assert response.status_code==200,response.text
+        data=response.json()
+        assert data["preset_mode"]==preset["mode"]
+        assert len(data["xray"]["inbounds"])==inbounds
+        assert "SECRET_KEY" not in response.text
+    invalid=client.post("/api/vps/preview",json={
+        **base,"preset_id":bridge["id"],"role":"regular"})
+    assert invalid.status_code==422
+    assert storage.list_nodes()==[]
