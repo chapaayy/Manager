@@ -22,7 +22,7 @@ FILES = {
 CONTAINERS = {"nginx", "remnanode"}
 SYSTEMD = {"docker.service", "certbot.timer", "xppn-node-firewall.service"}
 ACTIONS = {"docker.status", "docker.logs", "docker.restart",
-           "service.status", "service.restart", "cert.status",
+           "service.status", "service.restart", "logs.read", "cert.status",
            "cert.export", "config.read", "config.apply"}
 
 
