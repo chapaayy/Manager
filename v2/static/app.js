@@ -431,7 +431,7 @@ function renderNodes(){
        '<button type="button" class="btn subtle" data-install-node="'+esc(n.id)+'">Статус</button>':"")+
     (["failed","interrupted"].includes(n.status)?
        '<button type="button" class="btn primary" data-retry-vps="'+esc(n.id)+'">Продолжить</button>'+
-       '<button type="button" class="btn subtle" data-forget-vps="'+esc(n.id)+'">Убрать запись</button>':"")+
+       '<button type="button" class="btn subtle" data-forget-vps="'+esc(n.id)+'">Удалить…</button>':"")+
     '</div>'
   ).join(""):'<div class="empty-state"><h3>Незадействованных серверов нет</h3><p>Новые VPS появятся здесь, пока ты не включишь их в мост.</p></div>';
 }
