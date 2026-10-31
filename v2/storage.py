@@ -139,11 +139,19 @@ def init_db():
         CREATE TABLE IF NOT EXISTS node_certificates (
             node_id TEXT PRIMARY KEY REFERENCES nodes(id) ON DELETE CASCADE,
             sync_key_enc TEXT NOT NULL DEFAULT '',
+            profile_mode TEXT NOT NULL DEFAULT 'inline',
+            last_applied INTEGER NOT NULL DEFAULT 0,
             expires_at INTEGER NOT NULL DEFAULT 0,
             fingerprint TEXT NOT NULL DEFAULT '',
             last_synced INTEGER NOT NULL DEFAULT 0,
             last_error TEXT NOT NULL DEFAULT '',
             updated_at INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE TABLE IF NOT EXISTS cert_profile_backups (
+            node_id TEXT PRIMARY KEY REFERENCES nodes(id) ON DELETE CASCADE,
+            config_enc TEXT NOT NULL,
+            profile_uuid TEXT NOT NULL,
+            created_at INTEGER NOT NULL
         );
         CREATE TABLE IF NOT EXISTS starter_seeds (
             name TEXT PRIMARY KEY,
@@ -184,6 +192,12 @@ def init_db():
         columns = {r["name"] for r in c.execute("PRAGMA table_info(panel)").fetchall()}
         if "caddy_api_key_enc" not in columns:
             c.execute("ALTER TABLE panel ADD COLUMN caddy_api_key_enc TEXT NOT NULL DEFAULT ''")
+        cert_columns = {r["name"] for r in c.execute("PRAGMA table_info(node_certificates)")}
+        if "profile_mode" not in cert_columns:
+            c.execute("ALTER TABLE node_certificates ADD COLUMN profile_mode TEXT NOT NULL DEFAULT 'inline'")
+        if "last_applied" not in cert_columns:
+            c.execute("ALTER TABLE node_certificates ADD COLUMN last_applied INTEGER NOT NULL DEFAULT 0")
+
 
 
 def event(c, action: str, target: str, message: str):
