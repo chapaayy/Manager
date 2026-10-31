@@ -203,7 +203,11 @@ def test_unused_draft_deletion_refuses_bridge_references(client):
 
 
 def test_one_time_rus10_test_cleanup_is_precise_and_idempotent(client):
-    test=add_node(client,"RUS10","regular","rus10.gowayot.com","RU")
+    response=client.post("/api/nodes",json={
+        "code":"RUS10","name":"RUS10","country":"RU",
+        "domain":"rus10.gowayot.com","role":"regular"})
+    assert response.status_code==200,response.text
+    test=response.json()
     real=add_node(client,"DE11","regular","de11.gowayot.com","DE")
     # A fresh app has already recorded the migration marker on startup.
     # Simulate upgrading an older DB that did not run this migration yet.
@@ -213,13 +217,21 @@ def test_one_time_rus10_test_cleanup_is_precise_and_idempotent(client):
     assert storage.remove_one_time_test_rus10() is True
     assert [n["id"] for n in storage.list_nodes()]==[real["id"]]
     # The cleanup is never applied again, even if user later adds a new draft.
-    again=add_node(client,"RUS10","regular","rus10.gowayot.com","RU")
+    response2=client.post("/api/nodes",json={
+        "code":"RUS10","name":"RUS10","country":"RU",
+        "domain":"rus10.gowayot.com","role":"regular"})
+    assert response2.status_code==200,response2.text
+    again=response2.json()
     assert storage.remove_one_time_test_rus10() is False
     assert storage.get_node(again["id"])["status"]=="planned"
 
 
 def test_one_time_cleanup_never_removes_attached_test_draft(client):
-    test=add_node(client,"RUS10","regular","rus10.gowayot.com","RU")
+    response=client.post("/api/nodes",json={
+        "code":"RUS10","name":"RUS10","country":"RU",
+        "domain":"rus10.gowayot.com","role":"regular"})
+    assert response.status_code==200,response.text
+    test=response.json()
     storage.create_install_job(test["id"],"1.1.1.1",22,"SHA256:"+("a"*43))
     with storage.transaction() as c:
         c.execute("DELETE FROM starter_seeds WHERE name=?",
