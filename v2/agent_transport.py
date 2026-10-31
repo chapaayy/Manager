@@ -112,6 +112,10 @@ def enqueue(node_id: str, action: str, payload: dict | None = None,
     if action.startswith("node.cleanup") and not internal:
         raise AgentError("Удаление VPS разрешено только через мастер удаления")
     node=storage.get_node(node_id)
+    with storage.connect() as chk:
+        active=chk.execute("SELECT phase FROM node_lifecycle WHERE node_id=?",(node_id,)).fetchone()
+    if active and active["phase"] and not (internal and action.startswith("node.cleanup")):
+        raise AgentError("Нода проходит удаление; обычные задания временно запрещены")
     if node["status"] != "ready":
         raise AgentError("Нода должна быть установлена")
     payload=payload or {}
