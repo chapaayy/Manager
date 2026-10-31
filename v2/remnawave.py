@@ -222,8 +222,8 @@ def node_secret() -> str:
 
 def create_profile(name: str, xray_config: dict) -> dict:
     """Create a dedicated profile, never rewrite a profile used by other VPS."""
-    if not 3 <= len(name) <= 70 or any(ord(c) < 32 for c in name):
-        raise PanelError("Некорректное название профиля")
+    if not 3 <= len(name) <= 70 or not re.fullmatch(r"[A-Za-z0-9_ -]+", name):
+        raise PanelError("Название профиля: только латинские буквы, цифры, пробел, _ и -")
     response = request("POST", "/api/config-profiles", {"name": name, "config": xray_config})
     data = response.get("response")
     if not isinstance(data, dict) or not isinstance(data.get("uuid"), str):
