@@ -101,40 +101,42 @@ def test_lease_timeout_is_not_automatically_retried(node,monkeypatch):
     assert agent_transport.job_status(node["id"],job["id"])["status"]=="failed"
 
 
-def test_tls_error_shows_safe_diagnostic_and_never_logs_pem(node,monkeypatch):
+def test_tls_error_shows_safe_diagnostic_without_private_key(node,monkeypatch):
     from v2 import node_cert_sync
     agent_transport.issue_token(node["id"])
-    job=agent_transport.enqueue(node["id"],"cert.export")
-    assert agent_transport.poll(node["id"])["job"]["id"]==job["id"]
-    secret="-----BEGIN PRIVATE KEY----- PLEASE_DO_NOT_LOG"
-    def failed(_node,data):
+    task=agent_transport.enqueue(node["id"],"cert.status")
+    agent_transport.poll(node["id"])
+    def fail(_node,data):
         raise node_cert_sync.CertificateSyncError("Xray-профиль используется другой нодой")
-    monkeypatch.setattr(node_cert_sync,"apply_agent_export",failed)
-    agent_transport.report(node["id"],{"id":job["id"],"ok":True,
-        "result":{"chain":"-----BEGIN CERTIFICATE-----","key":secret}})
-    result=agent_transport.job_status(node["id"],job["id"])
+    monkeypatch.setattr(node_cert_sync,"apply_agent_status",fail)
+    agent_transport.report(node["id"],{"id":task["id"],"ok":True,"result":{
+        "domain":node["domain"],"certificate_sha256":"a"*64}})
+    result=agent_transport.job_status(node["id"],task["id"])
     assert result["status"]=="failed"
     assert "другой нодой" in result["error"]
-    assert secret not in str(result)
     with storage.connect() as db:
-        tls=db.execute("SELECT last_error FROM node_tls_sync WHERE node_id=?",
-                       (node["id"],)).fetchone()["last_error"]
-    assert "другой нодой" in tls
-    assert secret not in tls
+        error=db.execute("SELECT last_error FROM node_tls_sync WHERE node_id=?",
+                         (node["id"],)).fetchone()["last_error"]
+    assert error==result["error"]
 
 
-def test_tls_unexpected_exception_keeps_error_details_private(node,monkeypatch):
+def test_tls_unexpected_exception_keeps_details_private(node,monkeypatch):
     from v2 import node_cert_sync
     agent_transport.issue_token(node["id"])
-    job=agent_transport.enqueue(node["id"],"cert.export")
+    task=agent_transport.enqueue(node["id"],"cert.status")
     agent_transport.poll(node["id"])
-    secret="-----BEGIN PRIVATE KEY----- SOMETHING_SENSITIVE"
-    def failed(_node,data):
-        raise RuntimeError("HTTP error with secret "+secret)
-    monkeypatch.setattr(node_cert_sync,"apply_agent_export",failed)
-    agent_transport.report(node["id"],{"id":job["id"],"ok":True,
-       "result":{"key":secret}})
-    result=agent_transport.job_status(node["id"],job["id"])
-    assert result["status"]=="failed"
-    assert "Внутренняя ошибка" in result["error"]
-    assert secret not in str(result)
+    private="-----BEGIN PRIVATE KEY----- PRIVATE_MUST_NOT_LEAK"
+    def fail(_node,data):
+        raise RuntimeError(private)
+    monkeypatch.setattr(node_cert_sync,"apply_agent_status",fail)
+    agent_transport.report(node["id"],{"id":task["id"],"ok":True,
+           "result":{"domain":node["domain"],"certificate_sha256":"a"*64}})
+    state=agent_transport.job_status(node["id"],task["id"])
+    assert state["status"]=="failed"
+    assert "Внутренняя ошибка" in state["error"]
+    assert private not in str(state)
+
+
+def test_exporting_private_tls_key_is_disabled(node):
+    with pytest.raises(agent_transport.AgentError,match="Неподдерживаемая"):
+        agent_transport.enqueue(node["id"],"cert.export")
