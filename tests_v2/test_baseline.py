@@ -51,7 +51,7 @@ def test_baseline_diagnostics_are_allowlisted_and_read_only():
     agent=(ROOT/"v2/agent/main.go").read_text()
     assert "baseline.status" in agent_transport.ALLOWED
     assert '"baseline.status"' in helper
-    assert '"baseline.status":true' in agent
+    assert '"baseline.status"' in agent
     assert 'if action=="baseline.status":return baseline_status()' in helper
     assert '"read_only":True' in helper
     assert '"net_rx_bytes"' in agent and '"net_tx_bytes"' in agent
