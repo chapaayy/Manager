@@ -152,6 +152,7 @@ def init_db():
             node_id TEXT PRIMARY KEY REFERENCES nodes(id) ON DELETE CASCADE,
             config_enc TEXT NOT NULL,
             profile_uuid TEXT NOT NULL,
+            applied_hash TEXT NOT NULL DEFAULT '',
             created_at INTEGER NOT NULL
         );
         CREATE TABLE IF NOT EXISTS starter_seeds (
@@ -200,6 +201,9 @@ def init_db():
             c.execute("ALTER TABLE node_certificates ADD COLUMN last_applied INTEGER NOT NULL DEFAULT 0")
         if "applied_fingerprint" not in cert_columns:
             c.execute("ALTER TABLE node_certificates ADD COLUMN applied_fingerprint TEXT NOT NULL DEFAULT ''")
+        backup_columns = {r["name"] for r in c.execute("PRAGMA table_info(cert_profile_backups)")}
+        if "applied_hash" not in backup_columns:
+            c.execute("ALTER TABLE cert_profile_backups ADD COLUMN applied_hash TEXT NOT NULL DEFAULT ''")
 
 
 
