@@ -258,7 +258,15 @@ function bindNodeWorkspace(){
   $("node-detail").addEventListener("click",async e=>{
     const control=e.target.closest("button");if(!control)return;
     if(control.hasAttribute("data-node-back"))return closeNodeWorkspace();
-    if(control.dataset.nodeTab){selectedNodeTab=control.dataset.nodeTab;nodeTaskRequest++;renderNodeWorkspace();return}
+    if(control.dataset.nodeTab){
+      selectedNodeTab=control.dataset.nodeTab;nodeTaskRequest++;renderNodeWorkspace();
+      if(selectedNodeTab==="network"){
+        const agent=currentAgent();
+        if(agent.online&&/^1\.(?:[2-9]|[1-9][0-9])\./.test(agent.version||""))
+          return executeNodeTask("baseline.status");
+      }
+      return;
+    }
     if(control.hasAttribute("data-node-network-refresh"))return refreshNodeWorkspaceData();
     if(control.dataset.nodeTask)return executeNodeTask(control.dataset.nodeTask);
     if(control.hasAttribute("data-node-logs")){
