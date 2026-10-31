@@ -55,17 +55,21 @@ User=nodemanager
 Group=nodemanager
 EnvironmentFile=/etc/node-manager/agent.env
 ExecStart=/usr/local/bin/node-manager-agent
+# Fail setup immediately if privilege elevation is broken inside this sandbox.
+ExecStartPost=/usr/bin/sudo -n /usr/local/libexec/node-manager-helper service.status
 Restart=always
 RestartSec=5
 WorkingDirectory=/
 ProtectSystem=strict
+# The root helper writes only validated /opt/nginx files; sudo needs /run.
+ReadWritePaths=/opt/nginx /run
 ProtectHome=true
 PrivateTmp=true
 PrivateDevices=true
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true
-CapabilityBoundingSet=
+# Do not empty CapabilityBoundingSet: sudo must retain its setuid privileges.
 AmbientCapabilities=
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 LockPersonality=true
