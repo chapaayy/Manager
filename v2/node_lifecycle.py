@@ -138,6 +138,40 @@ def forget(node_id,code):
     return _delete_record(node_id,"node.forget" if not phase else "node.full.finished")
 
 
+def abandon_interrupted(node_id,code,acknowledge_unverified:bool):
+    """Forget an interrupted full cleanup without claiming remote deletion.
+
+    Require explicit typed code and long loss of agent heartbeat. A leased
+    task may be executing on the VPS, so never abandon while one is leased.
+    This action only deletes the local record and credentials.
+    """
+    node=_guard(node_id,code)
+    if not acknowledge_unverified:
+        raise LifecycleError("Подтверди, что состояние VPS и Remnawave не проверено")
+    phase=_row(node_id)["phase"]
+    if not phase or phase=="finalize_ack":
+        raise LifecycleError("Для этой ноды используй обычное удаление записи")
+    now=int(time.time())
+    with storage.connect() as db:
+        row=db.execute(
+            "SELECT last_seen FROM manager_agents WHERE node_id=?",(node_id,)).fetchone()
+        active=db.execute("""SELECT COUNT(*) FROM manager_agent_jobs
+            WHERE node_id=? AND status='leased'""",(node_id,)).fetchone()[0]
+    last_seen=row["last_seen"] if row else 0
+    if last_seen and now-last_seen<600:
+        raise LifecycleError("После последней связи с агентом должно пройти 10 минут")
+    if active:
+        raise LifecycleError("Агент мог выполнять удаление: дождись завершения или истечения задания")
+    with storage.transaction() as db:
+        # This logs explicitly what is known and what is unknown.
+        storage.event(db,"node.full.abandoned",node_id,
+                      "Operator discarded UNVERIFIED deletion phase "+phase+
+                      " for "+node["code"]+"; no remote action performed")
+        db.execute("DELETE FROM nodes WHERE id=?",(node_id,))
+    return {"deleted":True,"id":node_id,"server_deleted":False,
+            "remote_cleanup_verified":False,"abandoned_phase":phase}
+
+
 def _profile_used_by_other(remote_nodes,remote_uuid,profile_uuid):
     from .node_cert_sync import _attached_profile
     if not isinstance(remote_nodes,list):raise LifecycleError("Список нод Remnawave недоступен")
