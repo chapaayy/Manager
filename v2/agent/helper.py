@@ -73,45 +73,41 @@ def inspect_config(request):
 def update_nginx(request):
     if request.get("name") != "nginx":
         fail("only nginx configuration can currently be applied")
-    content = request.get("content")
-    expected = request.get("expected_sha256")
-    if not isinstance(content, str) or not 0 < len(content.encode()) <= 35000:
+    content=request.get("content")
+    expected=request.get("expected_sha256")
+    if not isinstance(content,str) or not 0<len(content.encode())<=35000:
         fail("invalid config size")
-    if not isinstance(expected, str) or not re.fullmatch(r"[a-f0-9]{64}", expected):
+    if not isinstance(expected,str) or not re.fullmatch(r"[a-f0-9]{64}",expected):
         fail("missing revision")
-    path = FILES["nginx"]
-    old = path.read_bytes()
-    if hashlib.sha256(old).hexdigest() != expected:
+    path=FILES["nginx"]
+    old=path.read_bytes()
+    if hashlib.sha256(old).hexdigest()!=expected:
         fail("config was changed by another process")
-    candidate = content.encode()
+    candidate=content.encode()
     if b"\x00" in candidate:
         fail("binary config not supported")
-    fd, filename = tempfile.mkstemp(prefix=".nginx-agent-", dir=str(path.parent))
+    # Nginx configuration is a bind-mounted FILE. Replacing the host inode
+    # would leave the running container stuck on the old config.
+    # Preserve inode and first save a bounded, root-only rollback snapshot.
+    backup=path.parent/(".agent-nginx-backup-"+hashlib.sha256(old).hexdigest()[:16])
+    fd=os.open(backup,os.O_WRONLY|os.O_CREAT|os.O_TRUNC|os.O_NOFOLLOW,0o600)
+    with os.fdopen(fd,"wb") as stream:
+        stream.write(old);stream.flush();os.fsync(stream.fileno())
+    def put(data):
+        with open(path,"r+b") as stream:
+            stream.seek(0);stream.write(data);stream.truncate()
+            stream.flush();os.fsync(stream.fileno())
+    put(candidate)
     try:
-        with os.fdopen(fd,"wb") as stream:
-            stream.write(candidate)
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.chmod(filename, 0o644)
-        os.replace(filename, path)
-        try:
-            run(["docker","exec","nginx","nginx","-t"],timeout=12)
-            run(["docker","exec","nginx","nginx","-s","reload"],timeout=12)
-        except SystemExit:
-            # Roll back the exact old bytes, then best-effort validation/reload.
-            fd, filename = tempfile.mkstemp(prefix=".nginx-restore-", dir=str(path.parent))
-            with os.fdopen(fd,"wb") as stream:
-                stream.write(old)
-                stream.flush()
-                os.fsync(stream.fileno())
-            os.chmod(filename,0o644)
-            os.replace(filename,path)
-            fail("nginx validation failed; previous config restored")
-        return {"name":"nginx","applied":True,"sha256":hashlib.sha256(candidate).hexdigest()}
-    finally:
-        try: os.unlink(filename)
-        except FileNotFoundError:pass
-
+        run(["docker","exec","nginx","nginx","-t"],timeout=12)
+        run(["docker","exec","nginx","nginx","-s","reload"],timeout=12)
+    except SystemExit:
+        put(old)
+        try:run(["docker","exec","nginx","nginx","-s","reload"],timeout=12)
+        except SystemExit:pass
+        fail("nginx validation failed; original config restored")
+    return {"name":"nginx","applied":True,
+            "sha256":hashlib.sha256(candidate).hexdigest()}
 
 def execute(action, data):
     if action == "docker.status":
