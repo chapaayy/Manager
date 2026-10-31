@@ -132,6 +132,15 @@ def publish(code: str, fullchain: bytes, key: bytes, domain: str) -> dict:
         if folder.is_symlink():
             raise CertError("Неподдерживаемая символическая ссылка для каталога ноды")
         folder.mkdir(mode=0o750, exist_ok=True)
+        current = folder / "current"
+        # Avoid accumulating a new copy of the private key every six hours.
+        if current.is_symlink() and current.resolve().parent == folder:
+            try:
+                if ((current/"fullchain.pem").read_bytes() == fullchain
+                        and (current/"privkey.key").read_bytes() == key):
+                    return info
+            except OSError:
+                pass
         release = folder / (info["fingerprint"][:20] + "-" + secrets.token_hex(5))
         release.mkdir(mode=0o750)
         try:
