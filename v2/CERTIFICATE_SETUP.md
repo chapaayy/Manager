@@ -8,12 +8,31 @@ XPPN Manager now stages verified TLS certificates in the Docker volume
 **Existing Xray profiles and live VPS do not change during a manager upgrade.**
 Every live Xray migration requires a separate confirmation and an encrypted rollback snapshot.
 
-## Prerequisite: same Docker host
+## Choose deployment mode
 
-The Manager and Remnawave Panel backend must run on the **same Docker host**.
-A Docker named volume cannot be shared across unrelated Docker hosts. If they
-are on different hosts, do **not** enable this integration until a secure panel
-host transfer is implemented.
+**Different VPS (your Manager/Remnawave setup):** use **Настроить удалённую панель**.
+
+1. In **Сертификаты** provide the public IPv4, SSH port, root password and **verified SSH fingerprint** of the VPS hosting **Remnawave Panel** (NOT a traffic node).
+2. Confirm one-time installation. Manager installs a restricted forced-command certificate receiver under `/usr/local/libexec/xppn-panel-cert-import.py` and creates `/opt/xppn-panel-certs`. It stores only an encrypted SSH private key, never the root password.
+3. On the **Remnawave Panel VPS**, add this bind mount to the existing backend service:
+
+```yaml
+services:
+  remnawave:
+    volumes:
+      - /opt/xppn-panel-certs:/var/lib/remnawave/configs/xray/ssl/XPPN:ro
+```
+
+Keep all existing mounts and other configuration. Validate the Compose file and recreate **only** the panel backend in a planned maintenance window. The restricted SSH receiver is installed on the panel VPS, not on RUS10.
+
+4. After the panel backend has access to that directory, click **Включить файловую синхронизацию** and confirm. Then sync a node certificate, verify panel file readability, and only then migrate a live profile.
+
+**Same Docker host:** a shared named Docker volume also works (the option described below). Do not use that local-volume procedure when Manager and Remnawave Panel run on different machines.
+
+## Optional: same Docker host
+
+A Docker named volume cannot be shared across unrelated Docker hosts.
+Use the remote SSH receiver described above if the panel is on another VPS.
 
 The Manager Compose stack creates the named Docker volume automatically.
 
@@ -47,7 +66,7 @@ directory before staging is expected.
 
 ## Workflow
 
-1. Open **Сертификаты**. After mounting the volume, enable file synchronization.
+1. Open **Сертификаты**. Select local-volume or remote SSH mode as appropriate, mount the certificate directory in the Remnawave backend, and enable sync.
 2. For RUS10 (or another already installed node), click **Синхронизировать**,
    provide root SSH password for this one transfer. The password is never stored.
 3. The manager pins the original SSH fingerprint, validates certificate expiry,
@@ -96,7 +115,7 @@ and the Xray logs after the change.
 - Panel mount configuration, verification and re-creating the Remnawave
   backend container are operator-controlled. The web manager never touches
   the panel's Docker socket or rewrites its Compose file.
-- This integration does **not** transport files between separate Docker hosts.
+- When panel and Manager are on separate VPS, use the restricted SSH receiver. Keep port 22 restricted and verify the host fingerprint before enrollment.
 - The manager's encrypted database and the named volume become sensitive
   assets; restrict backups, administrators and filesystem permissions.
 - The panel must have read permissions on the mounted files; if it runs as an
