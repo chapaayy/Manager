@@ -106,5 +106,11 @@ docker compose -f /opt/remnanode/docker-compose.yml config -q
 docker compose -f /opt/remnanode/docker-compose.yml up -d remnanode
 test "$(docker inspect --format '{{.State.Running}}' remnanode)" = true
 echo "STEP: REMNANODE_RUNNING"
+# Baseline is supplemental: failure must never undo working VPN services.
+# This runs only on a clean VPS after Remnawave Node is already running.
+if [[ -f /root/.xppn-pending/node-baseline.sh ]]; then
+  echo "STEP: Safe BBR, SSH protection and log rotation"
+  bash /root/.xppn-pending/node-baseline.sh || echo "STEP: Baseline skipped; VPN services unchanged"
+fi
 rm -rf /root/.xppn-pending
 echo "STEP: COMPLETE"
