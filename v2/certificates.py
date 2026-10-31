@@ -442,7 +442,7 @@ def restore_profile(node_id: str, confirmed: bool) -> dict:
         remnawave.replace_profile_config(job["profile_uuid"],old)
         remnawave.restart_node(job["remote_uuid"])
         with storage.transaction() as db:
-            db.execute("UPDATE node_certificates SET profile_mode='inline',last_applied=strftime('%s','now') WHERE node_id=?",(node_id,))
+            db.execute("UPDATE node_certificates SET profile_mode='inline',applied_fingerprint='',last_applied=strftime('%s','now') WHERE node_id=?",(node_id,))
             storage.event(db,"cert.profile.restore",node_id,"Previous Xray profile restored")
         return {"node_id":node_id,"mode":"inline","restart_requested":True}
 
