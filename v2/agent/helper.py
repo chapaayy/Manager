@@ -172,7 +172,8 @@ def _cleanup_managed(request):
     _undo_managed_firewall()
     renewal=Path("/etc/letsencrypt/renewal")/(name+".conf")
     if renewal.is_symlink():fail("certbot renewal config is linked")
-    if renewal.is_file():
+    certificate_deleted=renewal.is_file()
+    if certificate_deleted:
         run(["certbot","delete","--cert-name",name,"--non-interactive"],timeout=25,limit=2000)
     run(["systemctl","disable","--now","xppn-node-firewall.service"],timeout=12,limit=1000)
     managed_files=[
@@ -195,7 +196,7 @@ def _cleanup_managed(request):
     file.write_text(name+"\n")
     file.chmod(0o600)
     return {"cleaned":True,"node":name,"containers_removed":True,
-            "certbot_certificate_deleted":True,"agent_remains":True}
+            "certbot_certificate_deleted":certificate_deleted,"agent_remains":True}
 
 
 def _finish_cleanup(request):
