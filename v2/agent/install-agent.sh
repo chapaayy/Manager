@@ -4,14 +4,14 @@ set -Eeuo pipefail
 umask 077
 [[ "$(id -u)" == 0 ]] || exit 51
 STAGE=/root/.node-manager-bootstrap
-test -s "$STAGE/agent.go"
+test -s "$STAGE/agent-binary"
 test -s "$STAGE/agent-helper.py"
 test -s "$STAGE/agent.env"
 command -v apt-get >/dev/null
 export DEBIAN_FRONTEND=noninteractive
-if ! command -v go >/dev/null || ! command -v sudo >/dev/null; then
+if ! command -v sudo >/dev/null; then
   apt-get update -qq
-  apt-get install -y -qq golang-go sudo ca-certificates
+  apt-get install -y -qq sudo ca-certificates
 fi
 getent group nodemanager >/dev/null || groupadd -r nodemanager
 id nodemanager >/dev/null 2>&1 ||
@@ -20,10 +20,9 @@ install -d -m 0750 -o root -g nodemanager /etc/node-manager
 install -m 0640 -o root -g nodemanager "$STAGE/agent.env" /etc/node-manager/agent.env
 install -d -m 0755 /usr/local/libexec
 install -m 0755 -o root -g root "$STAGE/agent-helper.py" /usr/local/libexec/node-manager-helper
-# Compile before replacing an existing agent binary.
-(cd "$STAGE" && env GO111MODULE=off GOTOOLCHAIN=local CGO_ENABLED=0 \
-  go build -trimpath -buildvcs=false -ldflags='-s -w' -o "$STAGE/node-manager-agent.new" agent.go)
-install -m 0755 -o root -g root "$STAGE/node-manager-agent.new" /usr/local/bin/node-manager-agent
+# Agent was cross-compiled in the Manager image for this VPS architecture.
+# No compiler or Go source is needed on the node.
+install -m 0755 -o root -g root "$STAGE/agent-binary" /usr/local/bin/node-manager-agent
 cat >/etc/sudoers.d/nodemanager-agent <<'SUDO'
 Defaults:nodemanager !requiretty
 nodemanager ALL=(root) NOPASSWD: /usr/local/libexec/node-manager-helper *
