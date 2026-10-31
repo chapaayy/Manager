@@ -28,7 +28,7 @@ function openNodeWorkspace(id,tab="overview"){
   $("node-detail").classList.remove("hidden");
   showPage("nodes");
   renderNodeWorkspace();
-  window.scrollTo({top:0,behavior:"instant"});
+  window.scrollTo({top:0,behavior:"auto"});
 }
 function closeNodeWorkspace(){
   selectedNodeId=null;nodeTaskRequest++;
