@@ -188,7 +188,7 @@
         <label>Домен VPS<input name="domain" required placeholder="de1.gowayot.com"></label>
         <div class="two-fields"><label>SSH-пароль root<input type="password" name="password" autocomplete="new-password" required></label>
           <label>Исходящий IPv4 Remnawave (доступ к порту 2222)<input name="panel_ip" required placeholder="Публичный IP управляющей панели"></label></div>
-        <p class="muted small">Установка только на пустой Ubuntu/Debian. DNS домена должен указывать на указанный IPv4. Порт 2222 разрешается только IP панели. Пароль SSH не сохраняется в базе.</p>
+        <p class="muted small">Установка только на пустой Ubuntu/Debian. DNS домена должен указывать на указанный IPv4. Порт 2222 разрешается только IP панели. Пароль SSH не сохраняется в базе.</p><p class="inline-info">Первый установщик ещё не проверен на настоящем VPS. Используй только пустую тестовую машину. При сбое возможна частичная установка без автоматического отката.</p>
         <button id="vps-probe-button" type="submit" class="btn primary">Проверить SSH, DNS и порты</button>
       </form>
     </div>
