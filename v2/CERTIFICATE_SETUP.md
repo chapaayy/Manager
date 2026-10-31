@@ -2,7 +2,7 @@
 
 XPPN Manager now stages verified TLS certificates in the Docker volume
 **xppn-v2-panel-certs**. Remnawave reads these files via the path
-\`/var/lib/remnawave/configs/xray/ssl/XPPN\`, following the official Remnawave
+`/var/lib/remnawave/configs/xray/ssl/XPPN`, following the official Remnawave
 [Node TLS certificate documentation](https://docs.rw/install/remnawave-node/).
 
 **Existing Xray profiles and live VPS do not change during a manager upgrade.**
@@ -19,7 +19,7 @@ The Manager Compose stack creates the named Docker volume automatically.
 
 In the **Remnawave Panel backend** service in its compose file add:
 
-\`\`\`yaml
+```yaml
 services:
   remnawave:
     volumes:
@@ -28,19 +28,19 @@ volumes:
   xppn-v2-panel-certs:
     external: true
     name: xppn-v2-panel-certs
-\`\`\`
+```
 
-Merge these lines into the existing service and existing top-level \`volumes\`
+Merge these lines into the existing service and existing top-level `volumes`
 section; do not replace other mounts or services. Apply in a maintenance window
-with \`docker compose up -d --no-deps remnawave\` **after verifying the compose
+with `docker compose up -d --no-deps remnawave` **after verifying the compose
 configuration**.
 
 Confirm the panel backend can read a staged certificate without printing keys:
 
-\`\`\`bash
+```bash
 docker exec remnawave test -r /var/lib/remnawave/configs/xray/ssl/XPPN/RUS10/current/fullchain.pem
 docker exec remnawave test -r /var/lib/remnawave/configs/xray/ssl/XPPN/RUS10/current/privkey.key
-\`\`\`
+```
 
 The corresponding node directory exists **only after first sync**. A missing
 directory before staging is expected.
@@ -71,19 +71,19 @@ another restart. Staged files are intentionally preserved for inspection.
 
 ## Certificate renewal and leaked keys
 
-The VPS installer already enables \`certbot.timer\` and deploys renewal hooks
-that copy new certificates to \`/opt/nginx/certs\`. The manager copies the new
+The VPS installer already enables `certbot.timer` and deploys renewal hooks
+that copy new certificates to `/opt/nginx/certs`. The manager copies the new
 bundle on the next automatic synchronization.
 
 **RUS10's previous private key was pasted in a conversation**. Treat it as
 compromised and reissue with a **new private key**, rather than relying on the
 existing certificate's validity. During a planned maintenance window on RUS10:
 
-\`\`\`bash
+```bash
 certbot certonly --webroot -w /opt/nginx/acme -d rus10.gowayot.com \
   --force-renewal --new-key --non-interactive --agree-tos
 /usr/local/sbin/xppn-cert-refresh
-\`\`\`
+```
 
 Only use these commands on the expected RUS10 VPS after checking the installed
 Certbot and renewal setup. Then manually **Синхронизировать** before migrating
