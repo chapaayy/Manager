@@ -1,5 +1,6 @@
 """Static safety guardrails for irreversible privileged cleanup code."""
 from pathlib import Path
+import re
 
 def test_destructive_helper_has_fixed_scope_and_no_global_docker_wipe():
     helper=Path("v2/agent/helper.py").read_text()
@@ -12,7 +13,8 @@ def test_destructive_helper_has_fixed_scope_and_no_global_docker_wipe():
     assert '["docker","compose","-f",str(file),"down","--timeout","5"]' in helper
     assert '["certbot","delete","--cert-name",name,"--non-interactive"]' in helper
     assert "shutil.rmtree(path)" in helper
-    assert '"node.cleanup":true' in agent and '"node.cleanup.finish":true' in agent
+    assert re.search(r'"node\.cleanup"\s*:\s*true',agent)
+    assert re.search(r'"node\.cleanup\.finish"\s*:\s*true',agent)
     assert "systemctl disable --now node-manager-agent.service" in uninstall
     assert "systemctl daemon-reload" in uninstall
     for danger in ("docker system prune", "docker volume prune",
