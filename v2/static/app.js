@@ -139,6 +139,7 @@ async function renderAgents(){
         '<button class="btn subtle" data-agent-id="'+esc(n.id)+'" data-agent-action="docker.status">Docker</button>'+
         '<button class="btn subtle" data-agent-id="'+esc(n.id)+'" data-agent-action="service.status">Службы</button>'+
         '<button class="btn subtle" data-agent-id="'+esc(n.id)+'" data-agent-action="docker.logs">Логи</button>'+
+        '<button class="btn subtle" data-agent-id="'+esc(n.id)+'" data-agent-action="logs.read">Xray логи</button>'+
         '<button class="btn subtle" data-agent-id="'+esc(n.id)+'" data-agent-action="cert.status">Certbot</button>'+
         '<button class="btn subtle" data-agent-id="'+esc(n.id)+'" data-agent-action="config.read">Nginx</button>'+
         '<button class="btn subtle" data-agent-id="'+esc(n.id)+'" data-agent-action="docker.restart">Рестарт ноды</button>':
@@ -170,6 +171,10 @@ async function agentActionModal(id,action){
     const name=prompt("Логи контейнера: nginx или remnanode","remnanode");
     if(!["nginx","remnanode"].includes(name))return;
     payload={name,tail:100};
+  }else if(action==="logs.read"){
+    const source=prompt("Логи: xray-error, xray-access, nginx-access, nginx-error, certbot","xray-error");
+    if(!["xray-error","xray-access","nginx-access","nginx-error","certbot"].includes(source))return;
+    payload={source,tail:100};
   }else if(action==="config.read")payload={name:"nginx"};
   else if(action==="docker.restart"){
     if(!confirm("Перезапустить контейнер remnanode на "+node.code+"? Активные VPN-подключения кратковременно прервутся."))return;
@@ -191,7 +196,7 @@ async function agentActionModal(id,action){
         });
     }else{
       openModal("Агент · "+node.code,"РЕЗУЛЬТАТ "+action,
-        '<pre class="wizard-preview">'+esc(action==="docker.logs"?data.logs||"Нет строк":JSON.stringify(data,null,2))+'</pre>');
+        '<pre class="wizard-preview">'+esc(["docker.logs","logs.read"].includes(action)?data.logs||"Нет строк":JSON.stringify(data,null,2))+'</pre>');
     }
   }catch(e){message(e.message,true)}
 }
