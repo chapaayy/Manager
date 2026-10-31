@@ -130,6 +130,36 @@ def init_db():
             updated_at INTEGER NOT NULL
         );
         CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_installed_vps_ip ON node_installations(ip);
+        CREATE TABLE IF NOT EXISTS certificate_settings (
+            id INTEGER PRIMARY KEY CHECK(id=1),
+            enabled INTEGER NOT NULL DEFAULT 0,
+            mode TEXT NOT NULL DEFAULT 'local',
+            remote_ip TEXT NOT NULL DEFAULT '',
+            remote_port INTEGER NOT NULL DEFAULT 22,
+            remote_fingerprint TEXT NOT NULL DEFAULT '',
+            remote_key_enc TEXT NOT NULL DEFAULT '',
+            updated_at INTEGER NOT NULL DEFAULT 0
+        );
+        INSERT OR IGNORE INTO certificate_settings(id) VALUES(1);
+        CREATE TABLE IF NOT EXISTS node_certificates (
+            node_id TEXT PRIMARY KEY REFERENCES nodes(id) ON DELETE CASCADE,
+            sync_key_enc TEXT NOT NULL DEFAULT '',
+            profile_mode TEXT NOT NULL DEFAULT 'inline',
+            last_applied INTEGER NOT NULL DEFAULT 0,
+            applied_fingerprint TEXT NOT NULL DEFAULT '',
+            expires_at INTEGER NOT NULL DEFAULT 0,
+            fingerprint TEXT NOT NULL DEFAULT '',
+            last_synced INTEGER NOT NULL DEFAULT 0,
+            last_error TEXT NOT NULL DEFAULT '',
+            updated_at INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE TABLE IF NOT EXISTS cert_profile_backups (
+            node_id TEXT PRIMARY KEY REFERENCES nodes(id) ON DELETE CASCADE,
+            config_enc TEXT NOT NULL,
+            profile_uuid TEXT NOT NULL,
+            applied_hash TEXT NOT NULL DEFAULT '',
+            created_at INTEGER NOT NULL
+        );
         CREATE TABLE IF NOT EXISTS starter_seeds (
             name TEXT PRIMARY KEY,
             applied_at INTEGER NOT NULL
@@ -169,6 +199,27 @@ def init_db():
         columns = {r["name"] for r in c.execute("PRAGMA table_info(panel)").fetchall()}
         if "caddy_api_key_enc" not in columns:
             c.execute("ALTER TABLE panel ADD COLUMN caddy_api_key_enc TEXT NOT NULL DEFAULT ''")
+        settings_columns={r["name"] for r in c.execute("PRAGMA table_info(certificate_settings)")}
+        for field, definition in (
+            ("mode", "TEXT NOT NULL DEFAULT 'local'"),
+            ("remote_ip", "TEXT NOT NULL DEFAULT ''"),
+            ("remote_port", "INTEGER NOT NULL DEFAULT 22"),
+            ("remote_fingerprint", "TEXT NOT NULL DEFAULT ''"),
+            ("remote_key_enc", "TEXT NOT NULL DEFAULT ''"),
+        ):
+            if field not in settings_columns:
+                c.execute(f"ALTER TABLE certificate_settings ADD COLUMN {field} {definition}")
+        cert_columns = {r["name"] for r in c.execute("PRAGMA table_info(node_certificates)")}
+        if "profile_mode" not in cert_columns:
+            c.execute("ALTER TABLE node_certificates ADD COLUMN profile_mode TEXT NOT NULL DEFAULT 'inline'")
+        if "last_applied" not in cert_columns:
+            c.execute("ALTER TABLE node_certificates ADD COLUMN last_applied INTEGER NOT NULL DEFAULT 0")
+        if "applied_fingerprint" not in cert_columns:
+            c.execute("ALTER TABLE node_certificates ADD COLUMN applied_fingerprint TEXT NOT NULL DEFAULT ''")
+        backup_columns = {r["name"] for r in c.execute("PRAGMA table_info(cert_profile_backups)")}
+        if "applied_hash" not in backup_columns:
+            c.execute("ALTER TABLE cert_profile_backups ADD COLUMN applied_hash TEXT NOT NULL DEFAULT ''")
+
 
 
 def event(c, action: str, target: str, message: str):

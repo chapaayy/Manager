@@ -40,6 +40,7 @@
       <p class="nav-heading">РАБОЧЕЕ ПРОСТРАНСТВО</p>
       <nav aria-label="Разделы">
         <button class="nav-link active" data-page="nodes" title="Ноды" type="button"><svg><use href="/static/icons.svg#i-server"></use></svg><span>Ноды</span></button>
+        <button class="nav-link" data-page="certificates" title="Сертификаты" type="button"><svg><use href="/static/icons.svg#i-shield-check"></use></svg><span>Сертификаты</span></button>
         <button class="nav-link" data-page="configs" title="Конфигурации" type="button"><svg><use href="/static/icons.svg#i-file-code"></use></svg><span>Конфигурации</span></button>
         <button class="nav-link" data-page="presets" title="Пресеты" type="button"><svg><use href="/static/icons.svg#i-layers"></use></svg><span>Пресеты</span></button>
         <button class="nav-link" data-page="settings" title="Настройки" type="button"><svg><use href="/static/icons.svg#i-settings-2"></use></svg><span>Настройки</span></button>
@@ -70,6 +71,24 @@
           <div class="section-title standalone-heading"><h2>Другие серверы</h2></div>
           <div id="other-nodes" class="node-grid"></div>
           <p class="inline-info"><svg><use href="/static/icons.svg#i-circle-alert"></use></svg>«Добавить VPS» проверяет чистый сервер по SSH и запускает установку после подтверждения. Для неудачных попыток доступны продолжение и удаление записи без изменения VPS.</p>
+        </section>
+
+
+        <section id="page-certificates" class="page hidden">
+          <div class="page-heading"><div><p class="eyebrow">TLS / LET'S ENCRYPT</p>
+            <h1>Сертификаты</h1><p class="subheading">Синхронизация с Remnawave, контроль срока действия и автоматическая проверка каждые 6 часов.</p></div>
+            <button class="btn subtle" id="cert-refresh" type="button"><svg><use href="/static/icons.svg#i-refresh-cw"></use></svg>Обновить</button>
+          </div>
+          <div class="panel" style="padding:20px;margin-bottom:20px">
+            <h2>Файловые сертификаты для Remnawave</h2>
+            <p class="muted small"><strong>Разные VPS:</strong> нажми «Настроить удалённую панель». Менеджер установит на VPS панели отдельный ограниченный SSH-приёмник. Затем подключи папку <code>/opt/xppn-panel-certs</code> к Remnawave Panel по пути <code>/var/lib/remnawave/configs/xray/ssl/XPPN</code> только для чтения.</p><p class="muted small"><strong>Один Docker-хост:</strong> можешь подключить общий том <code>xppn-v2-panel-certs</code> по тому же пути. Оба варианта не требуют хранения root-пароля.</p>
+            <p class="muted small">После подключения подтверди настройку. Файлы будут готовиться отдельно. <strong>Существующие Xray-профили автоматически не перезаписываются.</strong></p>
+            <div class="form-buttons"><button class="btn subtle" type="button" id="cert-panel-enroll">Настроить удалённую панель</button><button class="btn primary" type="button" id="cert-enable">Включить файловую синхронизацию</button><button class="btn subtle" type="button" id="cert-disable">Выключить</button></div>
+            <p id="cert-global-status" class="form-feedback"></p>
+          </div>
+          <div class="section-title"><h2>Сертификаты нод</h2><span class="muted">Автосинхронизация включается для каждой ноды отдельно</span></div>
+          <div id="cert-nodes" class="node-grid"><div class="skeleton h90"></div></div>
+          <p class="inline-info">Синхронизация выполняет безопасное чтение сертификатов с VPS и помещает их в общий том панели. Для перехода работающего Xray-профиля на keyFile/certificateFile нужен отдельный подтверждённый шаг. На работающих нодах ничего не меняется без твоего согласия.</p>
         </section>
 
         <section id="page-configs" class="page hidden">
