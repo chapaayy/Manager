@@ -25,6 +25,7 @@ jobs:
           go vet v2/agent/main.go
           bash -n v2/agent/install-agent.sh
           bash -n v2/agent/repair-helper.sh
+          bash -n v2/agent/uninstall-agent.sh
       - name: Install only v2 dependencies
         run: python -m pip install -r v2/requirements.txt pytest httpx
       - name: Compile and verify the isolated v2 app
