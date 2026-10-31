@@ -278,7 +278,7 @@ function resetConfig(force=false){
   $("config-version").textContent="Не сохранён";
   $("config-delete").classList.add("hidden");
   setConfigClean();renderConfigList();
-  $("config-dialog").showModal();
+  if(!$("config-dialog").open)$("config-dialog").showModal();
 }
 async function openConfig(id){
   if(!discardConfig())return;
@@ -291,7 +291,7 @@ async function openConfig(id){
     $("config-version").textContent="Версия "+file.revision;
     $("config-delete").classList.remove("hidden");
     setConfigClean();renderConfigList();
-    $("config-dialog").showModal();
+    if(!$("config-dialog").open)$("config-dialog").showModal();
   }catch(e){message(e.message,true)}
 }
 function renderConfigList(){
