@@ -53,3 +53,8 @@
 #vps-progress h3{font-size:18px}
 #vps-progress p{line-height:1.7}
 @media(max-width:650px){.vps-dialog .two-fields{grid-template-columns:1fr}}
+
+.vps-dialog .wizard-mapping{display:flex;align-items:flex-start;gap:10px;padding:9px 0;border-bottom:1px solid #35353b;font-size:12px}
+.vps-dialog .wizard-mapping code{min-width:115px;color:#b6cafa}
+.vps-dialog .wizard-mapping strong{min-width:0;overflow-wrap:anywhere;font-weight:600}
+.vps-dialog .wizard-preview{display:block;background:#0d0d11;color:#d7d8e2;border:1px solid #41414b;padding:14px;border-radius:9px;max-height:250px;overflow:auto;white-space:pre;font-size:11px}
