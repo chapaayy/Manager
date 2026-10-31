@@ -27,7 +27,8 @@ def test_installer_keeps_sudo_capabilities_and_scopes_nginx_write():
     assert "AGENT_REPAIR_SUCCESS" in repair
     assert "systemctl restart remnanode" not in repair
     assert "certbot renew" not in repair
-    assert "remnawave" not in repair.lower()
+    assert "/opt/remnanode" not in repair
+    assert "docker compose" not in repair
 
 
 @pytest.fixture
