@@ -10,6 +10,7 @@ STAGE=/root/.node-manager-bootstrap
 test -s "$STAGE/agent-binary"
 test -s "$STAGE/agent-helper.py"
 test -s "$STAGE/agent.env"
+test -s "$STAGE/agent-uninstall.sh"
 command -v apt-get >/dev/null
 export DEBIAN_FRONTEND=noninteractive
 AGENT_STAGE=dependencies
@@ -29,6 +30,7 @@ install -d -m 0750 -o root -g nodemanager /etc/node-manager
 install -m 0640 -o root -g nodemanager "$STAGE/agent.env" /etc/node-manager/agent.env
 install -d -m 0755 /usr/local/libexec
 install -m 0755 -o root -g root "$STAGE/agent-helper.py" /usr/local/libexec/node-manager-helper
+install -m 0700 -o root -g root "$STAGE/agent-uninstall.sh" /usr/local/libexec/node-manager-uninstall.sh
 # Agent was cross-compiled in the Manager image for this VPS architecture.
 # No compiler or Go source is needed on the node.
 AGENT_STAGE=binary
