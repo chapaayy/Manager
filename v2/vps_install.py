@@ -183,9 +183,18 @@ def preview_plan(source: Endpoint) -> dict:
         "domainStrategy":"IPIfNonMatch"},
     }
     validate_rendered(proposed)
+    # Remnawave resolves file references on its Panel backend, not on this
+    # VPS. Preview the real *profile shape* without ever returning private
+    # material to a browser.
+    proposed["inbounds"][0]["streamSettings"]["tlsSettings"]["certificates"]=[{
+        "key":["<PRIVATE KEY: issued by Certbot on VPS, sent via Remnawave API>"],
+        "certificate":["<CERTIFICATE CHAIN: issued by Certbot on VPS>"],
+    }]
     return {
       "name":config_profile_name(source),
       "xray":proposed,
+      "tls_profile_mode":"inline_pem_required_by_remnawave_panel_api",
+      "tls_node_files":"/opt/nginx/certs/",
       "nginx":(ROOT/"nginx.conf").read_text(encoding="utf-8").replace("{{source.domain}}",source.domain),
       "files":[
         "/opt/nginx/nginx.conf","/opt/nginx/docker-compose.yml",
@@ -197,9 +206,9 @@ def preview_plan(source: Endpoint) -> dict:
         {"key":"source.code","value":source.code},
         {"key":"source.domain","value":source.domain},
         {"key":"inbound.tag","value":tag},
-        {"key":"tls.certificate","value":"Выпуск Let's Encrypt на VPS, ключ хранится зашифрованно"}
+        {"key":"tls.certificate","value":"Certbot на VPS; профиль Remnawave получает PEM через HTTPS API"}
       ],
-      "note":"Это предпросмотр. При установке Xray получает выпущенный TLS-сертификат; UUID пользователей добавляет Remnawave."
+      "note":"Сертификат и приватный ключ хранятся файлами на VPS; Remnawave также хранит копию PEM в Xray Config Profile. Это требование текущей API-схемы. file paths в профиле Remnawave разрешаются на Panel backend, НЕ на ноде. В предпросмотре приватный ключ никогда не показывается."
     }
 
 
@@ -228,7 +237,11 @@ def xray_config(source: Endpoint, cert: str, private_key: str) -> dict:
     """One VLESS TLS RAW direct exit, using settings from the supplied working bridge."""
     inbound = new_inbound(source.code+"_VLESS_TLS_IN",443,source.domain)
     certificates = inbound["streamSettings"]["tlsSettings"]["certificates"]
-    # Inline PEM is supported by Xray-core; do not expose this generated config to the browser.
+    # Remnawave Panel resolves keyFile/certificateFile on its own VPS.
+    # A node-local path here would break TLS configuration delivery.
+    # Keep the node-owned Certbot files as the source of truth and send
+    # the current PEM only via the authenticated Remnawave API.
+    # Never expose this generated config to the browser.
     certificates[:] = [{"certificate": cert.strip().splitlines(), "key": private_key.strip().splitlines()}]
     config = {
         "log": {"error":"/var/log/remnanode/error.log",
