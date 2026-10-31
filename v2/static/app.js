@@ -227,6 +227,7 @@ async function renderNodeCertificates(){
         '<div style="flex:1;min-width:210px"><strong>'+esc(n.code)+' · '+esc(n.domain)+'</strong>'+
         '<p>Сертификат: '+esc(expiry)+' · '+(n.auto_sync?"Агент онлайн, автопроверка 6 ч":"Агент пока офлайн")+
         (n.last_checked?" · Проверен "+esc(new Date(n.last_checked*1000).toLocaleString("ru-RU")):"")+'</p>'+
+        (n.last_error?'<p class="form-feedback error" role="status">Ошибка TLS: '+esc(n.last_error)+'</p>':'')+
         '</div><button class="btn subtle" data-node-cert-check="'+esc(n.id)+'" type="button" '+(!n.auto_sync?"disabled":"")+'>Проверить через агент</button></div>';
     }).join("")||'<p class="muted">Ноды пока не добавлены.</p>';
   }catch(e){target.textContent=e.message;target.className="form-feedback error"}
