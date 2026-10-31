@@ -55,31 +55,80 @@ def validate_bundle(chain:bytes,key:bytes,domain:str)->dict:
         "expires_at":int(leaf.not_valid_after_utc.timestamp())}
 
 
+def _attached_profile(row:dict) -> tuple[str|None,bool]:
+    """Return known attached UUID and whether the assignment is represented.
+
+    Explicitly unassigned Remnawave nodes (null) do not share profiles.
+    Missing assignment fields are UNKNOWN, not safe proof of isolation.
+    """
+    profile=row.get("configProfile")
+    if isinstance(profile,dict):
+        if "activeConfigProfileUuid" in profile:
+            value=profile["activeConfigProfileUuid"]
+            if value is None or value=="":
+                return None,True
+            if isinstance(value,str):
+                return value,True
+            raise CertificateSyncError("Remnawave вернула некорректную привязку профиля")
+    if "configProfileUuid" in row:
+        value=row["configProfileUuid"]
+        if value is None or value=="":
+            return None,True
+        if isinstance(value,str):
+            return value,True
+        raise CertificateSyncError("Remnawave вернула некорректный UUID профиля")
+    if "activeConfigProfileUuid" in row:
+        value=row["activeConfigProfileUuid"]
+        if value is None or value=="":
+            return None,True
+        if isinstance(value,str):
+            return value,True
+        raise CertificateSyncError("Remnawave вернула некорректный UUID профиля")
+    if "configProfile" in row and profile is None:
+        return None,True
+    return None,False
+
+
+def _api_error(exc:Exception) -> str:
+    """Keep only HTTP code. Remnawave's error body may contain secret PEM."""
+    import re
+    match=re.search(r"(?<!\d)HTTP\s+([45]\d\d)\b",str(exc))
+    return " (HTTP "+match.group(1)+")" if match else ""
+
+
 def _profile(node,job):
-    rows=remnawave.request("GET","/api/nodes").get("response")
+    try:
+        rows=remnawave.request("GET","/api/nodes").get("response")
+    except remnawave.PanelError as exc:
+        raise CertificateSyncError("Не удалось получить список нод через Remnawave API"+
+                                   _api_error(exc)) from None
     if not isinstance(rows,list):
-        raise CertificateSyncError("Не удалось проверить привязку Xray профиля")
+        raise CertificateSyncError("Remnawave вернула неправильный формат списка нод")
     own=False
     for n in rows:
-        if not isinstance(n,dict):raise CertificateSyncError("Некорректный ответ Remnawave")
-        active=n.get("configProfile")
-        attached=active.get("activeConfigProfileUuid") if isinstance(active,dict) else None
-        attached=attached or n.get("configProfileUuid") or n.get("activeConfigProfileUuid")
+        if not isinstance(n,dict):
+            raise CertificateSyncError("Некорректный ответ Remnawave о нодах")
+        attached,known=_attached_profile(n)
+        if not known:
+            raise CertificateSyncError("Remnawave не вернула привязки профилей для проверки безопасности")
         if n.get("uuid")==job["remote_uuid"]:
             own=True
-            if attached and attached!=job["profile_uuid"]:
-                raise CertificateSyncError("Нода использует другой Xray профиль")
+            if attached!=job["profile_uuid"]:
+                raise CertificateSyncError("У ноды изменился активный Xray-профиль")
         elif attached==job["profile_uuid"]:
-            raise CertificateSyncError("Xray профиль используется другой нодой")
-        elif attached is None:
-            raise CertificateSyncError("Не удалось подтвердить изоляцию Xray профиля")
+            raise CertificateSyncError("Xray-профиль используется другой нодой, изменение запрещено")
+        # A *known* empty assignment is safe: it cannot reference this profile.
     if not own:
-        raise CertificateSyncError("Нода отсутствует в Remnawave")
-    data=remnawave.detailed_profile(job["profile_uuid"])
+        raise CertificateSyncError("Нода не найдена в Remnawave API")
+    try:
+        data=remnawave.detailed_profile(job["profile_uuid"])
+    except remnawave.PanelError as exc:
+        raise CertificateSyncError("Не удалось прочитать Xray-профиль через API"+
+                                   _api_error(exc)) from None
     expected=vps_install.config_profile_name(Endpoint(
         node["code"],node["domain"],node["country"]))
     if data.get("name")!=expected:
-        raise CertificateSyncError("Неожиданное имя Xray профиля")
+        raise CertificateSyncError("Имя Xray-профиля отличается от созданного менеджером")
     return data
 
 
@@ -102,23 +151,33 @@ def _apply(node,job,chain,key):
         raise CertificateSyncError("TLS сертификат не встроен в профиль")
     chain_lines=chain.decode("ascii").strip().splitlines()
     key_lines=key.decode("ascii").strip().splitlines()
-    if cert["key"]==key_lines and cert["certificate"]==chain_lines:
+    def _same_lines(existing, fresh):
+        if isinstance(existing,list) and all(isinstance(item,str) for item in existing):
+            return "\n".join(existing).strip()=="\n".join(fresh).strip()
+        if isinstance(existing,str):
+            return existing.strip()=="\n".join(fresh).strip()
+        return False
+    if _same_lines(cert["key"],key_lines) and _same_lines(cert["certificate"],chain_lines):
         return False
     cert["key"]=key_lines
     cert["certificate"]=chain_lines
-    patched=False
     try:
         remnawave.replace_profile_config(job["profile_uuid"],target)
-        patched=True
+    except remnawave.PanelError as exc:
+        raise CertificateSyncError("Remnawave API отклонила обновление Xray-профиля"+
+                                   _api_error(exc)) from None
+    try:
         remnawave.restart_node(job["remote_uuid"])
-    except Exception:
-        if patched:
-            try:
-                remnawave.replace_profile_config(job["profile_uuid"],original)
-                remnawave.restart_node(job["remote_uuid"])
-            except Exception:
-                raise CertificateSyncError("Ошибка применения и отката TLS профиля") from None
-        raise CertificateSyncError("Не удалось обновить TLS профиль через API") from None
+    except Exception as exc:
+        # Prior config is restored to avoid a partially applied migration.
+        try:
+            remnawave.replace_profile_config(job["profile_uuid"],original)
+            remnawave.restart_node(job["remote_uuid"])
+        except Exception:
+            raise CertificateSyncError("Перезапуск и откат Xray-профиля не удались. "+
+                                       "Проверь ноду вручную; повтор запрещён") from None
+        raise CertificateSyncError("Новый TLS-профиль откатан: не удалось перезапустить Xray"+
+                                   (_api_error(exc) if isinstance(exc,remnawave.PanelError) else "")) from None
     return True
 
 
