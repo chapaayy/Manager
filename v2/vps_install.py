@@ -338,6 +338,12 @@ def start_install(*, code: str, country: str, name: str, domain: str, role: str,
     # Check panel API and key before inserting anything or touching VPS.
     remnawave.node_secret()
     node=storage.create_node(code=code,name=name,domain=domain,country=country,role=role)
-    storage.create_install_job(node["id"],ip,port,fingerprint_value)
+    try:
+        storage.create_install_job(node["id"],ip,port,fingerprint_value)
+    except Exception:
+        # Transactional recovery if this IP is already queued under another name.
+        with storage.transaction() as c:
+            c.execute("DELETE FROM nodes WHERE id=? AND status='planned'",(node["id"],))
+        raise
     POOL.submit(deploy,node["id"],ip,port,password,fingerprint_value,panel_ip)
     return {"node_id":node["id"],"stage":"queued","message":"Установка запущена"}
