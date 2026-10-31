@@ -76,6 +76,7 @@ def install_on_transport(transport: paramiko.Transport, node_id: str) -> dict:
             "agent-binary": (ROOT/binary).read_bytes(),
             "agent-helper.py": (ROOT/"helper.py").read_bytes(),
             "install.sh": (ROOT/"install-agent.sh").read_bytes(),
+            "agent-uninstall.sh": (ROOT/"uninstall-agent.sh").read_bytes(),
         }
     except (OSError, ValueError):
         raise AgentBootstrapError("В образе менеджера отсутствуют файлы агента. "
