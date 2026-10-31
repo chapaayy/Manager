@@ -27,7 +27,7 @@ import paramiko
 
 from . import panel_delivery, remnawave, storage, vps_install
 
-PANEL_ROOT = "/var/lib/remnawave/configs/xray/ssl/XPPN"
+PANEL_ROOT = "/var/lib/remnawave/configs/xray/ssl/managed"
 CODE = re.compile(r"[A-Z][A-Z0-9_-]{1,19}\Z")
 LOCK = threading.RLock()
 MAX_BUNDLE = 85000
@@ -65,7 +65,7 @@ def enabled() -> bool:
 
 def configure(enabled_value: bool, confirmed_panel_mount: bool = False) -> dict:
     if enabled_value and not confirmed_panel_mount:
-        raise CertError("Подтверди, что том xppn-v2-panel-certs подключён к Remnawave Panel")
+        raise CertError("Подтверди, что каталог сертификатов подключён к контейнеру Remnawave Panel")
     if enabled_value:
         settings=panel_delivery._settings()
         if settings.get("mode")=="remote":
@@ -257,6 +257,27 @@ def save_status(node_id: str, info: dict, changed: bool):
                       "Panel certificate files staged" if changed else "Certificate already staged")
 
 
+def _require_matching_certificate_paths(node: dict, job: dict):
+    """Never restart an existing file-mode node after certificate path changes."""
+    if not job.get("profile_uuid"):
+        raise CertError("Не указан Xray-профиль для проверки TLS-путей")
+    profile = remnawave.detailed_profile(job["profile_uuid"])
+    tag = node["code"] + "_VLESS_TLS_IN"
+    matched = [inbound for inbound in profile["config"].get("inbounds", [])
+               if isinstance(inbound, dict) and inbound.get("tag") == tag]
+    if len(matched) != 1:
+        raise CertError("Не удалось проверить TLS-конфигурацию выбранной ноды")
+    try:
+        certificate = matched[0]["streamSettings"]["tlsSettings"]["certificates"][0]
+    except (KeyError, IndexError, TypeError):
+        raise CertError("В Xray-профиле отсутствует ожидаемый TLS-сертификат") from None
+    if not isinstance(certificate, dict) or any(
+            certificate.get(field) != value for field, value in paths(node["code"]).items()):
+        raise CertError("В Xray-профиле указаны другие пути к сертификатам. "
+                        "Автоматический перезапуск заблокирован. "
+                        "Проверь старое монтирование и выполни миграцию вручную.")
+
+
 def sync(node_id: str, password: str | None = None) -> dict:
     if not enabled():
         raise CertError("Файловая синхронизация выключена: настрой общий каталог панели")
@@ -265,6 +286,8 @@ def sync(node_id: str, password: str | None = None) -> dict:
         raise CertError("Синхронизация доступна только после установки VPS")
     job = storage.get_install_job(node_id)
     row = _db_row(node_id)
+    if row.get("profile_mode") == "files":
+        _require_matching_certificate_paths(node, job)
     if password:
         fullchain, key = _remote_password_bundle(node, job, password)
     elif row.get("sync_key_enc"):

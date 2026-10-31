@@ -2,7 +2,7 @@
 
 The installed root authorized_keys entry forces one narrow import command and
 disallows pty, shell and TCP forwarding. No root password or API token is saved.
-The receiver writes exclusively under /opt/xppn-panel-certs (panel bind mount).
+The receiver writes exclusively under /opt/remnawave/managed-certs (panel bind mount).
 """
 from __future__ import annotations
 
@@ -42,7 +42,7 @@ try:
     if b"-----BEGIN " not in key or b"PRIVATE KEY-----" not in key[:100]:
         raise ValueError("invalid key")
     digest=hashlib.sha256(cert+key).hexdigest()
-    root=pathlib.Path("/opt/xppn-panel-certs")
+    root=pathlib.Path("/opt/remnawave/managed-certs")
     root.mkdir(mode=0o700,parents=True,exist_ok=True)
     if root.is_symlink(): raise ValueError("unsafe root")
     folder=root/code
@@ -175,7 +175,7 @@ with os.fdopen(fd,"w") as f: f.write("\n".join(updated+[authorized])+"\n")
 '''
     t,_=vps_install.ssh_open(ip,port,password,fingerprint)
     try:
-        vps_install.run_command(t,"mkdir -p -m 0700 /root/.xppn-panel-bootstrap /usr/local/libexec /opt/xppn-panel-certs")
+        vps_install.run_command(t,"mkdir -p -m 0700 /root/.xppn-panel-bootstrap /usr/local/libexec /opt/remnawave/managed-certs")
         sftp=paramiko.SFTPClient.from_transport(t)
         try:
             for path,source,mode in (
@@ -202,4 +202,4 @@ with os.fdopen(fd,"w") as f: f.write("\n".join(updated+[authorized])+"\n")
         db.execute("UPDATE node_certificates SET fingerprint='',last_synced=0,last_error=''")
         storage.event(db,"cert.panel.enroll","panel","Pinned restricted SSH receiver configured")
     return {"enabled":False,"mode":"remote","receiver_installed":True,"panel_ip":ip,"panel_port":port,
-            "panel_mount_path":"/var/lib/remnawave/configs/xray/ssl/XPPN"}
+            "panel_mount_path":"/var/lib/remnawave/configs/xray/ssl/managed"}

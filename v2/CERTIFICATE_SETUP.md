@@ -1,26 +1,47 @@
 # TLS certificates: file-backed Remnawave integration (opt-in)
 
 XPPN Manager now stages verified TLS certificates in the Docker volume
-**xppn-v2-panel-certs**. Remnawave reads these files via the path
-`/var/lib/remnawave/configs/xray/ssl/XPPN`, following the official Remnawave
+**remnawave-managed-certs**. Remnawave reads these files via the path
+`/var/lib/remnawave/configs/xray/ssl/managed`, following the official Remnawave
 [Node TLS certificate documentation](https://docs.rw/install/remnawave-node/).
 
 **Existing Xray profiles and live VPS do not change during a manager upgrade.**
 Every live Xray migration requires a separate confirmation and an encrypted rollback snapshot.
+
+## Where to edit Docker Compose
+
+The **Remnawave Panel backend** resolves `keyFile`/`certificateFile` before
+pushing the Xray profile to a Remnawave Node. Adding a certificate mount only
+to `remnanode` is **not** sufficient for a file-backed Remnawave profile.
+The traffic node may independently keep and renew its own certificate; this
+integration copies a validated version to the panel.
+
+Open a terminal on the VPS where the **Remnawave Panel** is running (not on
+the RUS10 VPS, and not on the Manager VPS). Locate that panel's existing
+`docker-compose.yml`; for a standard installation this is often
+`/opt/remnawave/docker-compose.yml`. Edit the existing `remnawave`
+backend service, adding just the `volumes` entry below to its current list.
+Do not replace the entire Compose file or any existing mounts. Check with
+`docker compose config` before any restart. Existing certificate files will
+only be visible to the panel after its backend container is recreated.
+
+The path `/var/lib/remnawave/configs/xray/ssl/managed` is **inside the Panel
+backend container**. The host path `/opt/remnawave/managed-certs` is **on the
+Panel VPS**, not on each traffic node.
 
 ## Choose deployment mode
 
 **Different VPS (your Manager/Remnawave setup):** use **Настроить удалённую панель**.
 
 1. In **Сертификаты** provide the public IPv4, SSH port, root password and **verified SSH fingerprint** of the VPS hosting **Remnawave Panel** (NOT a traffic node).
-2. Confirm one-time installation. Manager installs a restricted forced-command certificate receiver under `/usr/local/libexec/xppn-panel-cert-import.py` and creates `/opt/xppn-panel-certs`. It stores only an encrypted SSH private key, never the root password.
+2. Confirm one-time installation. Manager installs a restricted forced-command certificate receiver under `/usr/local/libexec/xppn-panel-cert-import.py` and creates `/opt/remnawave/managed-certs`. It stores only an encrypted SSH private key, never the root password.
 3. On the **Remnawave Panel VPS**, add this bind mount to the existing backend service:
 
 ```yaml
 services:
   remnawave:
     volumes:
-      - /opt/xppn-panel-certs:/var/lib/remnawave/configs/xray/ssl/XPPN:ro
+      - /opt/remnawave/managed-certs:/var/lib/remnawave/configs/xray/ssl/managed:ro
 ```
 
 Keep all existing mounts and other configuration. Validate the Compose file and recreate **only** the panel backend in a planned maintenance window. The restricted SSH receiver is installed on the panel VPS, not on RUS10.
@@ -42,11 +63,11 @@ In the **Remnawave Panel backend** service in its compose file add:
 services:
   remnawave:
     volumes:
-      - xppn-v2-panel-certs:/var/lib/remnawave/configs/xray/ssl/XPPN:ro
+      - remnawave-managed-certs:/var/lib/remnawave/configs/xray/ssl/managed:ro
 volumes:
-  xppn-v2-panel-certs:
+  remnawave-managed-certs:
     external: true
-    name: xppn-v2-panel-certs
+    name: remnawave-managed-certs
 ```
 
 Merge these lines into the existing service and existing top-level `volumes`
@@ -57,12 +78,23 @@ configuration**.
 Confirm the panel backend can read a staged certificate without printing keys:
 
 ```bash
-docker exec remnawave test -r /var/lib/remnawave/configs/xray/ssl/XPPN/RUS10/current/fullchain.pem
-docker exec remnawave test -r /var/lib/remnawave/configs/xray/ssl/XPPN/RUS10/current/privkey.key
+docker exec remnawave test -r /var/lib/remnawave/configs/xray/ssl/managed/RUS10/current/fullchain.pem
+docker exec remnawave test -r /var/lib/remnawave/configs/xray/ssl/managed/RUS10/current/privkey.key
 ```
 
 The corresponding node directory exists **only after first sync**. A missing
 directory before staging is expected.
+
+## Upgrading existing installations
+
+Versioned certificate mount paths changed from the old branded layout to
+the neutral `managed` directory. **Do not replace the bind mount or delete
+any old Docker volume while an existing Xray profile still references the old
+path.** For existing file-backed profiles, finish an explicit path migration
+with an encrypted profile backup and verify TLS before retiring any old mount.
+The manager refuses to restart a node automatically if its live Xray
+profile points to a different certificate directory. A new volume is created
+separately; data is not copied from the old one automatically.
 
 ## Workflow
 

@@ -132,6 +132,9 @@ def test_file_mode_new_cert_requests_only_one_restart(cert_environment,monkeypat
     monkeypatch.setattr(certs,"_remote_password_bundle",lambda *a:(cert,key))
     restarted=[]
     monkeypatch.setattr(remnawave,"restart_node",lambda uid:restarted.append(uid))
+    monkeypatch.setattr(remnawave,"detailed_profile",lambda *_:{
+        "config":{"inbounds":[{"tag":"RUS10_VLESS_TLS_IN",
+                "streamSettings":{"tlsSettings":{"certificates":[certs.paths("RUS10")]}}}]}})
     certs.sync(node["id"],"test-password")
     with storage.transaction() as db:
         db.execute("UPDATE node_certificates SET profile_mode='files',applied_fingerprint='old' WHERE node_id=?",(node["id"],))
@@ -150,3 +153,29 @@ def test_ssh_secret_is_never_returned_in_certificate_status(cert_environment):
     shown=certs.status()
     assert "SECRET_SSH_PRIVATE_KEY" not in str(shown)
     assert shown["nodes"][0]["auto_sync"] is True
+
+
+def test_file_renewal_refuses_legacy_certificate_paths(cert_environment,monkeypatch):
+    from v2 import remnawave
+    node,_=cert_environment
+    certs.configure(True,confirmed_panel_mount=True)
+    with storage.transaction() as db:
+        db.execute("INSERT INTO node_certificates(node_id,profile_mode,applied_fingerprint) "
+                   "VALUES(?,'files','old')",(node["id"],))
+    old = {"keyFile": "/var/lib/remnawave/configs/xray/ssl/XPPN/RUS10/current/privkey.key",
+           "certificateFile": "/var/lib/remnawave/configs/xray/ssl/XPPN/RUS10/current/fullchain.pem"}
+    monkeypatch.setattr(remnawave,"detailed_profile",lambda *_:{
+        "config":{"inbounds":[{"tag":"RUS10_VLESS_TLS_IN",
+                "streamSettings":{"tlsSettings":{"certificates":[old]}}}]}})
+    monkeypatch.setattr(remnawave,"restart_node",lambda *_:pytest.fail("must not restart"))
+    monkeypatch.setattr(certs,"_remote_password_bundle",
+                        lambda *_:pytest.fail("must reject before reading secrets"))
+    with pytest.raises(certs.CertError,match="другие пути"):
+        certs.sync(node["id"],"password")
+
+
+def test_neutral_remnawave_paths_do_not_contain_brand():
+    p=certs.paths("RUS10")
+    assert p["keyFile"]=="/var/lib/remnawave/configs/xray/ssl/managed/RUS10/current/privkey.key"
+    assert p["certificateFile"]=="/var/lib/remnawave/configs/xray/ssl/managed/RUS10/current/fullchain.pem"
+    assert "XPPN" not in str(p)

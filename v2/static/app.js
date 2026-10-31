@@ -667,7 +667,7 @@ function bindEvents(){
       '<label>SSH fingerprint из консоли сервера<input name="fingerprint" required placeholder="SHA256:..."></label>'+
       '<label>Одноразовый SSH-пароль root<input name="password" type="password" required autocomplete="new-password"></label>'+
       '<label class="check-row"><input name="confirmed" type="checkbox" required> Подтверждаю установку ограниченного SSH-приёмника на VPS панели</label>'+
-      '<p class="muted small">После этого вручную примонтируй /opt/xppn-panel-certs в backend Remnawave по пути /var/lib/remnawave/configs/xray/ssl/XPPN:ro. Только затем включай синхронизацию.</p>'+
+      '<p class="muted small">После этого вручную примонтируй /opt/remnawave/managed-certs в backend Remnawave по пути /var/lib/remnawave/configs/xray/ssl/managed:ro. Только затем включай синхронизацию.</p>'+
       '<div class="form-buttons"><button class="btn primary" type="submit">Подключить сервер панели</button></div></form>',
       async fd=>{
         await api("/panel-certificates/enroll","POST",{
@@ -680,7 +680,7 @@ function bindEvents(){
   };
   $("cert-refresh").onclick=refreshCertificates;
   $("cert-enable").onclick=async()=>{
-    if(!confirm("Я проверил, что Remnawave Panel имеет доступ к каталогу XPPN в контейнере (через общий том или папку удалённого SSH-приёмника). Включить файловую синхронизацию?"))return;
+    if(!confirm("Я проверил, что Remnawave Panel имеет доступ к каталогу сертификатов в контейнере (через общий том или папку удалённого SSH-приёмника). Включить файловую синхронизацию?"))return;
     try{await api("/certificates/settings","POST",{enabled:true,confirmed_panel_mount:true});await refreshCertificates()}
     catch(e){message(e.message,true)}
   };
