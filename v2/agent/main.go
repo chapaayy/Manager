@@ -20,7 +20,7 @@ import (
     "time"
 )
 
-const Version = "1.1.0"
+const Version = "1.2.0"
 const MaxBody = 160000
 const Helper = "/usr/local/libexec/node-manager-helper"
 
