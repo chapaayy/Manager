@@ -69,7 +69,7 @@ WorkingDirectory=/
 NoNewPrivileges=no
 AmbientCapabilities=
 UMask=0077
-MemoryMax=120M
+MemoryMax=256M
 [Install]
 WantedBy=multi-user.target
 UNIT
