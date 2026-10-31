@@ -9,7 +9,7 @@ ROOT=Path(__file__).resolve().parents[1]
 
 def test_fresh_vps_bundle_contains_baseline_only():
     files=vps_install.render_files(Endpoint("DE2","de2.gowayot.com","DE"),
-                                    "test-secret","198.51.100.5")
+                                    "test-secret","1.1.1.1")
     assert "node-baseline.sh" in files
     installer=files["remote-install.sh"]
     assert "test \"$(docker inspect" in installer
