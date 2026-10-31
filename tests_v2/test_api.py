@@ -175,3 +175,56 @@ def test_first_vps_install_requires_explicit_clean_confirmation(client):
         "panel_ip":"1.1.1.1"})
     assert response.status_code==422
     assert storage.list_nodes()==[]
+
+
+
+def test_delete_unused_draft_only_after_confirmation_and_auth(client):
+    draft=add_node(client,"RUS10","regular","rus10.gowayot.com","RU")
+    response=client.delete("/api/nodes/"+draft["id"])
+    assert response.status_code==200,response.text
+    assert response.json()["deleted"] is True
+    assert all(n["id"]!=draft["id"] for n in storage.list_nodes())
+    assert client.delete("/api/nodes/"+draft["id"]).status_code==404
+    # Never delete a VPS if its deployment has already been queued.
+    live=add_node(client,"DE11","regular","de11.gowayot.com","DE")
+    storage.create_install_job(live["id"],"1.1.1.1",22,"SHA256:"+("a"*43))
+    blocked=client.delete("/api/nodes/"+live["id"])
+    assert blocked.status_code==422
+    assert storage.get_node(live["id"])["status"]=="queued"
+
+
+def test_unused_draft_deletion_refuses_bridge_references(client):
+    entry=add_node(client,"RUS11","entry","rus11.gowayot.com","RU")
+    bridge=client.post("/api/bridges",json={"name":"Test bridge","entry_id":entry["id"]})
+    assert bridge.status_code==200,bridge.text
+    denied=client.delete("/api/nodes/"+entry["id"])
+    assert denied.status_code==422
+    assert entry["id"] in [n["id"] for n in storage.list_nodes()]
+
+
+def test_one_time_rus10_test_cleanup_is_precise_and_idempotent(client):
+    test=add_node(client,"RUS10","regular","rus10.gowayot.com","RU")
+    real=add_node(client,"DE11","regular","de11.gowayot.com","DE")
+    assert storage.remove_one_time_test_rus10() is True
+    assert [n["id"] for n in storage.list_nodes()]==[real["id"]]
+    # The cleanup is never applied again, even if user later adds a new draft.
+    again=add_node(client,"RUS10","regular","rus10.gowayot.com","RU")
+    assert storage.remove_one_time_test_rus10() is False
+    assert storage.get_node(again["id"])["status"]=="planned"
+
+
+def test_one_time_cleanup_never_removes_attached_test_draft(client):
+    test=add_node(client,"RUS10","regular","rus10.gowayot.com","RU")
+    storage.create_install_job(test["id"],"1.1.1.1",22,"SHA256:"+("a"*43))
+    assert storage.remove_one_time_test_rus10() is False
+    assert storage.get_node(test["id"])["status"]=="queued"
+
+
+def test_duplicate_domains_have_human_readable_message(client):
+    add_node(client,"DE11","regular","de11.gowayot.com","DE")
+    r=client.post("/api/nodes",json={
+      "code":"DE12","name":"Different code","country":"DE",
+      "domain":"de11.gowayot.com","role":"regular"})
+    assert r.status_code==422
+    assert "уже добавлен" in r.json()["detail"]
+    assert "UNIQUE constraint" not in r.text
