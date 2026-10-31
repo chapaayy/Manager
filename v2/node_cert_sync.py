@@ -118,11 +118,43 @@ def sync(node_id:str)->dict:
     return agent_transport.enqueue(node_id,"cert.status",ttl=180)
 
 
+def queue_initial_check(node_id: str) -> bool:
+    """Queue first TLS verification immediately; never depend on six-hour sweep.
+
+    Safe to call from the first ready heartbeat or after registration. Never
+    contacts Remnawave, SSH or the VPS synchronously. The agent handles the
+    read-only cert.status task on its next outbound poll.
+    """
+    try:
+        node=storage.get_node(node_id)
+        if node["status"]!="ready":
+            return False
+        job=storage.get_install_job(node_id)
+        if not job.get("remote_uuid") or not job.get("profile_uuid"):
+            return False
+        with storage.connect() as db:
+            checked=db.execute(
+                "SELECT last_checked,last_error FROM node_tls_sync WHERE node_id=?",
+                (node_id,)).fetchone()
+            if checked and (checked["last_checked"] or checked["last_error"]):
+                return False
+            prior=db.execute(
+                """SELECT id FROM manager_agent_jobs
+                   WHERE node_id=? AND action='cert.status' LIMIT 1""",
+                (node_id,)).fetchone()
+            if prior:
+                return False
+        agent_transport.enqueue(node_id,"cert.status",ttl=240)
+        return True
+    except (agent_transport.AgentError,LookupError):
+        return False
+
+
 def status()->dict:
     agents={a["id"]:a for a in agent_transport.nodes_status()}
     with storage.connect() as db:
         rows=db.execute("""SELECT n.id,n.code,n.domain,n.status,t.fingerprint,t.expires_at,
-                   t.last_checked,t.last_applied,t.last_error FROM nodes n
+                   t.last_checked,t.last_applied,t.last_error,\n                   (SELECT COUNT(*) FROM manager_agent_jobs j WHERE j.node_id=n.id\n                    AND j.action='cert.status' AND j.status IN ('queued','leased')) AS pending\n                   FROM nodes n
                    LEFT JOIN node_tls_sync t ON n.id=t.node_id ORDER BY n.code""").fetchall()
     return {"mode":"node_local_paths","panel_mount_required":False,
             "check_interval_hours":6,"nodes":[{
@@ -133,7 +165,7 @@ def status()->dict:
             "last_error":r["last_error"] or "",
             "auto_sync":bool(agents.get(r["id"],{}).get("online")),
             "agent_installed":bool(agents.get(r["id"],{}).get("installed")),
-            "checked":bool(r["fingerprint"])} for r in rows]}
+            "checked":bool(r["fingerprint"]),\n            "checking":bool(r["pending"])} for r in rows]}
 
 
 def background_cycle():
