@@ -249,6 +249,7 @@ def render_files(source: Endpoint, secret_key: str, panel_ip: str,
                                  (ROOT/"remnanode-compose.yml").read_text(encoding="utf8")),
         "node.env": "SECRET_KEY="+secret_key+"\n", "index.html": html_site,
         "remote-install.sh": (ROOT/"remote-install.sh").read_text(encoding="utf8"),
+        "node-baseline.sh": (ROOT/"node-baseline.sh").read_text(encoding="utf8"),
     }
 
 

@@ -20,7 +20,7 @@ import (
     "time"
 )
 
-const Version = "1.1.0"
+const Version = "1.2.0"
 const MaxBody = 160000
 const Helper = "/usr/local/libexec/node-manager-helper"
 
@@ -67,6 +67,77 @@ func (a *Agent) send(ctx context.Context, method, route string, request interfac
     return json.NewDecoder(io.LimitReader(resp.Body,MaxBody)).Decode(out)
 }
 
+// Read lightweight kernel counters. These are cumulative, not Mbps samples.
+// Use the default-route interface to avoid counting docker/veth traffic twice.
+var lastNetSample struct {
+    iface string
+    rx uint64
+    tx uint64
+    when time.Time
+}
+
+func addNetworkCounters(status map[string]interface{}) {
+    iface:=""
+    if raw,err:=os.ReadFile("/proc/net/route");err==nil{
+        for _,line:=range strings.Split(string(raw),"\n")[1:]{
+            fields:=strings.Fields(line)
+            if len(fields)>2 && fields[1]=="00000000" {
+                iface=fields[0]
+                break
+            }
+        }
+    }
+    if iface!=""{
+        if raw,err:=os.ReadFile("/proc/net/dev");err==nil{
+            for _,line:=range strings.Split(string(raw),"\n"){
+                parts:=strings.SplitN(line,":",2)
+                if len(parts)!=2 || strings.TrimSpace(parts[0])!=iface{continue}
+                nums:=strings.Fields(parts[1])
+                if len(nums)>=16 {
+                    status["net_interface"]=iface
+                    rx,rxErr:=strconv.ParseUint(nums[0],10,64)
+                    tx,txErr:=strconv.ParseUint(nums[8],10,64)
+                    now:=time.Now()
+                    if rxErr==nil && txErr==nil {
+                        elapsed:=now.Sub(lastNetSample.when).Seconds()
+                        if lastNetSample.iface==iface && elapsed>1 && rx>=lastNetSample.rx && tx>=lastNetSample.tx {
+                            status["net_rx_mbps"]=float64(rx-lastNetSample.rx)*8/elapsed/1000000
+                            status["net_tx_mbps"]=float64(tx-lastNetSample.tx)*8/elapsed/1000000
+                        }
+                        lastNetSample.iface=iface
+                        lastNetSample.rx=rx
+                        lastNetSample.tx=tx
+                        lastNetSample.when=now
+                    }
+                    for key,index:=range map[string]int{
+                        "net_rx_bytes":0,"net_rx_dropped":3,
+                        "net_tx_bytes":8,"net_tx_dropped":11}{
+                        if n,e:=strconv.ParseUint(nums[index],10,64);e==nil{status[key]=n}
+                    }
+                }
+                break
+            }
+        }
+    }
+    if raw,err:=os.ReadFile("/proc/net/snmp");err==nil{
+        lines:=strings.Split(string(raw),"\n")
+        for i:=0;i+1<len(lines);i++{
+            if !strings.HasPrefix(lines[i],"Tcp:")||!strings.HasPrefix(lines[i+1],"Tcp:"){continue}
+            names:=strings.Fields(lines[i]);values:=strings.Fields(lines[i+1])
+            if len(names)!=len(values){continue}
+            for j,k:=range names {
+                if k=="RetransSegs" {
+                    if n,e:=strconv.ParseUint(values[j],10,64);e==nil{status["tcp_retrans_segs"]=n}
+                }
+                if k=="CurrEstab" {
+                    if n,e:=strconv.ParseUint(values[j],10,64);e==nil{status["tcp_established"]=n}
+                }
+            }
+            break
+        }
+    }
+}
+
 func systemStatus() map[string]interface{} {
     status:=map[string]interface{}{"agent":"online","version":Version}
     if b,err:=os.ReadFile("/proc/uptime");err==nil {
@@ -91,6 +162,7 @@ func systemStatus() map[string]interface{} {
         status["disk_total_bytes"]=fs.Blocks*uint64(fs.Bsize)
         status["disk_available_bytes"]=fs.Bavail*uint64(fs.Bsize)
     }
+    addNetworkCounters(status)
     return status
 }
 
@@ -103,7 +175,7 @@ func execute(job *Task) Response {
     }
     allowed:=map[string]bool{"docker.status":true,"docker.logs":true,
         "docker.restart":true,"logs.read":true,"service.status":true,"service.restart":true,
-        "cert.status":true,"config.read":true,"config.apply":true,
+        "cert.status":true,"config.read":true,"config.apply":true,"baseline.status":true,
         "node.cleanup":true,"node.cleanup.finish":true}
     if !allowed[job.Action] {resp.Error="unsupported operation";return resp}
     if job.Payload==nil {job.Payload=map[string]interface{}{}}

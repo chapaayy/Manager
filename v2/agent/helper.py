@@ -25,7 +25,7 @@ CONTAINERS = {"nginx", "remnanode"}
 SYSTEMD = {"docker.service", "certbot.timer", "xppn-node-firewall.service"}
 ACTIONS = {"docker.status", "docker.logs", "docker.restart",
            "service.status", "service.restart", "logs.read", "cert.status",
-           "config.read", "config.apply",
+           "config.read", "config.apply", "baseline.status",
            "node.cleanup", "node.cleanup.finish"}
 
 
@@ -209,7 +209,61 @@ def _finish_cleanup(request):
     return {"scheduled":True,"node":name,"verified_removed":False}
 
 
+def _inspect(args, timeout=5):
+    """Bounded, non-mutating observation; no command strings or shell."""
+    try:
+        completed=subprocess.run(args,capture_output=True,check=False,timeout=timeout)
+        if completed.returncode: return None
+        return completed.stdout.decode("utf-8","replace").strip()[:1200]
+    except (OSError,subprocess.TimeoutExpired):
+        return None
+
+
+def baseline_status():
+    """Read-only actual state. Never interpret absent tooling as protection."""
+    congestion=_inspect(["sysctl","-n","net.ipv4.tcp_congestion_control"])
+    available=_inspect(["sysctl","-n","net.ipv4.tcp_available_congestion_control"])
+    qdisc=_inspect(["sysctl","-n","net.core.default_qdisc"])
+    rule_file=Path("/etc/sysctl.d/90-xppn-baseline.conf")
+    f2b_available=shutil.which("fail2ban-client") is not None
+    f2b_active=(_inspect(["systemctl","is-active","fail2ban.service"])=="active")
+    jail=_inspect(["fail2ban-client","status","sshd"]) if f2b_active else None
+    banned=None
+    if jail:
+        hit=re.search(r"Currently banned:\s*(\d+)",jail)
+        if hit: banned=int(hit.group(1))
+    panel=Path("/opt/remnanode/panel-ip")
+    panel_ip=panel.read_text().strip() if panel.is_file() and not panel.is_symlink() else ""
+    panel_valid=False
+    try:
+        panel_valid=bool(ipaddress.IPv4Address(panel_ip))
+    except ValueError:
+        pass
+    fwall=(_inspect(["systemctl","is-active","xppn-node-firewall.service"])=="active")
+    rule=None
+    if panel_valid:
+        check=subprocess.run(
+            ["iptables","-C","INPUT","-p","tcp","--dport","2222","!","-s",panel_ip,"-j","DROP"],
+            capture_output=True,timeout=5,check=False)
+        rule=check.returncode==0
+    return {
+        "tcp_congestion":congestion,
+        "available_congestion":available,
+        "default_qdisc":qdisc,
+        "bbr_config_managed":rule_file.is_file() and not rule_file.is_symlink(),
+        "fail2ban_installed":f2b_available,
+        "fail2ban_active":f2b_active,
+        "sshd_jail_active":jail is not None,
+        "sshd_banned_count":banned,
+        "panel_firewall_service_active":fwall,
+        "panel_firewall_ipv4_rule":rule,
+        "nginx_logrotate":Path("/etc/logrotate.d/xppn-nginx").is_file(),
+        "read_only":True,
+    }
+
+
 def execute(action, data):
+    if action=="baseline.status":return baseline_status()
     if action=="node.cleanup":return _cleanup_managed(data)
     if action=="node.cleanup.finish":return _finish_cleanup(data)
     if action == "docker.status":

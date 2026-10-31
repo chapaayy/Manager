@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from . import storage
 
 ALLOWED = {"system.status", "docker.status", "docker.restart", "docker.logs", "logs.read",
-           "service.status", "service.restart", "cert.status",
+           "service.status", "service.restart", "cert.status", "baseline.status",
            "config.read", "config.apply", "node.cleanup", "node.cleanup.finish"}
 MAX_RESULT = 48000
 LEASE_SECONDS = 120
