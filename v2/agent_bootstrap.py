@@ -38,7 +38,19 @@ def _remote_bootstrap_failure(transport):
         status = vps_install.run_command(
             transport,
             "if test -f /var/log/node-manager-bootstrap.log; then "
-            "grep -E '^AGENT_(FAILURE|STEP):[a-z_-]+(:[0-9]+)?
+            "grep -E '^AGENT_(FAILURE|STEP):[a-z_-]+(:[0-9]+)?$' "
+            "/var/log/node-manager-bootstrap.log | tail -n 1 || :; fi",
+            timeout=12, max_bytes=256).strip()
+    except Exception:
+        return "Сбой скрипта агента. На VPS смотри журнал установки."
+    failure = re.fullmatch(r"AGENT_FAILURE:([a-z_-]+):([0-9]{1,3})", status)
+    if failure:
+        stage, code = failure.groups()
+        description = STAGE_DESCRIPTION.get(stage, "неизвестный этап")
+        return ("Ошибка при установке агента: " + description +
+                " (код " + code + "). Проверь на VPS службу и журнал установки.")
+    return "Скрипт установки агента завершился ошибкой. Проверь журнал установки на VPS."
+
 
 def manager_url() -> str:
     domain=os.environ.get("XPPN_V2_DOMAIN","").strip().lower()
