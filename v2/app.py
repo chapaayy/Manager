@@ -23,7 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from pydantic import BaseModel, Field
 
-from . import bundled, library, node_cert_sync, remnawave, service, storage, vps_install, web_updates
+from . import agent_bootstrap, agent_transport, bundled, library, node_cert_sync, remnawave, service, storage, vps_install, web_updates
 from .template_engine import Endpoint, TemplateError, safe_preview, variables_map
 
 STATIC = Path(__file__).resolve().parent / "static"
@@ -94,6 +94,7 @@ def startup():
     _username()
     _password_hash()
     storage.init_db()
+    agent_transport.initialize()
     bundled.seed_defaults()
     storage.mark_interrupted_jobs()
     storage.remove_one_time_test_rus10()
@@ -452,6 +453,96 @@ def enroll_node_certificate(node_id: str, body: NodeCertificateEnrollRequest, _=
         raise HTTPException(422,str(e)) from None
     except Exception:
         raise HTTPException(502,"Не удалось настроить SSH-синхронизацию TLS на VPS") from None
+
+
+class AgentHeartbeatData(BaseModel):
+    version: str = Field(default="",max_length=40)
+    metrics: dict = Field(default_factory=dict)
+
+
+class AgentTaskData(BaseModel):
+    action: str = Field(min_length=4,max_length=35)
+    payload: dict = Field(default_factory=dict)
+    confirmed: bool = False
+
+
+class AgentBootstrapData(BaseModel):
+    password: str = Field(min_length=1,max_length=512)
+    confirm_ssh_migration: bool = False
+
+
+class AgentRevokeData(BaseModel):
+    confirmed: bool = False
+
+
+def agent_required(request: Request):
+    node_id=request.headers.get("X-Node-Id","")
+    if not agent_transport.authenticate(node_id,request.headers.get("Authorization","")):
+        raise HTTPException(401,"Агент не авторизован")
+    return node_id
+
+
+@app.post("/api/agent/v1/heartbeat")
+def agent_heartbeat(body: AgentHeartbeatData, node_id=Depends(agent_required)):
+    try:
+        return agent_transport.heartbeat(node_id,body.model_dump())
+    except agent_transport.AgentError as e:
+        raise HTTPException(422,str(e)) from None
+
+
+@app.get("/api/agent/v1/pull")
+def agent_pull(node_id=Depends(agent_required)):
+    return agent_transport.poll(node_id)
+
+
+@app.post("/api/agent/v1/report")
+def agent_report(body: dict, node_id=Depends(agent_required)):
+    try:
+        if len(json.dumps(body))>155000:
+            raise HTTPException(413,"Результат агента слишком большой")
+        return agent_transport.report(node_id,body)
+    except agent_transport.AgentError as e:
+        raise HTTPException(422,str(e)) from None
+
+
+@app.get("/api/agents")
+def agents_status(_=Depends(read_access)):
+    return {"agents":agent_transport.nodes_status()}
+
+
+@app.post("/api/agents/{node_id}/bootstrap")
+def bootstrap_agent(node_id: str,body: AgentBootstrapData,_=Depends(write_access)):
+    try:
+        return agent_bootstrap.install_existing(node_id,body.password,body.confirm_ssh_migration)
+    except (LookupError,ValueError) as e:
+        raise HTTPException(422,str(e)) from None
+    except Exception:
+        raise HTTPException(502,"Не удалось установить агент по первоначальному SSH") from None
+
+
+@app.post("/api/agents/{node_id}/tasks")
+def agent_enqueue(node_id: str, body: AgentTaskData, _=Depends(write_access)):
+    if body.action in ("docker.restart","service.restart","config.apply") and not body.confirmed:
+        raise HTTPException(422,"Подтверди изменение VPS")
+    try:
+        return agent_transport.enqueue(node_id,body.action,body.payload)
+    except (agent_transport.AgentError,LookupError) as e:
+        raise HTTPException(422,str(e)) from None
+
+
+@app.get("/api/agents/{node_id}/tasks/{job_id}")
+def agent_job(node_id: str,job_id: str,_=Depends(read_access)):
+    try:
+        return agent_transport.job_status(node_id,job_id)
+    except LookupError:
+        raise HTTPException(404,"Задание не найдено") from None
+
+
+@app.post("/api/agents/{node_id}/revoke")
+def agent_revoke(node_id: str,body: AgentRevokeData,_=Depends(write_access)):
+    if not body.confirmed:
+        raise HTTPException(422,"Подтверди отключение агента")
+    return agent_transport.revoke(node_id)
 
 
 @app.post("/api/nodes")
