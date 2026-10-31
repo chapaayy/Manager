@@ -48,7 +48,7 @@ def _safe_panel_error_text(value) -> str:
     value = value.strip()
     if not value or len(value) > 220 or any(c in value for c in "\r\n\x00"):
         return ""
-    if re.search(r"(?i)-----BEGIN|-----END|authorization\\s*:|bearer\\s+|(?:token|secret|password|private[_-]?key)\\s*[:=]", value):
+    if re.search(r"(?i)-----BEGIN|-----END|authorization\s*:|bearer\s+|(?:token|secret|password|private[_-]?key)\s*[:=]", value):
         return ""
     if re.search(r"[A-Za-z0-9+/_=-]{48,}", value):
         return ""
