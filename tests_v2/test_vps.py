@@ -35,7 +35,7 @@ def test_starter_bundle_contains_working_example_nginx_and_compose(db):
     assert "127.0.0.1:8080" in by_kind["nginx_compose"]
     assert "acme-challenge" in by_kind["nginx"]
     assert "remnawave/node:3.4.1" in by_kind["node_compose"]
-    assert "SECRET_KEY" not in originals["node_compose"].split("environment:")[1].split("volumes:")[0]
+    assert "SECRET_KEY" not in by_kind["node_compose"].split("environment:")[1].split("volumes:")[0]
     # User changes must never be reset.
     storage.encrypt("dummy")  # encryption configured
     bundled.seed_defaults()
