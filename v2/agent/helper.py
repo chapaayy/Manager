@@ -25,7 +25,7 @@ CONTAINERS = {"nginx", "remnanode"}
 SYSTEMD = {"docker.service", "certbot.timer", "xppn-node-firewall.service"}
 ACTIONS = {"docker.status", "docker.logs", "docker.restart",
            "service.status", "service.restart", "logs.read", "cert.status",
-           "cert.export", "config.read", "config.apply",
+           "config.read", "config.apply",
            "node.cleanup", "node.cleanup.finish"}
 
 
@@ -276,19 +276,34 @@ def execute(action, data):
         if name!="certbot.timer":fail("service restart not allowed")
         run(["systemctl","restart",name],timeout=25)
         return {"restarted":name}
-    if action in {"cert.export","cert.status"}:
+    if action=="cert.status":
         chain_path,key_path=cert_paths()
         chain=chain_path.read_bytes()
         key=key_path.read_bytes()
         if not chain or not key or len(chain)+len(key)>90000:fail("invalid tls files")
+        actual=domain()
+        # Verify matching public keys and domain before reporting success;
+        # no private key or PEM content ever leaves this VPS.
+        certificate_public=run(["openssl","x509","-in",str(chain_path),"-pubkey","-noout"],timeout=8)
+        key_public=run(["openssl","pkey","-in",str(key_path),"-pubout"],timeout=8)
+        if certificate_public.strip()!=key_public.strip():
+            fail("certificate and private key do not match")
+        run(["openssl","x509","-in",str(chain_path),"-noout","-checkhost",actual],timeout=8)
+        run(["openssl","x509","-in",str(chain_path),"-noout","-checkend","3600"],timeout=8)
+        # Only the dedicated Remnawave Node container may consume this path.
+        mounts_raw=run(["docker","inspect","--format","{{json .Mounts}}","remnanode"],timeout=8,limit=15000)
+        mounts=json.loads(mounts_raw)
+        if not any(m.get("Source")=="/opt/nginx/certs" and
+                   m.get("Destination")=="/opt/nginx/certs" and
+                   m.get("RW") is False for m in mounts):
+            fail("Remnawave Node does not have the expected read-only TLS mount")
+        for check in (chain_path,key_path):
+            run(["docker","exec","remnanode","test","-s",str(check)],timeout=8,limit=200)
         details=run(["openssl","x509","-in",str(chain_path),"-noout","-enddate","-fingerprint","-sha256"],
                     timeout=10,limit=600)
-        if action=="cert.export":
-            # Sensitive: sent ONLY inside TLS agent-to-manager response.
-            return {"domain":domain(),"chain":base64.b64encode(chain).decode(),
-                    "key":base64.b64encode(key).decode()}
-        return {"domain":domain(),"details":details[:500],
-                "certificate_sha256":hashlib.sha256(chain).hexdigest()}
+        return {"domain":actual,"details":details[:500],
+                "certificate_sha256":hashlib.sha256(chain).hexdigest(),
+                "node_tls_mount_verified":True}
     if action=="config.read":return inspect_config(data)
     if action=="config.apply":return update_nginx(data)
     fail("unsupported operation")
