@@ -574,6 +574,14 @@ def lifecycle_archive(node_id: str,body: NodeArchiveData,_=Depends(write_access)
         raise HTTPException(422,str(e)) from None
 
 
+@app.post("/api/nodes/{node_id}/detach-dependencies")
+def lifecycle_detach(node_id: str,body: NodeLifecycleConfirm,_=Depends(write_access)):
+    try:
+        return node_lifecycle.detach_dependencies(node_id,body.code)
+    except (node_lifecycle.LifecycleError,LookupError) as e:
+        raise HTTPException(422,str(e)) from None
+
+
 @app.post("/api/nodes/{node_id}/forget")
 def lifecycle_forget(node_id: str,body: NodeLifecycleConfirm,_=Depends(write_access)):
     try:
