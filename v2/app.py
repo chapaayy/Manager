@@ -95,6 +95,7 @@ def startup():
     _password_hash()
     storage.init_db()
     agent_transport.initialize()
+    node_lifecycle.disable_pending_vps_cleanup()
     bundled.seed_defaults()
     storage.mark_interrupted_jobs()
     storage.remove_one_time_test_rus10()
@@ -660,21 +661,13 @@ def lifecycle_remnawave(node_id: str,body: NodeLifecycleConfirm,_=Depends(write_
 
 
 @app.post("/api/nodes/{node_id}/full/start")
-def lifecycle_start(node_id: str,body: NodeLifecycleConfirm,_=Depends(write_access)):
-    raise HTTPException(410,"Очистка VPS отключена. Используй безопасное удаление из менеджера и Remnawave.")
-    try:
-        return node_lifecycle.begin_full(node_id,body.code,body.delete_profile)
-    except (node_lifecycle.LifecycleError,agent_transport.AgentError,LookupError) as e:
-        raise HTTPException(422,str(e)) from None
+def lifecycle_start(node_id: str, body: NodeLifecycleConfirm, _=Depends(write_access)):
+    raise HTTPException(410, "Очистка VPS отключена. Используй удаление через Remnawave API.")
 
 
 @app.post("/api/nodes/{node_id}/full/advance")
-def lifecycle_advance(node_id: str,body: NodeLifecycleConfirm,_=Depends(write_access)):
-    raise HTTPException(410,"Очистка VPS отключена. Используй безопасное удаление из менеджера и Remnawave.")
-    try:
-        return node_lifecycle.advance_full(node_id,body.code)
-    except (node_lifecycle.LifecycleError,agent_transport.AgentError,LookupError) as e:
-        raise HTTPException(422,str(e)) from None
+def lifecycle_advance(node_id: str, body: NodeLifecycleConfirm, _=Depends(write_access)):
+    raise HTTPException(410, "Очистка VPS отключена. Используй удаление через Remnawave API.")
 
 
 @app.delete("/api/nodes/{node_id}")
