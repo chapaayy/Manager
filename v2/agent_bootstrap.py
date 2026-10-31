@@ -147,3 +147,76 @@ def install_existing(node_id: str, password: str, confirmed: bool) -> dict:
         return install_on_transport(transport,node_id)
     finally:
         transport.close()
+
+
+def repair_existing(node_id: str, password: str, confirmed: bool) -> dict:
+    """Explicit one-time repair of original agent sandbox; preserve identity."""
+    if not confirmed:
+        raise AgentBootstrapError("Подтверди исправление первоначальной установки агента")
+    node=storage.get_node(node_id)
+    if node["status"]!="ready":
+        raise AgentBootstrapError("Исправление доступно только установленным нодам")
+    agent=next((x for x in agent_transport.nodes_status() if x["id"]==node_id),None)
+    if not agent or not agent["installed"] or agent["revoked"] or not agent["last_seen"]:
+        raise AgentBootstrapError("Сначала установи и подключи агент обычным способом")
+    job=storage.get_install_job(node_id)
+    try:
+        transport,_=vps_install.ssh_open(
+            job["ip"],job["port"],password,job["ssh_fingerprint"])
+    except paramiko.AuthenticationException:
+        raise AgentBootstrapError("SSH: пароль root не принят сервером") from None
+    except ValueError as exc:
+        raise AgentBootstrapError(str(exc)) from None
+    except (socket.timeout,TimeoutError):
+        raise AgentBootstrapError("SSH: сервер не отвечает по сохранённому адресу и порту") from None
+    except (OSError,paramiko.SSHException):
+        raise AgentBootstrapError("SSH: соединение с VPS не удалось") from None
+    try:
+        try:
+            vps_install.verify_existing_install(
+                transport,vps_install.Endpoint(node["code"],node["domain"],node["country"]))
+        except ValueError as exc:
+            raise AgentBootstrapError("Проверка существующей VPS не пройдена: "+str(exc)) from None
+        script=(ROOT/"repair-helper.sh").read_bytes()
+        if not script or len(script)>24000:
+            raise AgentBootstrapError("В менеджере отсутствует скрипт исправления агента")
+        path="/root/.node-manager-agent-repair.sh"
+        try:
+            client=paramiko.SFTPClient.from_transport(transport)
+            try:
+                with client.file(path,"wb") as target:
+                    target.write(script)
+                client.chmod(path,0o700)
+            finally:
+                client.close()
+        except Exception:
+            raise AgentBootstrapError("Не удалось передать скрипт исправления по SFTP") from None
+        try:
+            vps_install.run_command(
+                transport,"bash /root/.node-manager-agent-repair.sh "
+                          ">/var/log/node-manager-repair.log 2>&1 "
+                          "&& rm -f /root/.node-manager-agent-repair.sh "
+                          "&& printf 'AGENT_REPAIR_SUCCESS\\n'",
+                timeout=120,max_bytes=1200)
+        except Exception:
+            try:
+                marker=vps_install.run_command(
+                    transport,"if test -f /var/log/node-manager-repair.log; then "
+                              "grep -E '^AGENT_REPAIR_FAILURE:[a-z_-]+:[0-9]+$' "
+                              "/var/log/node-manager-repair.log | tail -n 1 || :; fi",
+                    timeout=10,max_bytes=150).strip()
+            except Exception:
+                marker=""
+            match=re.fullmatch(r"AGENT_REPAIR_FAILURE:([a-z_-]+):([0-9]{1,3})",marker)
+            label={"preflight":"проверка службы агента",
+                   "backup":"резервное копирование настроек",
+                   "write":"изменение systemd-ограничений",
+                   "service":"проверка доступа к helper и перезапуск агента",
+                   "cleanup":"очистка"}.get(match.group(1),"применение исправления") if match else "применение исправления"
+            raise AgentBootstrapError(
+                "Не удалось исправить агент: "+label+
+                ". Предыдущая настройка восстановлена, если перезапуск не прошёл.") from None
+        # Token hash and local agent credentials remain unchanged.
+        return {"node_id":node_id,"repaired":True,"credentials_unchanged":True}
+    finally:
+        transport.close()
