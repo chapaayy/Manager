@@ -205,6 +205,11 @@ def test_unused_draft_deletion_refuses_bridge_references(client):
 def test_one_time_rus10_test_cleanup_is_precise_and_idempotent(client):
     test=add_node(client,"RUS10","regular","rus10.gowayot.com","RU")
     real=add_node(client,"DE11","regular","de11.gowayot.com","DE")
+    # A fresh app has already recorded the migration marker on startup.
+    # Simulate upgrading an older DB that did not run this migration yet.
+    with storage.transaction() as c:
+        c.execute("DELETE FROM starter_seeds WHERE name=?",
+                  ("cleanup:test-rus10-gowayot:2026-10",))
     assert storage.remove_one_time_test_rus10() is True
     assert [n["id"] for n in storage.list_nodes()]==[real["id"]]
     # The cleanup is never applied again, even if user later adds a new draft.
@@ -216,6 +221,9 @@ def test_one_time_rus10_test_cleanup_is_precise_and_idempotent(client):
 def test_one_time_cleanup_never_removes_attached_test_draft(client):
     test=add_node(client,"RUS10","regular","rus10.gowayot.com","RU")
     storage.create_install_job(test["id"],"1.1.1.1",22,"SHA256:"+("a"*43))
+    with storage.transaction() as c:
+        c.execute("DELETE FROM starter_seeds WHERE name=?",
+                  ("cleanup:test-rus10-gowayot:2026-10",))
     assert storage.remove_one_time_test_rus10() is False
     assert storage.get_node(test["id"])["status"]=="queued"
 
