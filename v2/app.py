@@ -23,7 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from pydantic import BaseModel, Field
 
-from . import bundled, library, remnawave, service, storage, web_updates
+from . import bundled, library, remnawave, service, storage, vps_install, web_updates
 from .template_engine import Endpoint, TemplateError, safe_preview, variables_map
 
 STATIC = Path(__file__).resolve().parent / "static"
@@ -95,6 +95,7 @@ def startup():
     _password_hash()
     storage.init_db()
     bundled.seed_defaults()
+    storage.mark_interrupted_jobs()
 
 
 @app.middleware("http")
@@ -172,6 +173,23 @@ class NodeData(BaseModel):
     country: str
     domain: str
     role: str = Field(pattern=r"^(regular|entry|exit)$")
+
+
+class VpsProbeData(BaseModel):
+    ip: str = Field(min_length=7,max_length=45)
+    port: int = Field(default=22,ge=1,le=65535)
+    password: str = Field(min_length=1,max_length=512)
+    domain: str = Field(min_length=4,max_length=253)
+
+
+class VpsInstallData(VpsProbeData):
+    code: str = Field(min_length=2,max_length=20)
+    name: str = Field(min_length=3,max_length=80)
+    country: str = Field(pattern=r"^[A-Za-z]{2}$")
+    role: str = Field(pattern=r"^(regular|exit)$")
+    fingerprint: str
+    confirm_clean: bool = False
+    panel_ip: str = ""
 
 
 class BridgeData(BaseModel):
@@ -306,6 +324,44 @@ def update_panel_profile(body: PanelProfile, _=Depends(write_access)):
         return storage.set_panel_profile(body.uuid, body.inbounds)
     except remnawave.PanelError as e:
         raise HTTPException(422, str(e)) from None
+
+
+@app.post("/api/vps/probe")
+def probe_vps(body: VpsProbeData, request: Request, _=Depends(write_access)):
+    try:
+        return vps_install.preflight(body.ip,body.port,body.password,
+                                     body.domain.strip().lower())
+    except ValueError as e:
+        raise HTTPException(422,str(e)) from None
+    except Exception:
+        raise HTTPException(502,"SSH не отвечает или доступ root не подтверждён") from None
+
+
+@app.post("/api/vps/install")
+def install_vps(body: VpsInstallData, request: Request, _=Depends(write_access)):
+    if not body.confirm_clean:
+        raise HTTPException(422,"Подтверди установку только на чистый VPS")
+    if not storage.get_panel().get("has_token"):
+        raise HTTPException(422,"Сначала подключи Remnawave API в настройках")
+    try:
+        return vps_install.start_install(
+            code=body.code.upper().strip(),country=body.country.upper(),
+            name=body.name.strip(),domain=body.domain.strip().lower(),
+            role=body.role,ip=body.ip,port=body.port,password=body.password,
+            fingerprint_value=body.fingerprint,panel_ip=body.panel_ip)
+    except (ValueError,TemplateError,sqlite3.IntegrityError,remnawave.PanelError) as e:
+        raise HTTPException(422,str(e)) from None
+    except Exception:
+        raise HTTPException(502,"Не удалось подтвердить VPS и начать установку") from None
+
+
+@app.get("/api/vps/jobs/{node_id}")
+def vps_job_status(node_id: str, _=Depends(read_access)):
+    try:
+        result=storage.get_install_job(node_id)
+    except LookupError:
+        raise HTTPException(404,"Установка не найдена") from None
+    return result
 
 
 @app.post("/api/nodes")
