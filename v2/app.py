@@ -466,6 +466,39 @@ def certificate_enroll(node_id: str, body: CertificateEnrollData, _=Depends(writ
         raise HTTPException(502, "Не удалось настроить ограниченный SSH-доступ к сертификатам") from None
 
 
+class CertificateMigrateData(BaseModel):
+    sha256: str = Field(min_length=64, max_length=64)
+    confirm_change: bool = False
+
+
+class CertificateRestoreData(BaseModel):
+    confirm_restore: bool = False
+
+
+@app.get("/api/certificates/{node_id}/migration")
+def certificate_migration_preview(node_id: str, _=Depends(read_access)):
+    try:
+        return certificates.migration_preview(node_id)
+    except (certificates.CertError, remnawave.PanelError, LookupError) as e:
+        raise HTTPException(422, str(e)) from None
+
+
+@app.post("/api/certificates/{node_id}/migration")
+def certificate_migrate(node_id: str, body: CertificateMigrateData, _=Depends(write_access)):
+    try:
+        return certificates.migrate_profile(node_id, body.sha256, body.confirm_change)
+    except (certificates.CertError, remnawave.PanelError, LookupError) as e:
+        raise HTTPException(422, str(e)) from None
+
+
+@app.post("/api/certificates/{node_id}/restore")
+def certificate_restore(node_id: str, body: CertificateRestoreData, _=Depends(write_access)):
+    try:
+        return certificates.restore_profile(node_id, body.confirm_restore)
+    except (certificates.CertError, remnawave.PanelError, LookupError) as e:
+        raise HTTPException(422, str(e)) from None
+
+
 @app.post("/api/nodes")
 def create_node(body: NodeData, _=Depends(write_access)):
     try:
