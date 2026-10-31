@@ -141,6 +141,7 @@ def init_db():
             sync_key_enc TEXT NOT NULL DEFAULT '',
             profile_mode TEXT NOT NULL DEFAULT 'inline',
             last_applied INTEGER NOT NULL DEFAULT 0,
+            applied_fingerprint TEXT NOT NULL DEFAULT '',
             expires_at INTEGER NOT NULL DEFAULT 0,
             fingerprint TEXT NOT NULL DEFAULT '',
             last_synced INTEGER NOT NULL DEFAULT 0,
@@ -197,6 +198,8 @@ def init_db():
             c.execute("ALTER TABLE node_certificates ADD COLUMN profile_mode TEXT NOT NULL DEFAULT 'inline'")
         if "last_applied" not in cert_columns:
             c.execute("ALTER TABLE node_certificates ADD COLUMN last_applied INTEGER NOT NULL DEFAULT 0")
+        if "applied_fingerprint" not in cert_columns:
+            c.execute("ALTER TABLE node_certificates ADD COLUMN applied_fingerprint TEXT NOT NULL DEFAULT '''
 
 
 
