@@ -513,9 +513,6 @@ def start_install(*, code: str, country: str, name: str, domain: str, role: str,
                   preset_id: str | None = None) -> dict:
     if role not in ("regular","exit","entry"):
         raise ValueError("Неверное назначение VPS")
-    preset_id=preset_id or preset_deploy.default_preset_id()
-    snapshot=preset_deploy.render_snapshot(
-        preset_id,Endpoint(code,domain,country),role)
     if not FP.fullmatch(fingerprint_value):
         raise ValueError("Нужно подтвердить SSH fingerprint из предварительной проверки")
     if not re.fullmatch(r"[A-Z][A-Z0-9_-]{1,19}",code):
@@ -524,6 +521,9 @@ def start_install(*, code: str, country: str, name: str, domain: str, role: str,
     inspection=preflight(ip,port,password,domain,fingerprint_value)
     if not inspection["ready"]:
         raise ValueError("Установка отменена: "+"; ".join(inspection["warnings"]))
+    preset_id=preset_id or preset_deploy.default_preset_id()
+    snapshot=preset_deploy.render_snapshot(
+        preset_id,Endpoint(code,domain,country),role)
     # Check panel API and key before inserting anything or touching VPS.
     remnawave.node_secret()
     # Reuse a previously saved *draft* only when explicitly selected by its ID.
