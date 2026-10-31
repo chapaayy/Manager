@@ -199,7 +199,7 @@ def init_db():
         if "last_applied" not in cert_columns:
             c.execute("ALTER TABLE node_certificates ADD COLUMN last_applied INTEGER NOT NULL DEFAULT 0")
         if "applied_fingerprint" not in cert_columns:
-            c.execute("ALTER TABLE node_certificates ADD COLUMN applied_fingerprint TEXT NOT NULL DEFAULT '''
+            c.execute("ALTER TABLE node_certificates ADD COLUMN applied_fingerprint TEXT NOT NULL DEFAULT ''")
 
 
 
