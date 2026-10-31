@@ -48,7 +48,7 @@ async function probeVps(event){
       '<p class="muted small">Будут установлены Docker, Nginx, TLS и Remnawave Node, создан отдельный Xray Config Profile.</p>'+
       '<details class="template-info"><summary>Посмотреть замены и файлы перед установкой</summary>'+
       preview.variables.map(x=>'<div class="wizard-mapping"><code>'+esc(x.key)+'</code><span>→</span><strong>'+esc(x.value)+'</strong></div>').join("")+
-      '<p class="muted small">'+esc(preview.note)+'</p>'+
+      '<p class="inline-info">'+esc(preview.note)+'</p>'+
       '<h3>Результат Xray</h3><pre class="wizard-preview">'+esc(JSON.stringify(preview.xray,null,2))+'</pre>'+
       '<h3>Nginx</h3><pre class="wizard-preview">'+esc(preview.nginx)+'</pre>'+
       '<p>Файлы: '+preview.files.map(esc).join(", ")+'</p></details>';
