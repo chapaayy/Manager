@@ -126,7 +126,8 @@ def test_full_cleanup_is_staged_not_claimed_verified(setup,monkeypatch):
     job=agent_transport.poll(n["id"])["job"]
     assert job["action"]=="node.cleanup" and job["id"]==jid
     assert job["payload"]=={"domain":n["domain"]}
-    agent_transport.report(n["id"],{"id":jid,"ok":True,"result":{"cleaned":True}})
+    agent_transport.report(n["id"],{"id":jid,"ok":True,"result":{"cleaned":True,
+        "node":n["domain"],"containers_removed":True,"agent_remains":True}})
     progress=node_lifecycle.advance_full(n["id"],n["code"])
     assert progress["phase"]=="finalizing"
     assert events==[("node",remote),("profile",profile)]
@@ -166,3 +167,17 @@ def test_bridge_dependencies_block_deletion(setup):
                lambda:node_lifecycle.begin_full(n["id"],n["code"],True)]:
         with pytest.raises(node_lifecycle.LifecycleError,match="мостом"):
             fn()
+
+
+def test_cleanup_acknowledgement_for_wrong_vps_never_deletes_panel_node(setup,monkeypatch):
+    n,remote,profile,_=setup
+    monkeypatch.setattr(remnawave,"delete_node",lambda *_:pytest.fail("must not delete remote"))
+    node_lifecycle.begin_full(n["id"],n["code"],True)
+    job=agent_transport.poll(n["id"])["job"]
+    agent_transport.report(n["id"],{"id":job["id"],"ok":True,"result":{
+        "cleaned":True,"node":"other.example.org",
+        "containers_removed":True,"agent_remains":True}})
+    with pytest.raises(node_lifecycle.LifecycleError,match="нужной VPS"):
+        node_lifecycle.advance_full(n["id"],n["code"])
+    assert storage.get_install_job(n["id"])["remote_uuid"]==remote
+    assert node_lifecycle.preview(n["id"])["phase"]=="preparing"
