@@ -397,7 +397,7 @@ function renderNodes(){
       const children=b.exits.map(e=>
         '<button type="button" class="bridge-child" data-node-open="'+esc(e.id)+'">'+icon("server")+
         '<span class="child-body"><strong>'+esc(e.code)+' · '+esc(e.name)+'</strong><small>'+
-          esc(e.domain)+' · TCP/'+esc(e.inbound_port)+'</small></span>'+
+          esc(e.domain)+' · TCP/'+esc(e.inbound_port)+'</small>'+nodeListBadges(e.id)+'</span>'+
         '<span class="tiny-chip success">Открыть ноду</span></button>'
       ).join("");
       const pending=b.plans.map(p=>
@@ -426,7 +426,7 @@ function renderNodes(){
   $("other-nodes").innerHTML=others.length?others.map(n=>
     '<div class="node-card"><span class="feature-icon">'+icon("server")+'</span><div><strong>'+
     esc(n.code)+' · '+esc(n.name)+'</strong><p>'+esc(n.domain)+' · '+esc(labels[n.role])+
-    '</p></div><span class="tiny-chip '+(n.status==="registered"||n.status==="ready"?"success":"warning")+'">'+
+    '</p>'+nodeListBadges(n.id)+'</div><span class="tiny-chip '+(n.status==="registered"||n.status==="ready"?"success":"warning")+'">'+
     esc(n.archived?"Архив":n.lifecycle_phase?"Удаление: "+n.lifecycle_phase:n.status==="planned"?"Черновик":n.status)+'</span>'+
     '<button type="button" class="btn primary" data-node-open="'+esc(n.id)+'">Открыть ноду</button>'+
     (n.status==="planned"?
