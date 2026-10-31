@@ -35,7 +35,7 @@ jobs:
           node --check v2/static/node-detail.js
           node --check v2/static/vps.js
           node tests_v2/test_ui.js
-          bash -n v2/preview-install.sh v2/install.sh v2/activate-web-updates.sh v2/data/remote-install.sh
+          bash -n v2/preview-install.sh v2/install.sh v2/activate-web-updates.sh v2/data/remote-install.sh v2/data/node-baseline.sh
       - name: Validate Xray transformations, HTTP API and security
         run: python -m pytest -q tests_v2
       - name: Validate public and shared-proxy Docker configurations
