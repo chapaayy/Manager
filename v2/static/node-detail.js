@@ -16,7 +16,7 @@ function currentCert(){return nodeOverviewCerts.find(n=>n.id===selectedNodeId)||
 function nodeCertText(c){
   if(c.last_error)return nodeStatus(false,"", "Ошибка проверки");
   if(c.checked&&c.expires_at)return nodeStatus(true,"Действует до "+new Date(c.expires_at*1000).toLocaleDateString("ru-RU"));
-  if(c.checking)return nodeStatus(null);
+  if(c.checking)return '<span class="node-state">Проверяется…</span>';
   return c.agent_installed?"Ожидает автоматической проверки":"Пока не проверен";
 }
 function openNodeWorkspace(id,tab="overview"){
