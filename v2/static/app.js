@@ -13,6 +13,7 @@ let csrf = "", currentPage = "nodes", currentConfig = null, configRevision = 0,
 let state = {panel:{},nodes:[],bridges:[],configs:[],presets:[]};
 let updateDetails = null, updatePolling = null;
 let showArchivedNodes=false;
+let configCategory="xray";
 
 function message(text, error=false){
   const box = $("toast");
@@ -572,7 +573,9 @@ async function openConfig(id){
 }
 function renderConfigList(){
   const q=$("config-search").value.toLowerCase().trim();
-  const files=state.configs.filter(f=>(f.name+" "+types[f.kind]).toLowerCase().includes(q));
+  const files=state.configs.filter(f=>
+    (configCategory==="xray"?f.kind==="xray":f.kind!=="xray") &&
+    (f.name+" "+types[f.kind]).toLowerCase().includes(q));
   $("config-count").textContent=files.length+" файлов";
   $("config-files").innerHTML=files.length?files.map(f=>
     '<button class="library-tile" data-open-config="'+esc(f.id)+'" type="button">'+
@@ -609,6 +612,7 @@ async function deleteConfig(){
 function resetPreset(){
   currentPreset=null;$("preset-name").value="";$("preset-description").value="";
   $("preset-edit-title").textContent="Новый пресет";
+  $("preset-mode").value="direct";
   for(const s of document.querySelectorAll("[data-preset-kind]"))s.value="";
 }
 function renderPresetSelects(selected={}){
@@ -629,7 +633,9 @@ function renderPresets(){
   }
   renderPresetSelects(selected);
   $("preset-cards").innerHTML=state.presets.length?state.presets.map(p=>
-    '<article class="preset-card"><h3>'+esc(p.name)+'</h3><p>'+esc(p.description||"Пользовательский набор")+'</p>'+
+    '<article class="preset-card"><h3>'+esc(p.name)+'</h3>'+
+    '<span class="preset-mode">'+esc(p.mode==="direct"?"Обычная / выходная VPS":p.mode==="bridge"?"Входной мост":"Библиотека")+'</span>'+
+    '<p>'+esc(p.description||"Пользовательский набор")+'</p>'+
     p.items.map(i=>'<div class="preset-file-chip">'+esc(types[i.kind])+'<strong>'+
     esc(i.config_name)+'</strong></div>').join("")+
     '<div class="form-buttons"><button class="btn subtle" data-preset-edit="'+esc(p.id)+'">Изменить</button>'+
@@ -640,6 +646,7 @@ function renderPresets(){
 function editPreset(id){
   const p=state.presets.find(x=>x.id===id);if(!p)return;
   currentPreset=id;$("preset-name").value=p.name;$("preset-description").value=p.description;
+  $("preset-mode").value=p.mode||"custom";
   $("preset-edit-title").textContent=p.name;
   renderPresetSelects(Object.fromEntries(p.items.map(x=>[x.kind,x.config_id])));
   $("preset-dialog").showModal();
@@ -647,7 +654,7 @@ function editPreset(id){
 async function savePreset(){
   const ids=[...document.querySelectorAll("[data-preset-kind]")].map(x=>x.value).filter(Boolean);
   if(!ids.length)return message("Добавь хотя бы один файл.",true);
-  const body={name:$("preset-name").value.trim(),
+  const body={name:$("preset-name").value.trim(),mode:$("preset-mode").value,
     description:$("preset-description").value.trim(),config_ids:ids};
   try{
     await api(currentPreset?"/presets/"+encodeURIComponent(currentPreset):"/presets",
@@ -861,6 +868,15 @@ function bindEvents(){
       message("Загружен образец. Переменные выделены ниже, файл пока не сохранён.");
     }catch(e){message(e.message,true)}
   };
+  document.querySelectorAll("[data-config-category]").forEach(btn=>btn.addEventListener("click",()=>{
+    configCategory=btn.dataset.configCategory;
+    document.querySelectorAll("[data-config-category]").forEach(tab=>{
+      const selected=tab.dataset.configCategory===configCategory;
+      tab.classList.toggle("active",selected);
+      tab.setAttribute("aria-selected",String(selected));
+    });
+    renderConfigList();
+  }));
   $("config-search").addEventListener("input",renderConfigList);
   $("config-files").addEventListener("click",e=>{
     const button=e.target.closest("[data-open-config]");
