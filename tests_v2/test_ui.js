@@ -45,6 +45,7 @@ assert.doesNotMatch(js,/\/full\/start/,"UI must not start destructive VPS cleanu
 assert.match(js,/shared_profile_confirmation|shared_confirmation/,"Shared profile requires explicit confirmation");
 assert.match(js,/Удалить запись из XPPN Manager/,"Manager removal is always explicit");
 assert.match(js,/toggle-node-archive/,"Archive remains available");
+assert.match(vps,/await nodeLifecycleModal\(id\)/,"Failed install removal uses the same wizard");
 assert.match(html,/nodes-show-archived/,"Archived nodes can be shown");
 
 assert.match(js,/migrateNodeTLSModal/,"UI supports per-node TLS path migration");
