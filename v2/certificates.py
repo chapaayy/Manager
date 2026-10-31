@@ -351,6 +351,27 @@ def _profile_candidate(node_id: str) -> tuple[dict, dict, dict, str]:
         vps_install.Endpoint(node["code"],node["domain"],node["country"]))
     if profile.get("name") != expected:
         raise CertError("Название Xray-профиля изменено вручную. Автоматическая миграция запрещена")
+    # A dedicated manager-generated profile must not be shared with other nodes.
+    rows = remnawave.request("GET","/api/nodes").get("response")
+    if not isinstance(rows,list):
+        raise CertError("Не удалось проверить привязки Xray-профиля к нодам")
+    own_found = False
+    for item in rows:
+        if not isinstance(item,dict):
+            raise CertError("Некорректные данные о нодах Remnawave")
+        assigned = item.get("configProfile")
+        linked = (assigned.get("activeConfigProfileUuid") if isinstance(assigned,dict) else None)
+        linked = linked or item.get("configProfileUuid") or item.get("activeConfigProfileUuid")
+        if item.get("uuid") == job["remote_uuid"]:
+            own_found = True
+            if linked is not None and linked != job["profile_uuid"]:
+                raise CertError("Нода больше не использует сохранённый Xray-профиль")
+        elif linked == job["profile_uuid"]:
+            raise CertError("Этот Xray-профиль используется другой нодой. Переключение запрещено")
+        elif linked is None:
+            raise CertError("Не удалось исключить использование профиля другой нодой")
+    if not own_found:
+        raise CertError("Целевая нода не найдена в Remnawave")
     from copy import deepcopy
     current = profile["config"]
     desired = deepcopy(current)
@@ -418,7 +439,11 @@ def migrate_profile(node_id: str, expected_sha256: str, confirmed: bool) -> dict
                 except Exception:
                     raise CertError("Ошибка переключения и отката профиля. Проверь Remnawave вручную") from None
             raise CertError("Переключение отклонено, предыдущая конфигурация сохранена") from None
+        applied_hash = hashlib.sha256(json.dumps(config["new"],sort_keys=True,
+                          separators=(",",":")).encode()).hexdigest()
         with storage.transaction() as db:
+            db.execute("UPDATE cert_profile_backups SET applied_hash=? WHERE node_id=?",
+                       (applied_hash,node_id))
             db.execute("""UPDATE node_certificates SET profile_mode='files',
                           last_applied=strftime('%s','now'), applied_fingerprint=fingerprint
                           WHERE node_id=?""",(node_id,))
@@ -438,6 +463,11 @@ def restore_profile(node_id: str, confirmed: bool) -> dict:
             backup=db.execute("SELECT * FROM cert_profile_backups WHERE node_id=?",(node_id,)).fetchone()
         if not backup or backup["profile_uuid"]!=job["profile_uuid"] or not job["remote_uuid"]:
             raise CertError("Резервная копия конфигурации не найдена")
+        live=remnawave.detailed_profile(job["profile_uuid"])["config"]
+        current_hash=hashlib.sha256(json.dumps(live,sort_keys=True,
+                          separators=(",",":")).encode()).hexdigest()
+        if not backup["applied_hash"] or backup["applied_hash"] != current_hash:
+            raise CertError("Xray-профиль менялся после переключения. Автооткат запрещён.")
         old=json.loads(storage.decrypt(backup["config_enc"]))
         remnawave.replace_profile_config(job["profile_uuid"],old)
         remnawave.restart_node(job["remote_uuid"])
