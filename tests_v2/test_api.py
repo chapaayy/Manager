@@ -143,7 +143,7 @@ def test_saved_library_config_encrypted_and_preset_files_are_shared(client):
         "content":content.replace("source.code","source.domain"),"revision":1})
     assert updated.status_code==200
     assert updated.json()["revision"]==2
-    assert client.get("/api/presets").json()[0]["items"][0]["revision"]==2
+    assert next(p for p in client.get("/api/presets").json() if p["id"]==preset.json()["id"])["items"][0]["revision"]==2
     assert client.delete("/api/configs/"+file["id"]).status_code==422
     assert client.delete("/api/presets/"+preset.json()["id"]).status_code==200
     assert client.delete("/api/configs/"+file["id"]).status_code==200
