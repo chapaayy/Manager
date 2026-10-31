@@ -212,6 +212,7 @@ def nodes_status() -> list[dict]:
                            ORDER BY n.code""").fetchall()
     return [{"id":r["id"],"code":r["code"],"domain":r["domain"],
             "installed":r["enabled"] is not None,
+            "revoked":bool(r["enabled"] is not None and not r["enabled"]),
             "online":bool(r["enabled"] and r["last_seen"] and now-r["last_seen"]<45),
             "version":r["version"] or "", "last_seen":r["last_seen"] or 0,
             "metrics":json.loads(r["last_status_json"] or "{}")}
