@@ -288,7 +288,9 @@ def execute(action, data):
         key_public=run(["openssl","pkey","-in",str(key_path),"-pubout"],timeout=8)
         if certificate_public.strip()!=key_public.strip():
             fail("certificate and private key do not match")
-        run(["openssl","x509","-in",str(chain_path),"-noout","-checkhost",actual],timeout=8)
+        hostcheck=run(["openssl","x509","-in",str(chain_path),"-noout","-checkhost",actual],timeout=8)
+        if "does match certificate" not in hostcheck:
+            fail("certificate hostname mismatch")
         run(["openssl","x509","-in",str(chain_path),"-noout","-checkend","3600"],timeout=8)
         # Only the dedicated Remnawave Node container may consume this path.
         mounts_raw=run(["docker","inspect","--format","{{json .Mounts}}","remnanode"],timeout=8,limit=15000)
