@@ -29,8 +29,12 @@ def install_on_transport(transport: paramiko.Transport,node_id: str) -> dict:
     token=agent_transport.issue_token(node_id)
     env=("MANAGER_URL="+url+"\nNODE_ID="+node_id+
          "\nAGENT_TOKEN="+token+"\n")
+    arch=vps_install.run_command(transport,"uname -m",timeout=10).strip()
+    binary={"x86_64":"agent-amd64","aarch64":"agent-arm64"}.get(arch)
+    if binary is None:
+        raise ValueError("Агент не поддерживает архитектуру VPS")
     files={
-        "agent.go":(ROOT/"main.go").read_bytes(),
+        "agent-binary":(ROOT/binary).read_bytes(),
         "agent-helper.py":(ROOT/"helper.py").read_bytes(),
         "install.sh":(ROOT/"install-agent.sh").read_bytes(),
         "agent.env":env.encode("ascii"),
@@ -40,7 +44,7 @@ def install_on_transport(transport: paramiko.Transport,node_id: str) -> dict:
     client=paramiko.SFTPClient.from_transport(transport)
     try:
         for name,raw in files.items():
-            if len(raw)>100000:raise ValueError("Агент слишком большой для установки")
+            if len(raw)>14000000:raise ValueError("Пакет агента слишком большой для установки")
             path="/root/.node-manager-bootstrap/"+name
             with client.file(path,"wb") as dest:dest.write(raw)
             client.chmod(path,0o600)
