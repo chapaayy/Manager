@@ -27,7 +27,7 @@ import paramiko
 
 from . import panel_delivery, remnawave, storage, vps_install
 
-PANEL_ROOT = "/var/lib/remnawave/configs/xray/ssl/XPPN"
+PANEL_ROOT = "/var/lib/remnawave/configs/xray/ssl/managed"
 CODE = re.compile(r"[A-Z][A-Z0-9_-]{1,19}\Z")
 LOCK = threading.RLock()
 MAX_BUNDLE = 85000
@@ -65,7 +65,7 @@ def enabled() -> bool:
 
 def configure(enabled_value: bool, confirmed_panel_mount: bool = False) -> dict:
     if enabled_value and not confirmed_panel_mount:
-        raise CertError("Подтверди, что том xppn-v2-panel-certs подключён к Remnawave Panel")
+        raise CertError("Подтверди, что каталог сертификатов подключён к контейнеру Remnawave Panel")
     if enabled_value:
         settings=panel_delivery._settings()
         if settings.get("mode")=="remote":
