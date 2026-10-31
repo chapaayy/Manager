@@ -173,20 +173,32 @@ def report(node_id: str, body: dict) -> dict:
     if row is None or row["status"]!="leased":
         raise AgentError("Задание уже завершено или неизвестно")
     # Certificates are processed in memory and NEVER written to DB.
-    if row["action"]=="cert.export" and ok:
+    if row["action"]=="cert.export":
         from . import node_cert_sync
-        # The certificate and private key go only to Remnawave via HTTPS API.
-        # Do not include errors from that API which could contain PEM.
-        try:
-            outcome=node_cert_sync.apply_agent_export(node_id,result)
-            result={"expires_at":outcome["expires_at"],"updated":outcome["updated"],
-                    "fingerprint":outcome["fingerprint"]}
-        except Exception:
-            ok=False
-            result={}
-            error="Не удалось проверить или применить TLS сертификат через API"
+        # Never propagate arbitrary helper errors or Remnawave API bodies:
+        # they might contain PEM or other secrets.
+        if ok:
+            try:
+                outcome=node_cert_sync.apply_agent_export(node_id,result)
+                result={"expires_at":outcome["expires_at"],"updated":outcome["updated"],
+                        "fingerprint":outcome["fingerprint"]}
+                error=""
+            except node_cert_sync.CertificateSyncError as exc:
+                ok=False
+                result={}
+                error=str(exc)[:220]  # This class uses fixed, secret-free messages.
+            except Exception:
+                ok=False
+                result={}
+                error="Внутренняя ошибка синхронизации TLS; профиль оставлен без автоматических изменений"
         else:
-            error=""
+            error="Агент не смог прочитать TLS-файлы на VPS. Проверь Certbot и права файлов"
+            result={}
+        if not ok:
+            with storage.transaction() as db:
+                db.execute("""INSERT INTO node_tls_sync(node_id,last_error)
+                    VALUES(?,?) ON CONFLICT(node_id)
+                    DO UPDATE SET last_error=excluded.last_error""",(node_id,error))
     else:
         error=str(body.get("error",""))[:250]
         if "key" in result or "certificate" in result or "chain" in result:

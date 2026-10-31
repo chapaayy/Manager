@@ -126,6 +126,62 @@ def test_existing_file_path_profile_never_rewritten(ready_node,monkeypatch):
             "key":base64.b64encode(key).decode()})
 
 
+def test_unassigned_other_nodes_do_not_block_dedicated_profile(ready_node,monkeypatch):
+    current,patches,restarts,original=mock_profile(monkeypatch,ready_node)
+    job=storage.get_install_job(ready_node["id"])
+    other=str(uuid.uuid4())
+    monkeypatch.setattr(remnawave,"request",lambda *_:{
+      "response":[{"uuid":job["remote_uuid"],
+                   "configProfile":{"activeConfigProfileUuid":job["profile_uuid"]}},
+                  {"uuid":other,"configProfile":{"activeConfigProfileUuid":None}}]})
+    chain,key=bundle()
+    result=node_cert_sync.apply_agent_export(ready_node["id"],{
+      "domain":ready_node["domain"],"chain":base64.b64encode(chain).decode(),
+      "key":base64.b64encode(key).decode()})
+    assert result["updated"] is True
+    assert len(patches)==1 and len(restarts)==1
+
+
+def test_unknown_other_node_profile_blocks_mutation(ready_node,monkeypatch):
+    _,patches,restarts,_=mock_profile(monkeypatch,ready_node)
+    job=storage.get_install_job(ready_node["id"])
+    monkeypatch.setattr(remnawave,"request",lambda *_:{
+      "response":[{"uuid":job["remote_uuid"],
+                   "configProfile":{"activeConfigProfileUuid":job["profile_uuid"]}},
+                  {"uuid":str(uuid.uuid4()),"name":"uninspectable-node"}]})
+    chain,key=bundle()
+    with pytest.raises(node_cert_sync.CertificateSyncError,match="не вернула привязки"):
+        node_cert_sync.apply_agent_export(ready_node["id"],{
+          "domain":ready_node["domain"],"chain":base64.b64encode(chain).decode(),
+          "key":base64.b64encode(key).decode()})
+    assert not patches and not restarts
+
+
+def test_existing_identical_pem_string_does_not_restart(ready_node,monkeypatch):
+    current,patches,restarts,_=mock_profile(monkeypatch,ready_node)
+    chain,key=bundle()
+    current["config"]["inbounds"][0]["streamSettings"]["tlsSettings"]["certificates"]=[
+        {"key":key.decode(),"certificate":chain.decode()}]
+    result=node_cert_sync.apply_agent_export(ready_node["id"],{
+        "domain":ready_node["domain"],"chain":base64.b64encode(chain).decode(),
+        "key":base64.b64encode(key).decode()})
+    assert result["updated"] is False
+    assert not patches and not restarts
+
+
+def test_api_failure_detail_discards_any_private_key(ready_node,monkeypatch):
+    job=storage.get_install_job(ready_node["id"])
+    secret="-----BEGIN PRIVATE KEY----- SUPER_SECRET"
+    monkeypatch.setattr(remnawave,"request",lambda *_:(_ for _ in ()).throw(
+        remnawave.PanelError("Remnawave вернула HTTP 403 "+secret)))
+    chain,key=bundle()
+    with pytest.raises(node_cert_sync.CertificateSyncError,match="HTTP 403") as error:
+        node_cert_sync.apply_agent_export(ready_node["id"],{
+            "domain":ready_node["domain"],"chain":base64.b64encode(chain).decode(),
+            "key":base64.b64encode(key).decode()})
+    assert secret not in str(error.value)
+
+
 def test_manual_tls_request_never_asks_ssh_password(ready_node):
     token=agent_transport.issue_token(ready_node["id"])
     task=node_cert_sync.sync(ready_node["id"])
