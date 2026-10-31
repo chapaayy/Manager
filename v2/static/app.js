@@ -791,13 +791,15 @@ function bindEvents(){
   });
   $("node-certs-refresh").onclick=renderNodeCertificates;
   $("node-certs-list").addEventListener("click",async e=>{
+    const migrate=e.target.closest("[data-tls-migrate]");
+    if(migrate){migrateNodeTLSModal(migrate.dataset.tlsMigrate);return;}
     const sync=e.target.closest("[data-node-cert-check]");
     if(!sync)return;
     try{
       const job=await api("/node-certificates/"+encodeURIComponent(sync.dataset.nodeCertCheck)+"/sync","POST");
       message("Запрос проверки TLS отправлен агенту");
       const result=await waitAgentTask(sync.dataset.nodeCertCheck,job.id);
-      message(result.updated?"TLS сертификат обновлён в Remnawave":"TLS сертификат проверен, обновление не требуется");
+      message(result.mode==="migration_required"?"Найден встроенный PEM. Для перехода нажми «Перейти на локальные TLS».":result.updated?"Xray этой ноды перезапущен после обновления сертификата":"Локальный TLS сертификат проверен, изменений нет");
       await renderNodeCertificates();
     }catch(err){message(err.message,true)}
   });
