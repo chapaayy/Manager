@@ -40,6 +40,7 @@
       <p class="nav-heading">РАБОЧЕЕ ПРОСТРАНСТВО</p>
       <nav aria-label="Разделы">
         <button class="nav-link active" data-page="nodes" title="Ноды" type="button"><svg><use href="/static/icons.svg#i-server"></use></svg><span>Ноды</span></button>
+        <button class="nav-link" data-page="agents" title="Агенты VPS" type="button"><svg><use href="/static/icons.svg#i-activity"></use></svg><span>Агенты VPS</span></button>
         <button class="nav-link" data-page="node-certs" title="Сертификаты нод" type="button"><svg><use href="/static/icons.svg#i-shield-check"></use></svg><span>Сертификаты нод</span></button>
         <button class="nav-link" data-page="configs" title="Конфигурации" type="button"><svg><use href="/static/icons.svg#i-file-code"></use></svg><span>Конфигурации</span></button>
         <button class="nav-link" data-page="presets" title="Пресеты" type="button"><svg><use href="/static/icons.svg#i-layers"></use></svg><span>Пресеты</span></button>
@@ -73,10 +74,21 @@
           <p class="inline-info"><svg><use href="/static/icons.svg#i-circle-alert"></use></svg>«Добавить VPS» проверяет чистый сервер по SSH и запускает установку после подтверждения. Для неудачных попыток доступны продолжение и удаление записи без изменения VPS.</p>
         </section>
 
+        <section id="page-agents" class="page hidden">
+          <div class="page-heading">
+            <div><p class="eyebrow">УПРАВЛЕНИЕ СЕРВЕРАМИ</p><h1>Агенты VPS</h1>
+            <p class="subheading">После первоначальной установки связь только через защищённый исходящий HTTPS. Управление Docker, службами, логами, Nginx и TLS без SSH.</p></div>
+            <button class="btn subtle" type="button" id="agents-refresh">Обновить</button>
+          </div>
+          <p class="inline-info">Для работающих VPS без агента доступна однократная установка через SSH. После регистрации агента SSH-пароль для управления нодой не требуется и не сохраняется. Сервер панели Remnawave не изменяется.</p>
+          <div class="section-title"><h2>Подключённые серверы</h2><span class="muted">Агент отправляет heartbeat примерно каждые 15 секунд</span></div>
+          <div class="node-grid" id="agents-list"><div class="skeleton h90"></div></div>
+        </section>
+
         <section id="page-node-certs" class="page hidden">
           <div class="page-heading">
             <div><p class="eyebrow">TLS / СЕРВЕРЫ</p><h1>Сертификаты нод</h1>
-              <p class="subheading">Certbot на каждой VPS. Проверка и обновление через защищённый SSH и API Remnawave.</p></div>
+              <p class="subheading">Certbot на каждой VPS. Проверка и обновление через агент VPS и API Remnawave.</p></div>
             <button id="node-certs-refresh" class="btn subtle" type="button"><svg><use href="/static/icons.svg#i-refresh-cw"></use></svg>Обновить</button>
           </div>
           <p class="inline-info">Сертификаты выпускаются и хранятся на самих VPS в /opt/nginx/certs. Дополнительные папки на сервере панели не создаются. Для совместимости с Remnawave сертификат передаётся в профиль через API. Автоматическая синхронизация включается отдельно для каждой ноды.</p>
