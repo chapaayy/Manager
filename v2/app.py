@@ -143,7 +143,9 @@ def write_access(request: Request):
 
 
 def _fail(exc: Exception):
-    if isinstance(exc, (ValueError, TemplateError, sqlite3.IntegrityError)):
+    if isinstance(exc, sqlite3.IntegrityError):
+        raise HTTPException(409,"Такая запись уже существует или связана с другой. Обнови страницу и проверь карточки.") from None
+    if isinstance(exc, (ValueError, TemplateError)):
         raise HTTPException(422, str(exc)) from None
     if isinstance(exc, LookupError):
         raise HTTPException(404, str(exc)) from None
@@ -190,6 +192,7 @@ class VpsInstallData(VpsProbeData):
     fingerprint: str
     confirm_clean: bool = False
     panel_ip: str = ""
+    existing_node_id: str | None = Field(default=None,max_length=64)
 
 
 class BridgeData(BaseModel):
@@ -364,9 +367,14 @@ def install_vps(body: VpsInstallData, request: Request, _=Depends(write_access))
             code=body.code.upper().strip(),country=body.country.upper(),
             name=body.name.strip(),domain=body.domain.strip().lower(),
             role=body.role,ip=body.ip,port=body.port,password=body.password,
-            fingerprint_value=body.fingerprint,panel_ip=body.panel_ip)
-    except (ValueError,TemplateError,sqlite3.IntegrityError,remnawave.PanelError) as e:
+            fingerprint_value=body.fingerprint,panel_ip=body.panel_ip,
+            existing_node_id=body.existing_node_id)
+    except (ValueError,TemplateError,remnawave.PanelError) as e:
         raise HTTPException(422,str(e)) from None
+    except LookupError:
+        raise HTTPException(404,"Сохранённая нода больше не существует") from None
+    except sqlite3.IntegrityError:
+        raise HTTPException(409,"Нода или этот VPS уже добавлены. Открой существующую карточку.") from None
     except Exception:
         raise HTTPException(502,"Не удалось подтвердить VPS и начать установку") from None
 
