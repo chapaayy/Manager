@@ -5,7 +5,7 @@ const esc = value => String(value ?? "").replace(/[&<>"']/g, c => ({
 }[c]));
 const icon = name => '<svg><use href="/static/icons.svg#i-'+name+'"></use></svg>';
 const types = {xray:"Xray JSON",nginx:"Nginx",nginx_compose:"Nginx Compose",node_compose:"Remnawave Compose"};
-const titles = {nodes:"Ноды",configs:"Конфигурации",presets:"Пресеты",settings:"Настройки",updates:"Обновления"};
+const titles = {nodes:"Ноды","node-certs":"Сертификаты нод",configs:"Конфигурации",presets:"Пресеты",settings:"Настройки",updates:"Обновления"};
 const labels = {regular:"Обычная",entry:"Входная / мост",exit:"Выходная"};
 let csrf = "", currentPage = "nodes", currentConfig = null, configRevision = 0,
     configBase = "", configDirty = false, currentPreset = null, currentPlan = null,
@@ -103,7 +103,46 @@ function showPage(page){
     el.classList.toggle("hidden",el.id!=="page-"+page));
   $("current-page-name").textContent=titles[page]||page;
   if(page==="updates")refreshUpdateStatus();
+  if(page==="node-certs")renderNodeCertificates();
 }
+async function renderNodeCertificates(){
+  const target=$("node-certs-list");
+  try{
+    const data=await api("/node-certificates");
+    target.innerHTML=(data.nodes||[]).map(n=>{
+      const expires=n.expires_at?new Date(n.expires_at*1000).toLocaleDateString("ru-RU"):"Ещё не проверен";
+      const close=n.expires_at>0&&n.expires_at*1000<Date.now()+21*86400000;
+      return '<div class="node-card"><span class="feature-icon">'+icon("shield-check")+'</span>'+
+        '<div style="flex:1;min-width:210px"><strong>'+esc(n.code)+' · '+esc(n.domain)+'</strong>'+
+        '<p>Сертификат: '+esc(expires)+(close?" · Скоро истечёт":"")+'</p>'+
+        '<p>'+(n.auto_sync?"Автоматически каждые 6 часов":"Ручная проверка")+
+        (n.last_checked?" · Проверен: "+esc(new Date(n.last_checked*1000).toLocaleString("ru-RU")):"")+'</p>'+
+        (n.last_error?'<p class="form-feedback error">'+esc(n.last_error)+'</p>':'')+
+        '</div><button class="btn subtle" data-node-cert-check="'+esc(n.id)+'" type="button" '+(n.status!=="ready"?"disabled":"")+'>Проверить и применить</button>'+
+        '<button class="btn primary" data-node-cert-enroll="'+esc(n.id)+'" type="button" '+
+        (n.status!=="ready"||n.auto_sync?"disabled":"")+'>'+(n.auto_sync?"Автопроверка включена":"Включить авто")+'</button></div>';
+    }).join("")||'<p class="muted">Ноды пока не добавлены.</p>';
+  }catch(e){target.textContent=e.message;target.className="form-feedback error"}
+}
+function openNodeCertAction(id,auto){
+  const node=state.nodes.find(n=>n.id===id);
+  if(!node)return;
+  openModal(auto?"Автоматические сертификаты":"Проверка сертификата","НОДА / "+node.code,
+    '<p class="muted small">'+(auto?
+      'Добавим ограниченный SSH-ключ только для чтения сертификатов с этой VPS. Пароль root не сохраняется. При обновлении Certbot менеджер отправит новый сертификат через Remnawave API.':
+      'Менеджер прочитает сертификат из /opt/nginx/certs на VPS, проверит домен и ключ, затем при необходимости обновит TLS-профиль через Remnawave API.')+
+    '</p><form><label>SSH-пароль root<input name="password" type="password" required autocomplete="new-password"></label>'+
+    (auto?'<label class="check-row"><input type="checkbox" name="confirm" required> Подтверждаю установку ограниченного SSH-ключа на VPS</label>':'')+
+    '<div class="form-buttons"><button class="btn primary" type="submit">'+(auto?"Включить автопроверку":"Проверить сертификат")+'</button></div></form>',
+    async fd=>{
+      const url="/node-certificates/"+encodeURIComponent(id)+"/"+(auto?"enroll":"sync");
+      const payload=auto?{password:fd.get("password"),confirmed:fd.get("confirm")==="on"}:{password:fd.get("password")};
+      const result=await api(url,"POST",payload);
+      message(result.updated?"Сертификат обновлён в Xray. Проверь TLS-клиентов.":"Сертификат проверен, изменений в Xray не требуется.");
+      await renderNodeCertificates();
+    });
+}
+
 function renderNodes(){
   $("metric-nodes").textContent=String(state.nodes.length);
   $("metric-bridges").textContent=String(state.bridges.length);
@@ -503,6 +542,13 @@ function bindEvents(){
   $("update-check").onclick=checkUpdates;
   $("update-start").onclick=startUpdate;
   updatePolling=setInterval(()=>{if(currentPage==="updates")refreshUpdateStatus()},4500);
+  $("node-certs-refresh").onclick=renderNodeCertificates;
+  $("node-certs-list").addEventListener("click",e=>{
+    const sync=e.target.closest("[data-node-cert-check]");
+    const auto=e.target.closest("[data-node-cert-enroll]");
+    if(sync)openNodeCertAction(sync.dataset.nodeCertCheck,false);
+    else if(auto)openNodeCertAction(auto.dataset.nodeCertEnroll,true);
+  });
   $("new-bridge").onclick=bridgeModal;
   $("bridge-list").addEventListener("click",e=>{
     const button=e.target.closest("[data-action]");
