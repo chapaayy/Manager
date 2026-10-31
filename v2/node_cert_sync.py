@@ -1,15 +1,7 @@
 """Node-local Certbot TLS, fingerprint-only sync via Agent; no PEM crosses Manager."""
-import base64
-from copy import deepcopy
-from datetime import datetime,timezone
-import hashlib
-import json
 import threading
 import time
 
-from cryptography import x509
-from cryptography.hazmat.primitives import serialization
-from cryptography.x509.oid import ExtensionOID
 
 from . import agent_transport, remnawave, storage, vps_install
 from .template_engine import Endpoint
@@ -20,34 +12,6 @@ _STARTED=False
 
 class CertificateSyncError(ValueError):
     pass
-
-
-def validate_bundle(chain:bytes,key:bytes,domain:str)->dict:
-    if not chain or not key or len(chain)+len(key)>90000:
-        raise CertificateSyncError("Отсутствует TLS сертификат или ключ")
-    if not (1<=chain.count(b"-----BEGIN CERTIFICATE-----")<=8):
-        raise CertificateSyncError("Неверная цепочка TLS сертификатов")
-    try:
-        leaf=x509.load_pem_x509_certificate(chain)
-        private=serialization.load_pem_private_key(key,password=None)
-        names=leaf.extensions.get_extension_for_oid(
-            ExtensionOID.SUBJECT_ALTERNATIVE_NAME).value.get_values_for_type(x509.DNSName)
-        pub=private.public_key().public_bytes(
-            serialization.Encoding.DER,serialization.PublicFormat.SubjectPublicKeyInfo)
-        cert_pub=leaf.public_key().public_bytes(
-            serialization.Encoding.DER,serialization.PublicFormat.SubjectPublicKeyInfo)
-    except (ValueError,TypeError,x509.ExtensionNotFound):
-        raise CertificateSyncError("Не удалось проверить TLS сертификат") from None
-    if pub!=cert_pub:
-        raise CertificateSyncError("TLS ключ не соответствует сертификату")
-    if domain.lower() not in {s.lower() for s in names}:
-        raise CertificateSyncError("TLS сертификат выпущен для другого домена")
-    now=datetime.now(timezone.utc)
-    if leaf.not_valid_before_utc>now or leaf.not_valid_after_utc<=now:
-        raise CertificateSyncError("TLS сертификат недействителен")
-    return {"fingerprint":hashlib.sha256(
-        leaf.public_bytes(serialization.Encoding.DER)).hexdigest(),
-        "expires_at":int(leaf.not_valid_after_utc.timestamp())}
 
 
 def _attached_profile(row:dict) -> tuple[str|None,bool]:
