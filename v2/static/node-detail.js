@@ -19,6 +19,15 @@ function nodeCertText(c){
   if(c.checking)return '<span class="node-state">Проверяется…</span>';
   return c.agent_installed?"Ожидает автоматической проверки":"Пока не проверен";
 }
+function nodeListBadges(id){
+  const a=nodeOverviewAgents.find(n=>n.id===id)||{};
+  const c=nodeOverviewCerts.find(n=>n.id===id)||{};
+  return '<div class="node-list-meta"><span class="node-state '+(a.online?"is-good":"")+'">'+
+    (a.online?"Агент онлайн":a.installed?"Агент офлайн":"Без агента")+'</span>'+
+    '<span class="node-state '+(c.checked&&!c.last_error?"is-good":"")+'">'+
+    (c.last_error?"TLS ошибка":c.checked&&c.expires_at?"TLS до "+new Date(c.expires_at*1000).toLocaleDateString("ru-RU"):
+      c.checking?"TLS проверяется":"TLS без проверки")+'</span></div>';
+}
 function openNodeWorkspace(id,tab="overview"){
   if(!state.nodes.some(n=>n.id===id))return message("Нода не найдена",true);
   selectedNodeId=id;
