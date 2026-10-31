@@ -103,6 +103,17 @@ async function showVpsJob(id){
       '<p class="muted small">Регистрация ещё не означает доступность клиентских подключений. Для них необходимы Hosts и Internal Squads.</p>');
   }catch(e){message(e.message,true)}
 }
+async function deleteDraft(id){
+  const node=state.nodes.find(n=>n.id===id);
+  if(!node||node.status!=="planned")return;
+  if(!confirm("Удалить тестовый черновик "+node.code+" ("+node.domain+")?\n\nЭто удалит только запись из менеджера. VPS и Remnawave не изменятся."))return;
+  try{
+    await api("/nodes/"+encodeURIComponent(id),"DELETE");
+    message("Черновик "+node.code+" удалён.");
+    await refresh();
+  }catch(e){message(e.message,true)}
+}
+
 document.addEventListener("DOMContentLoaded",()=>{
   document.getElementById("new-node").onclick=openVpsWizard;
   document.getElementById("vps-form").onsubmit=probeVps;
@@ -117,6 +128,8 @@ document.addEventListener("DOMContentLoaded",()=>{
   document.getElementById("vps-close").onclick=()=>{document.getElementById("vps-dialog").close();vpsPayload=null};
   document.getElementById("vps-progress-close").onclick=()=>{document.getElementById("vps-dialog").close();vpsPayload=null};
   document.getElementById("other-nodes").addEventListener("click",e=>{
+    const del=e.target.closest("[data-delete-draft]");
+    if(del){deleteDraft(del.dataset.deleteDraft);return}
     const target=e.target.closest("[data-install-node]");
     if(target)showVpsJob(target.dataset.installNode);
   });
