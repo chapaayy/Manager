@@ -174,33 +174,49 @@ async function nodeLifecycleModal(id){
     const deps=Object.entries(data.dependencies||{}).filter(([,n])=>n>0);
     const blocked=deps.length>0;
     const phase=data.phase;
+    const offline=!data.agent_online;
+    const fullOption=offline?
+       '<option value="full" disabled>Полная очистка VPS — агент не на связи</option>':
+       data.agent_version.startsWith("1.1.")?
+       '<option value="full">Полностью очистить VPS и удалить управляемые компоненты</option>':
+       '<option value="full" disabled>Полная очистка VPS — сначала обнови агент до 1.1</option>';
     const options=phase?
-       '<option value="continue">Продолжить полное удаление</option>'+
-       (phase==="finalize_ack"?'<option value="forget">Завершить и убрать запись</option>':''):
+       (phase==="finalize_ack"?
+         '<option value="forget">Завершить: убрать запись из менеджера</option>':
+         offline?
+           '<option value="abandon">Убрать запись о прерванном удалении (не проверяя VPS)</option>'+
+           '<option value="continue" disabled>Продолжение — нужен агент онлайн</option>':
+           '<option value="continue">Продолжить полное удаление</option>'):
        (blocked?'<option value="detach">Удалить локальные связи с мостами и планы</option>':'')+
+       (offline?'<option value="forget">Уже удалена — убрать запись из менеджера</option>':'')+
        '<option value="archive">'+(data.archived?"Вернуть из архива":"В архив")+'</option>'+
-       '<option value="forget">Убрать только из менеджера</option>'+
-       '<option value="remnawave">Удалить из Remnawave</option>'+
-       '<option value="full">Полностью очистить VPS и удалить всё управляемое</option>';
+       (offline?'':'<option value="forget">Убрать только из менеджера</option>')+
+       '<option value="remnawave">Удалить регистрацию из Remnawave (VPS остаётся)</option>'+
+       fullOption;
     const description=blocked?"<p class=\"form-feedback error\">Есть связи с мостами или планы. Сначала выбери «Удалить локальные связи»; это удаляет только топологию менеджера, не изменяя Xray на VPS.</p>":"";
     const warning=phase==="finalize_ack"?
-       'Удаление агента запланировано. Его фактическое выполнение после отключения связи невозможно подтвердить через сам агент.':
-       'Полная очистка удаляет только Remnawave Node, Nginx, сертификат данного домена, правила установщика и наш агент. ОС, Docker, системный SSH и сама VPS у хостера остаются.';
+       'Агент подтвердил планирование своего удаления; фактическое завершение нельзя проверить после потери связи. Запись можно удалить отдельно.':
+       offline?
+       'Агент не на связи. Менеджер не может подтвердить, что VPS удалена или очищена. Удаление записи затрагивает только базу менеджера и ключ доступа агента, НЕ удаляет ноду/профиль из Remnawave и НЕ очищает VPS. Если удаление прервано, оставшиеся ресурсы тоже не проверены.':
+       'Полная очистка удаляет Remnawave Node, Nginx, сертификат данного домена, правила установщика и наш агент. ОС, Docker, системный SSH и сама VPS у хостера остаются.';
     openModal("Управление · "+data.code,"УДАЛЕНИЕ И АРХИВ",
       '<p class="muted small">Нода: <strong>'+esc(data.code)+'</strong> · '+esc(data.domain)+'</p>'+
       '<p class="muted small">'+esc(warning)+'</p>'+description+
       '<form><label>Действие<select name="operation">'+options+'</select></label>'+
       '<label>Подтверждение: введи код '+esc(data.code)+
       '<input name="code" placeholder="'+esc(data.code)+'" required autocomplete="off"></label>'+
-      '<label class="check-row"><input type="checkbox" name="delete_profile" checked> Удалить отдельный Xray-профиль, если он никем другим не используется</label>'+
+      '<label class="check-row" id="node-lifecycle-profile-option"><input type="checkbox" name="delete_profile" checked> Удалить отдельный Xray-профиль, если он никем другим не используется</label>'+
       '<label class="check-row"><input type="checkbox" name="ack" required> Понимаю последствия для подключений и данных</label>'+
       '<div class="form-buttons"><button type="submit" class="btn primary">Продолжить</button></div></form>',
       async fd=>{
         if(fd.get("code")!==data.code)throw Error("Неправильный код подтверждения");
         const operation=fd.get("operation");
-        if(blocked&&["forget","remnawave","full","continue"].includes(operation))
+        if(blocked&&["forget","abandon","remnawave","full","continue"].includes(operation))
           throw Error("Сначала удали связи с мостами и планы");
-        if(!confirm("Подтверждаешь: "+operation+" для "+data.code+"?"))return;
+        if(operation==="abandon"&&!fd.has("ack"))
+          throw Error("Подтверди, что остатки VPS и Remnawave могут сохраниться");
+        if(operation==="forget"&&!confirm("Будет удалена только запись "+data.code+" и доступ агента. Это НЕ удаляет VPS, регистрацию и Xray-профиль из Remnawave. Продолжить?"))return;
+        if(!["forget"].includes(operation)&&!confirm("Подтверждаешь: "+operation+" для "+data.code+"?"))return;
         const base="/nodes/"+encodeURIComponent(id);
         const body={code:data.code,delete_profile:fd.get("delete_profile")==="on"};
         if(operation==="detach"){
@@ -212,7 +228,11 @@ async function nodeLifecycleModal(id){
           message(data.archived?"Вернул из архива":"Нода перенесена в архив");
         }else if(operation==="forget"){
           await api(base+"/forget","POST",body);
-          message("Запись удалена из менеджера. VPS у хостера не затронута.");
+          message("Запись удалена из менеджера; удаление VPS или Remnawave не подтверждалось.");
+        }else if(operation==="abandon"){
+          if(!confirm("ВНИМАНИЕ: операция могла завершиться частично. Нода и профиль в Remnawave, контейнеры или файлы на VPS могут остаться! Удалить только запись менеджера?"))return;
+          await api(base+"/abandon","POST",{code:data.code,acknowledge_unverified:true});
+          message("Запись о прерванной операции удалена. Состояние VPS и Remnawave НЕ проверено.");
         }else if(operation==="remnawave"){
           await api(base+"/delete-remnawave","POST",body);
           message("Удаление через API Remnawave выполнено; VPS остаётся.");
@@ -222,6 +242,12 @@ async function nodeLifecycleModal(id){
         }
         await refresh();await renderAgents();
       });
+    const selector=$("modal-content").querySelector('select[name="operation"]');
+    const profileOption=$("node-lifecycle-profile-option");
+    if(selector&&profileOption){
+      const refreshProfile=()=>{profileOption.hidden=!["full","remnawave","continue"].includes(selector.value);};
+      selector.addEventListener("change",refreshProfile);refreshProfile();
+    }
   }catch(e){message(e.message,true)}
 }
 async function continueFullNodeDeletion(id,code){
