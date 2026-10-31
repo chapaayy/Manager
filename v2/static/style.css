@@ -100,3 +100,5 @@
 .bridge-child[data-node-open]:hover{background:#28282f}
 @media(max-width:1080px){.node-ws-summary{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:720px){.node-ws-columns,.node-status-grid{grid-template-columns:1fr}.node-panel{padding:15px}.node-ws-head{gap:9px}.node-ws-summary{gap:8px}.node-ws-stat{padding:13px}.node-ws-stat strong{font-size:15px}.node-ws-tab{padding:9px 11px}}
+
+.node-list-meta{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:7px}.node-list-meta .node-state{font-size:10px;padding:3px 7px}.node-card .node-list-meta{max-width:100%}
