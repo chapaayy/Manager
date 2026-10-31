@@ -177,11 +177,12 @@ async function nodeLifecycleModal(id){
     const options=phase?
        '<option value="continue">Продолжить полное удаление</option>'+
        (phase==="finalize_ack"?'<option value="forget">Завершить и убрать запись</option>':''):
+       (blocked?'<option value="detach">Удалить локальные связи с мостами и планы</option>':'')+
        '<option value="archive">'+(data.archived?"Вернуть из архива":"В архив")+'</option>'+
        '<option value="forget">Убрать только из менеджера</option>'+
        '<option value="remnawave">Удалить из Remnawave</option>'+
        '<option value="full">Полностью очистить VPS и удалить всё управляемое</option>';
-    const description=blocked?"<p class=\"form-feedback error\">Есть связи с мостами или планы. Удаление заблокировано до их удаления.</p>":"";
+    const description=blocked?"<p class=\"form-feedback error\">Есть связи с мостами или планы. Сначала выбери «Удалить локальные связи»; это удаляет только топологию менеджера, не изменяя Xray на VPS.</p>":"";
     const warning=phase==="finalize_ack"?
        'Удаление агента запланировано. Его фактическое выполнение после отключения связи невозможно подтвердить через сам агент.':
        'Полная очистка удаляет только Remnawave Node, Nginx, сертификат данного домена, правила установщика и наш агент. ОС, Docker, системный SSH и сама VPS у хостера остаются.';
@@ -202,7 +203,11 @@ async function nodeLifecycleModal(id){
         if(!confirm("Подтверждаешь: "+operation+" для "+data.code+"?"))return;
         const base="/nodes/"+encodeURIComponent(id);
         const body={code:data.code,delete_profile:fd.get("delete_profile")==="on"};
-        if(operation==="archive"){
+        if(operation==="detach"){
+          if(!confirm("Это удалит связи с мостами и планы В БАЗЕ МЕНЕДЖЕРА, но НЕ исправит Xray на VPS. Подтверждаешь?"))return;
+          await api(base+"/detach-dependencies","POST",body);
+          message("Локальные связи и планы удалены; удаление ноды теперь доступно.");
+        }else if(operation==="archive"){
           await api(base+"/archive","PUT",{archived:!data.archived});
           message(data.archived?"Вернул из архива":"Нода перенесена в архив");
         }else if(operation==="forget"){
