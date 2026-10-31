@@ -20,7 +20,7 @@ import (
     "time"
 )
 
-const Version = "1.0.0"
+const Version = "1.1.0"
 const MaxBody = 160000
 const Helper = "/usr/local/libexec/node-manager-helper"
 
@@ -103,12 +103,15 @@ func execute(job *Task) Response {
     }
     allowed:=map[string]bool{"docker.status":true,"docker.logs":true,
         "docker.restart":true,"logs.read":true,"service.status":true,"service.restart":true,
-        "cert.status":true,"cert.export":true,"config.read":true,"config.apply":true}
+        "cert.status":true,"cert.export":true,"config.read":true,"config.apply":true,
+        "node.cleanup":true,"node.cleanup.finish":true}
     if !allowed[job.Action] {resp.Error="unsupported operation";return resp}
     if job.Payload==nil {job.Payload=map[string]interface{}{}}
     raw,err:=json.Marshal(job.Payload)
     if err!=nil||len(raw)>50000{resp.Error="invalid payload";return resp}
-    ctx,cancel:=context.WithTimeout(context.Background(),45*time.Second)
+    actionTimeout:=45*time.Second
+    if job.Action=="node.cleanup" {actionTimeout=110*time.Second}
+    ctx,cancel:=context.WithTimeout(context.Background(),actionTimeout)
     defer cancel()
     cmd:=exec.CommandContext(ctx,"sudo","-n",Helper,job.Action)
     cmd.Stdin=bytes.NewReader(raw)
