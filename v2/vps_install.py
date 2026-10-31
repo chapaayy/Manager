@@ -206,6 +206,43 @@ def xray_config(source: Endpoint, cert: str, private_key: str) -> dict:
     return config
 
 
+def run_install_script(t, on_step):
+    """Stream allowlisted progress labels only, never stdout with secret values."""
+    channel=t.open_session(timeout=SSH_TIMEOUT)
+    channel.settimeout(120)
+    try:
+        channel.exec_command("bash /root/.xppn-pending/remote-install.sh")
+        buffer=""
+        total=0
+        deadline=time.monotonic()+1200
+        while not channel.exit_status_ready() or channel.recv_ready() or channel.recv_stderr_ready():
+            if time.monotonic()>deadline:
+                raise TimeoutError("Установка VPS превысила 20 минут")
+            for ready, recv in ((channel.recv_ready,channel.recv),
+                                (channel.recv_stderr_ready,channel.recv_stderr)):
+                while ready():
+                    chunk=recv(16384)
+                    if not chunk:break
+                    total+=len(chunk)
+                    if total>1500000:
+                        raise RuntimeError("Слишком большой вывод удалённой установки")
+                    buffer+=chunk.decode(errors="replace")
+                    if len(buffer)>30000:
+                        buffer=buffer[-30000:]
+                    if "\n" in buffer:
+                        lines=buffer.split("\n")
+                        buffer=lines[-1]
+                        for line in lines[:-1]:
+                            if line.startswith("STEP: "):
+                                on_step(line[6:150])
+            time.sleep(0.1)
+        rc=channel.recv_exit_status()
+        if rc!=0:
+            raise RuntimeError(f"Удалённая установка не завершилась успешно (код {rc}). Смотри VPS.")
+    finally:
+        channel.close()
+
+
 def _stage_files(t, files: dict):
     run_command(t, "mkdir -p -m 0700 /root/.xppn-pending", timeout=15)
     sftp = paramiko.SFTPClient.from_transport(t)
@@ -250,8 +287,7 @@ def deploy(node_id: str, ip: str, port: int, password: str,
             _stage_files(t, files)
             stage("installing","Устанавливаем Docker, Nginx, TLS и Remnawave Node")
             # No user-controlled command text, no secrets on command line.
-            run_command(t,"bash /root/.xppn-pending/remote-install.sh",
-                        timeout=1200,max_bytes=20000)
+            run_install_script(t, lambda step: stage("installing", step))
             stage("installing","Получаем выпущенный TLS-сертификат")
             certificate=_read_remote_file(t,f"/opt/nginx/certs/{source.domain}_fullchain.pem")
             private_key=_read_remote_file(t,f"/opt/nginx/certs/{source.domain}_privkey.key")
