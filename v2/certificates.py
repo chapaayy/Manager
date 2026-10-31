@@ -256,6 +256,15 @@ def sync(node_id: str, password: str | None = None) -> dict:
     result = publish(node["code"], fullchain, key, node["domain"])
     changed = previous != result["fingerprint"]
     save_status(node_id, result, changed)
+    if row.get("profile_mode") == "files" and row.get("applied_fingerprint") != result["fingerprint"]:
+        # Remnawave must read the new files when re-sending the node configuration.
+        # Never restart when the new bundle is invalid or has not been staged.
+        remnawave.restart_node(job["remote_uuid"])
+        with storage.transaction() as db:
+            db.execute("""UPDATE node_certificates SET applied_fingerprint=?,
+                          last_applied=strftime('%s','now') WHERE node_id=?""",
+                       (result["fingerprint"],node_id))
+            storage.event(db,"cert.profile.renew",node_id,"Updated TLS bundle sent for node restart")
     return {"node_id": node_id, "domain":node["domain"],
             "expires_at": result["expires_at"], "changed":changed,
             "panel_paths":paths(node["code"]), "staged":True}
@@ -411,7 +420,8 @@ def migrate_profile(node_id: str, expected_sha256: str, confirmed: bool) -> dict
             raise CertError("Переключение отклонено, предыдущая конфигурация сохранена") from None
         with storage.transaction() as db:
             db.execute("""UPDATE node_certificates SET profile_mode='files',
-                          last_applied=strftime('%s','now') WHERE node_id=?""",(node_id,))
+                          last_applied=strftime('%s','now'), applied_fingerprint=fingerprint
+                          WHERE node_id=?""",(node_id,))
             storage.event(db,"cert.profile.files",node_id,"Xray profile switched to panel-mounted certificate paths")
         return {"node_id":node_id,"mode":"files","restart_requested":True,
                 "message":"Профиль переключён, запрошен перезапуск ноды. Проверь TLS-клиентов."}
@@ -441,7 +451,7 @@ def status() -> dict:
     rows=[]
     with storage.connect() as db:
         result=db.execute("""SELECT n.id,n.code,n.domain,n.status,c.expires_at,
-                          c.last_synced,c.last_error,c.fingerprint,c.sync_key_enc,c.profile_mode,c.last_applied
+                          c.last_synced,c.last_error,c.fingerprint,c.sync_key_enc,c.profile_mode,c.last_applied,c.applied_fingerprint
                           FROM nodes n LEFT JOIN node_certificates c ON c.node_id=n.id
                           ORDER BY n.code""").fetchall()
     for r in result:
@@ -452,6 +462,7 @@ def status() -> dict:
                      "auto_sync":bool(r["sync_key_enc"]), "staged":bool(r["fingerprint"]),
                      "profile_mode":r["profile_mode"] or "inline",
                      "last_applied":r["last_applied"] or 0,
+                     "restart_pending":bool(r["profile_mode"]=="files" and r["fingerprint"]!=r["applied_fingerprint"]),
                      "panel_paths":paths(r["code"])})
     return {"enabled": enabled(), "panel_dir":PANEL_ROOT,
             "nodes":rows, "automatic_refresh_interval_hours":6}
