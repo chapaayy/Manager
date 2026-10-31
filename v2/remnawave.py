@@ -41,6 +41,63 @@ def validate_url(url: str) -> str:
     return f"https://{u.hostname.lower()}"
 
 
+def _safe_panel_error_text(value) -> str:
+    """Allow only short, single-line diagnostic text; never echo submitted secrets."""
+    if not isinstance(value, str):
+        return ""
+    value = value.strip()
+    if not value or len(value) > 220 or any(c in value for c in "\r\n\x00"):
+        return ""
+    if re.search(r"(?i)-----BEGIN|-----END|authorization\s*:|bearer\s+|(?:token|secret|password|private[_-]?key)\s*[:=]", value):
+        return ""
+    if re.search(r"[A-Za-z0-9+/_=-]{48,}", value):
+        return ""
+    return value
+
+
+def _panel_error_details(raw: bytes) -> str:
+    """Summarize documented Remnawave errors without logging raw responses or PEM."""
+    if not raw or len(raw) > 8192:
+        return ""
+    try:
+        payload = json.loads(raw)
+    except (ValueError, UnicodeDecodeError):
+        return ""
+    if not isinstance(payload, dict):
+        return ""
+    pieces = []
+    code = _safe_panel_error_text(payload.get("errorCode"))
+    if code and re.fullmatch(r"[A-Za-z0-9_-]{1,24}", code):
+        pieces.append("код " + code)
+    messages = payload.get("message")
+    if isinstance(messages, str):
+        messages = [messages]
+    if isinstance(messages, list):
+        for value in messages[:2]:
+            message = _safe_panel_error_text(value)
+            if message and message not in pieces:
+                pieces.append(message)
+    errors = payload.get("errors")
+    if isinstance(errors, list):
+        for issue in errors[:3]:
+            if isinstance(issue, str):
+                detail = _safe_panel_error_text(issue)
+            elif isinstance(issue, dict):
+                field = _safe_panel_error_text(issue.get("property") or issue.get("field") or issue.get("path"))
+                detail = _safe_panel_error_text(issue.get("message"))
+                if not detail and isinstance(issue.get("constraints"), dict):
+                    for value in issue["constraints"].values():
+                        detail = _safe_panel_error_text(value)
+                        if detail:
+                            break
+                detail = (field + ": " + detail) if field and detail else (detail or field)
+            else:
+                continue
+            if detail and detail not in pieces:
+                pieces.append(detail)
+    return (" — " + "; ".join(pieces))[:350] if pieces else ""
+
+
 def request(method: str, path: str, body: dict | None = None):
     permitted = (method == "GET" and body is None and (
         path in ("/api/config-profiles", "/api/keygen", "/api/nodes") or
@@ -94,7 +151,8 @@ def request(method: str, path: str, body: dict | None = None):
         if response.status == 403:
             raise PanelError(f"HTTP 403 на {path}: токен или защита прокси не разрешают запрос.")
         if not 200 <= response.status < 300:
-            raise PanelError(f"Remnawave вернула HTTP {response.status} на {path}")
+            error_detail = _panel_error_details(response.read(8193))
+            raise PanelError(f"Remnawave вернула HTTP {response.status} на {path}{error_detail}")
         body = response.read(300001)
         if len(body) > 300000:
             raise PanelError("Слишком большой ответ API")
