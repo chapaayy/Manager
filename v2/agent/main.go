@@ -77,8 +77,7 @@ func systemStatus() map[string]interface{} {
         parts:=strings.Fields(string(b));if len(parts)>=3{status["load1"]=parts[0];status["load5"]=parts[1];status["load15"]=parts[2]}
     }
     if b,err:=os.ReadFile("/proc/meminfo");err==nil {
-        for _,line:=range strings.Split(string(b),"
-") {
+        for _,line:=range strings.Split(string(b),"\n") {
             for _,field:=range []string{"MemTotal:","MemAvailable:"}{
                 if strings.HasPrefix(line,field) {
                     parts:=strings.Fields(line[len(field):])
