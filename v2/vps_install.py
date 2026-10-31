@@ -160,6 +160,44 @@ def preflight(ip: str, port: int, password: str, domain: str, expected_fp: str |
     }
 
 
+def preview_plan(source: Endpoint) -> dict:
+    """Public dry-run of the first direct VLESS TLS VPS; no credentials or SSH."""
+    tag=source.code+"_VLESS_TLS_IN"
+    inbound=new_inbound(tag,443,source.domain)
+    proposed={
+      "log":{"error":"/var/log/remnanode/error.log",
+             "access":"/var/log/remnanode/access.log","loglevel":"warning"},
+      "inbounds":[inbound],
+      "outbounds":[{"tag":"DIRECT","protocol":"freedom"},
+                   {"tag":"BLOCKED","protocol":"blackhole"}],
+      "routing":{"rules":[
+        {"type":"field","ip":["geoip:private"],"outboundTag":"BLOCKED"},
+        {"type":"field","domain":["geosite:private"],"outboundTag":"BLOCKED"},
+        {"type":"field","protocol":["bittorrent"],"outboundTag":"BLOCKED"},
+        {"type":"field","inboundTag":[tag],"outboundTag":"DIRECT"}],
+        "domainStrategy":"IPIfNonMatch"},
+    }
+    validate_rendered(proposed)
+    return {
+      "name":f"XPPN {source.code} · {source.country} · VLESS TLS",
+      "xray":proposed,
+      "nginx":(ROOT/"nginx.conf").read_text(encoding="utf-8").replace("{{source.domain}}",source.domain),
+      "files":[
+        "/opt/nginx/nginx.conf","/opt/nginx/docker-compose.yml",
+        "/opt/nginx/certs/"+source.domain+"_fullchain.pem",
+        "/opt/nginx/certs/"+source.domain+"_privkey.key",
+        "/opt/remnanode/docker-compose.yml","/opt/remnanode/node.env"
+      ],
+      "variables":[
+        {"key":"source.code","value":source.code},
+        {"key":"source.domain","value":source.domain},
+        {"key":"inbound.tag","value":tag},
+        {"key":"tls.certificate","value":"Выпуск Let's Encrypt на VPS, ключ хранится зашифрованно"}
+      ],
+      "note":"Это предпросмотр. При установке Xray получает выпущенный TLS-сертификат; UUID пользователей добавляет Remnawave."
+    }
+
+
 def render_files(source: Endpoint, secret_key: str, panel_ip: str) -> dict:
     """Render allowlisted shipped artifacts; no arbitrary user-supplied shell."""
     if "\n" in secret_key or "\r" in secret_key:
