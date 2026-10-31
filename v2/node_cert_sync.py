@@ -240,6 +240,9 @@ def background_cycle():
         if item["status"]!="ready" or not item["auto_sync"]:
             continue
         try:
+            job=storage.get_install_job(item["id"])
+            if not job.get("remote_uuid") or not job.get("profile_uuid"):
+                continue
             agent_transport.enqueue(item["id"],"cert.export",ttl=240)
         except (agent_transport.AgentError,LookupError):
             pass
