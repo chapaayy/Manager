@@ -117,7 +117,13 @@ def migration(node_id,code,cert_job_id,compose_job_id):
             raise LocalTLSError("Проверка агента не завершена или устарела")
     cert_data=agent_transport.job_status(node_id,cert_job_id)["result"]
     compose_data=agent_transport.job_status(node_id,compose_job_id)["result"]
-    _,fp,expires=agent_status(node_id,cert_data)
+    fp=cert_data.get("fingerprint")
+    expires=cert_data.get("expires_at")
+    if (cert_data.get("domain")!=node["domain"] or
+        not isinstance(fp,str) or not re.fullmatch("[0-9a-f]{64}",fp) or
+        type(expires) is not int or expires<int(time.time())+3600 or
+        any(k in cert_data for k in ("key","chain","certificate"))):
+        raise LocalTLSError("Агент не подтвердил действующий сертификат нужной ноды")
     compose=compose_data.get("content")
     if compose_data.get("name")!="node-compose" or not isinstance(compose,str):
         raise LocalTLSError("Не проверен Docker Compose ноды")
@@ -144,7 +150,8 @@ def migration(node_id,code,cert_job_id,compose_job_id):
         remnawave.restart_node(job["remote_uuid"])
         ready=False
         for i in range(12):
-            if i:time.sleep(2)
+            # Allow async Node restart and config processing time.
+            time.sleep(2)
             health=remnawave.node_health(job["remote_uuid"])
             if health["connected"] and health["xray_running"]:
                 ready=True
