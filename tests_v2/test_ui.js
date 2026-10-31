@@ -20,7 +20,7 @@ for(const id of [
   assert(unique.has(id),"Required UI element: "+id);
 }
 assert.match(html,/\/static\/icons\.svg/);
-assert.match(html,/\/static\/app\.js\?v=2\.3\.1/);
+assert.match(html,/\/static\/app\.js\?v=2\.4\.0/);
 assert.match(css,/\.sidebar\.collapsed/);
 assert.match(css,/\.workspace\{flex:1;min-width:0;width:0/);
 assert.match(css,/prefers-reduced-motion/);
@@ -36,3 +36,7 @@ assert.match(js,/await signIn\(\$\("login-username"\)/,"Login requires username"
 assert(!html.includes("wizard-project"),"Multi-panel project control must be absent");
 assert(!js.includes("projectCache"),"Multi-panel project JavaScript must be absent");
 console.log("PASS: clean single-panel v2 interface wiring and layout");
+
+assert.match(js,/async function nodeLifecycleModal/,"Node lifecycle confirmation UI exists");
+assert.match(js,/continueFullNodeDeletion/,"Full cleanup is resumable in the UI");
+assert.match(html,/nodes-show-archived/,"Archived nodes can be shown");

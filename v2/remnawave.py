@@ -110,6 +110,8 @@ def request(method: str, path: str, body: dict | None = None):
         and re.fullmatch(r"[a-fA-F0-9-]{36}",body["uuid"]) is not None)
     permitted = permitted or (method == "POST" and body == {"forceRestart":True}
         and re.fullmatch(r"/api/nodes/[a-fA-F0-9-]{36}/actions/restart", path) is not None)
+    permitted = permitted or (method == "DELETE" and body is None and
+        re.fullmatch(r"/api/(?:nodes|config-profiles)/[a-fA-F0-9-]{36}",path) is not None)
     if not permitted:
         raise PanelError("Запрещённый API-маршрут")
     panel = storage.get_panel()
@@ -163,7 +165,7 @@ def request(method: str, path: str, body: dict | None = None):
         body = response.read(300001)
         if len(body) > 300000:
             raise PanelError("Слишком большой ответ API")
-        if not body and response.status == 204 and path.endswith("/actions/restart"):
+        if not body and response.status == 204 and (method == "DELETE" or path.endswith("/actions/restart")):
             return {"response":{}}
         payload = json.loads(body)
         if not isinstance(payload, dict):
@@ -312,3 +314,16 @@ def restart_node(uuid: str):
     if not re.fullmatch(r"[a-fA-F0-9-]{36}",uuid):
         raise PanelError("Неверный UUID ноды")
     return request("POST",f"/api/nodes/{uuid}/actions/restart",{"forceRestart":True})
+
+
+
+def delete_node(uuid: str):
+    if not re.fullmatch(r"[a-fA-F0-9-]{36}",uuid):
+        raise PanelError("Недопустимый UUID удаляемой ноды")
+    return request("DELETE",f"/api/nodes/{uuid}")
+
+
+def delete_profile(uuid: str):
+    if not re.fullmatch(r"[a-fA-F0-9-]{36}",uuid):
+        raise PanelError("Недопустимый UUID Xray-профиля")
+    return request("DELETE",f"/api/config-profiles/{uuid}")

@@ -139,6 +139,14 @@ def init_db():
             last_applied INTEGER NOT NULL DEFAULT 0,
             last_error TEXT NOT NULL DEFAULT ''
         );
+        CREATE TABLE IF NOT EXISTS node_lifecycle(
+            node_id TEXT PRIMARY KEY REFERENCES nodes(id) ON DELETE CASCADE,
+            archived INTEGER NOT NULL DEFAULT 0,
+            phase TEXT NOT NULL DEFAULT '',
+            job_id TEXT NOT NULL DEFAULT '',
+            delete_profile INTEGER NOT NULL DEFAULT 1,
+            updated_at INTEGER NOT NULL DEFAULT 0
+        );
         CREATE TABLE IF NOT EXISTS starter_seeds (
             name TEXT PRIMARY KEY,
             applied_at INTEGER NOT NULL
@@ -272,7 +280,11 @@ def get_node(node_id: str) -> dict:
 
 def list_nodes() -> list[dict]:
     with connect() as c:
-        return [dict(row) for row in c.execute("SELECT * FROM nodes ORDER BY role,code").fetchall()]
+        return [dict(row) for row in c.execute("""
+            SELECT n.*, COALESCE(l.archived,0) AS archived,
+                   COALESCE(l.phase,'') AS lifecycle_phase
+            FROM nodes n LEFT JOIN node_lifecycle l ON l.node_id=n.id
+            ORDER BY n.role,n.code""").fetchall()]
 
 
 def _delete_unused_draft_in_tx(c, node_id: str) -> dict:
