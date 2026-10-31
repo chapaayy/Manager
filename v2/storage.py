@@ -238,6 +238,14 @@ def create_node(*, code: str, name: str, domain: str, country: str, role: str) -
     if role not in ("regular", "entry", "exit"):
         raise ValueError("Некорректная роль сервера")
     with transaction() as c:
+        existing = c.execute("SELECT code,domain,status FROM nodes WHERE code=? OR domain=? LIMIT 1",
+                             (code,domain)).fetchone()
+        if existing:
+            raise ValueError(
+                f"Сервер {existing['code']} с доменом {existing['domain']} уже добавлен "
+                "в менеджер. Открой его карточку и продолжи установку, "
+                "вместо создания второй записи."
+            )
         c.execute("""INSERT INTO nodes(id,code,name,domain,country,role,created_at)
                      VALUES(?,?,?,?,?,?,?)""",
                   (ident, code, name, domain, country, role, int(time.time())))
@@ -261,6 +269,13 @@ def list_nodes() -> list[dict]:
 def create_install_job(node_id: str, ip: str, port: int, ssh_fingerprint: str) -> dict:
     with transaction() as c:
         now = int(time.time())
+        record = c.execute("SELECT status FROM nodes WHERE id=?",(node_id,)).fetchone()
+        if record is None:
+            raise LookupError("Нода не найдена")
+        if record["status"] != "planned":
+            raise ValueError("Этот сервер уже устанавливался. Повторная установка поверх него запрещена.")
+        if c.execute("SELECT 1 FROM node_installations WHERE node_id=?",(node_id,)).fetchone():
+            raise ValueError("Для этой ноды уже существует задача установки.")
         c.execute(
             """INSERT INTO node_installations
                 (node_id,ip,port,ssh_fingerprint,stage,note,created_at,updated_at)
