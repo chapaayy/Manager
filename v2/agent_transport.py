@@ -17,7 +17,7 @@ from . import storage
 
 ALLOWED = {"system.status", "docker.status", "docker.restart", "docker.logs", "logs.read",
            "service.status", "service.restart", "cert.status", "cert.export",
-           "config.read", "config.apply"}
+           "config.read", "config.apply", "node.cleanup", "node.cleanup.finish"}
 MAX_RESULT = 48000
 LEASE_SECONDS = 120
 
@@ -106,9 +106,11 @@ def heartbeat(node_id: str, data: dict) -> dict:
 
 
 def enqueue(node_id: str, action: str, payload: dict | None = None,
-            ttl: int = 300) -> dict:
+            ttl: int = 300, internal: bool = False) -> dict:
     if action not in ALLOWED:
         raise AgentError("Неподдерживаемая операция агента")
+    if action.startswith("node.cleanup") and not internal:
+        raise AgentError("Удаление VPS разрешено только через мастер удаления")
     node=storage.get_node(node_id)
     if node["status"] != "ready":
         raise AgentError("Нода должна быть установлена")
