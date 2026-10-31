@@ -79,6 +79,26 @@ def preview(node_id):
                         "Удаление из менеджера оставит саму VPS нетронутой."]}
 
 
+def detach_dependencies(node_id,typed_code):
+    """Explicit local topology cleanup ONLY, never edits a deployed Xray config."""
+    node=storage.get_node(node_id)
+    if typed_code!=node["code"]:
+        raise LifecycleError("Для подтверждения введи точный код ноды: "+node["code"])
+    if _row(node_id)["phase"]:
+        raise LifecycleError("Нельзя менять топологию после начала полного удаления")
+    count=_dependencies(node_id)
+    with storage.transaction() as db:
+        # Removing a bridge entry also cascades its exits and plans. For an
+        # exit, delete only that exit's plans/links in other bridges.
+        db.execute("DELETE FROM bridges WHERE entry_id=?",(node_id,))
+        db.execute("DELETE FROM plans WHERE exit_id=?",(node_id,))
+        db.execute("DELETE FROM bridge_exits WHERE exit_id=?",(node_id,))
+        storage.event(db,"node.topology.detach",node_id,
+                      "Removed local topology links for "+node["code"])
+    return {"detached":True,"dependencies_removed":count,
+            "remote_configs_untouched":True}
+
+
 def _guard(node_id,typed_code):
     node=storage.get_node(node_id)
     if typed_code!=node["code"]:
