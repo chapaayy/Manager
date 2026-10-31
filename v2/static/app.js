@@ -151,6 +151,8 @@ function renderNodes(){
     esc(n.code)+' · '+esc(n.name)+'</strong><p>'+esc(n.domain)+' · '+esc(labels[n.role])+
     '</p></div><span class="tiny-chip '+(n.status==="registered"||n.status==="ready"?"success":"warning")+'">'+
     esc(n.status==="planned"?"Черновик":n.status)+'</span>'+
+    (n.status==="planned"?
+       '<button type="button" class="btn subtle" data-delete-draft="'+esc(n.id)+'">Удалить черновик</button>':"")+
     (n.status==="planned" && (n.role==="regular"||n.role==="exit")?
        '<button type="button" class="btn subtle" data-draft-install="'+esc(n.id)+'">Установить VPS</button>':
        n.status!=="planned"?
