@@ -155,6 +155,13 @@ async function deleteDraft(id){
 }
 
 document.addEventListener("DOMContentLoaded",()=>{
+  // Keep status cards fresh while a worker runs; do not leave "installing" stuck on screen.
+  setInterval(()=>{
+    if(document.hidden || currentPage!=="nodes")return;
+    if(state.nodes.some(n=>["queued","installing","registered"].includes(n.status)))
+      refresh().catch(()=>{});
+  },8000);
+
   document.getElementById("new-node").onclick=openVpsWizard;
   document.getElementById("vps-form").onsubmit=probeVps;
   document.getElementById("vps-fingerprint-ok").onchange=updateVpsConsent;
