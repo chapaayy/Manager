@@ -5,7 +5,7 @@ const esc = value => String(value ?? "").replace(/[&<>"']/g, c => ({
 }[c]));
 const icon = name => '<svg><use href="/static/icons.svg#i-'+name+'"></use></svg>';
 const types = {xray:"Xray JSON",nginx:"Nginx",nginx_compose:"Nginx Compose",node_compose:"Remnawave Compose"};
-const titles = {nodes:"Ноды","node-certs":"Сертификаты нод",configs:"Конфигурации",presets:"Пресеты",settings:"Настройки",updates:"Обновления"};
+const titles = {nodes:"Ноды",agents:"Агенты VPS","node-certs":"Сертификаты нод",configs:"Конфигурации",presets:"Пресеты",settings:"Настройки",updates:"Обновления"};
 const labels = {regular:"Обычная",entry:"Входная / мост",exit:"Выходная"};
 let csrf = "", currentPage = "nodes", currentConfig = null, configRevision = 0,
     configBase = "", configDirty = false, currentPreset = null, currentPlan = null,
@@ -104,43 +104,110 @@ function showPage(page){
   $("current-page-name").textContent=titles[page]||page;
   if(page==="updates")refreshUpdateStatus();
   if(page==="node-certs")renderNodeCertificates();
+  if(page==="agents")renderAgents();
+}
+async function waitAgentTask(nodeId,jobId){
+  for(let i=0;i<30;i++){
+    const result=await api("/agents/"+encodeURIComponent(nodeId)+"/tasks/"+encodeURIComponent(jobId));
+    if(["done","failed","expired"].includes(result.status)){
+      if(result.status!=="done")throw Error(result.error||"Агент не выполнил задачу");
+      return result.result;
+    }
+    await new Promise(resolve=>setTimeout(resolve,2000));
+  }
+  throw Error("Агент ещё выполняет задачу. Результат будет доступен в истории заданий.");
+}
+async function agentTask(nodeId,action,payload={},confirmed=false){
+  const job=await api("/agents/"+encodeURIComponent(nodeId)+"/tasks","POST",{action,payload,confirmed});
+  return await waitAgentTask(nodeId,job.id);
+}
+async function renderAgents(){
+  const target=$("agents-list");
+  try{
+    const data=await api("/agents");
+    target.innerHTML=(data.agents||[]).map(n=>{
+      const status=n.online?"Онлайн":n.installed?"Нет связи":"Не установлен";
+      const m=n.metrics||{};
+      const ram=m.MemTotal_bytes?Math.round((m.MemTotal_bytes-(m.MemAvailable_bytes||0))/m.MemTotal_bytes*100)+"%":"—";
+      return '<div class="node-card" style="flex-wrap:wrap"><span class="feature-icon">'+icon("server")+'</span>'+
+        '<div style="flex:1;min-width:190px"><strong>'+esc(n.code)+' · '+esc(n.domain)+'</strong>'+
+        '<p>'+esc(status)+(n.version?" · v"+esc(n.version):"")+
+        (n.last_seen?" · Был на связи: "+esc(new Date(n.last_seen*1000).toLocaleString("ru-RU")):"")+'</p>'+
+        (n.online?'<p>RAM: '+esc(ram)+' · Uptime: '+esc(Math.round((m.uptime_seconds||0)/3600))+' ч</p>':'')+
+        '</div>'+(n.online?
+        '<button class="btn subtle" data-agent-id="'+esc(n.id)+'" data-agent-action="system.status">Сервер</button>'+
+        '<button class="btn subtle" data-agent-id="'+esc(n.id)+'" data-agent-action="docker.status">Docker</button>'+
+        '<button class="btn subtle" data-agent-id="'+esc(n.id)+'" data-agent-action="service.status">Службы</button>'+
+        '<button class="btn subtle" data-agent-id="'+esc(n.id)+'" data-agent-action="docker.logs">Логи</button>'+
+        '<button class="btn subtle" data-agent-id="'+esc(n.id)+'" data-agent-action="cert.status">Certbot</button>'+
+        '<button class="btn subtle" data-agent-id="'+esc(n.id)+'" data-agent-action="config.read">Nginx</button>'+
+        '<button class="btn subtle" data-agent-id="'+esc(n.id)+'" data-agent-action="docker.restart">Рестарт ноды</button>':
+        !n.installed?'<button class="btn primary" data-agent-install="'+esc(n.id)+'">Установить агент (один раз SSH)</button>':'')+
+        '</div>';
+    }).join("")||'<p class="muted">Серверов пока нет.</p>';
+  }catch(e){target.textContent=e.message;target.className="form-feedback error";}
+}
+function agentBootstrapModal(id){
+  const node=state.nodes.find(n=>n.id===id);
+  if(!node)return;
+  openModal("Установить агент: "+node.code,"ОДИН РАЗ ЧЕРЕЗ SSH",
+    '<p class="muted small">Этот шаг установит Go-агент, выделенного системного пользователя и ограниченный helper на уже работающий VPS. Пароль root не сохраняется. Дальше весь менеджмент только через агента.</p>'+
+    '<form><label>SSH-пароль root<input name="password" type="password" required autocomplete="new-password"></label>'+
+    '<label class="check-row"><input name="confirm" type="checkbox" required> Подтверждаю установку агента на VPS</label>'+
+    '<div class="form-buttons"><button class="btn primary" type="submit">Установить</button></div></form>',
+    async fd=>{
+      await api("/agents/"+encodeURIComponent(id)+"/bootstrap","POST",{
+        password:fd.get("password"),confirm_ssh_migration:fd.get("confirm")==="on"});
+      message("Агент установлен. Ожидаем подключения к менеджеру.");
+      await renderAgents();
+    });
+}
+async function agentActionModal(id,action){
+  const node=state.nodes.find(n=>n.id===id);
+  if(!node)return;
+  let payload={};
+  if(action==="docker.logs"){
+    const name=prompt("Логи контейнера: nginx или remnanode","remnanode");
+    if(!["nginx","remnanode"].includes(name))return;
+    payload={name,tail:100};
+  }else if(action==="config.read")payload={name:"nginx"};
+  else if(action==="docker.restart"){
+    if(!confirm("Перезапустить контейнер remnanode на "+node.code+"? Активные VPN-подключения кратковременно прервутся."))return;
+    payload={name:"remnanode"};
+  }
+  try{
+    message("Задача отправлена агенту "+node.code);
+    const data=await agentTask(id,action,payload,action==="docker.restart");
+    if(action==="config.read"){
+      openModal("Nginx · "+node.code,"РЕДАКТОР КОНФИГУРАЦИИ",
+        '<form><label>Содержимое nginx.conf<textarea name="content" rows="16" required>'+esc(data.content||"")+'</textarea></label>'+
+        '<p class="muted small">Сначала сравни изменения. Перед применением агент проверит SHA-256 версии, сделает резервную копию и выполнит nginx -t. При ошибке конфиг восстановится.</p>'+
+        '<label class="check-row"><input name="confirmed" type="checkbox" required> Подтверждаю применение изменений</label>'+
+        '<div class="form-buttons"><button type="submit" class="btn primary">Проверить и применить</button></div></form>',
+        async fd=>{
+          await agentTask(id,"config.apply",{name:"nginx",content:fd.get("content"),
+            expected_sha256:data.sha256},fd.get("confirmed")==="on");
+          message("Конфигурация Nginx применена. Проверка прошла.");
+        });
+    }else{
+      openModal("Агент · "+node.code,"РЕЗУЛЬТАТ "+action,
+        '<pre class="wizard-preview">'+esc(action==="docker.logs"?data.logs||"Нет строк":JSON.stringify(data,null,2))+'</pre>');
+    }
+  }catch(e){message(e.message,true)}
 }
 async function renderNodeCertificates(){
   const target=$("node-certs-list");
   try{
     const data=await api("/node-certificates");
     target.innerHTML=(data.nodes||[]).map(n=>{
-      const expires=n.expires_at?new Date(n.expires_at*1000).toLocaleDateString("ru-RU"):"Ещё не проверен";
-      const close=n.expires_at>0&&n.expires_at*1000<Date.now()+21*86400000;
+      const expiry=n.expires_at?new Date(n.expires_at*1000).toLocaleDateString("ru-RU"):"Ещё не проверен";
       return '<div class="node-card"><span class="feature-icon">'+icon("shield-check")+'</span>'+
         '<div style="flex:1;min-width:210px"><strong>'+esc(n.code)+' · '+esc(n.domain)+'</strong>'+
-        '<p>Сертификат: '+esc(expires)+(close?" · Скоро истечёт":"")+'</p>'+
-        '<p>'+(n.auto_sync?"Автоматически каждые 6 часов":"Ручная проверка")+
-        (n.last_checked?" · Проверен: "+esc(new Date(n.last_checked*1000).toLocaleString("ru-RU")):"")+'</p>'+
-        (n.last_error?'<p class="form-feedback error">'+esc(n.last_error)+'</p>':'')+
-        '</div><button class="btn subtle" data-node-cert-check="'+esc(n.id)+'" type="button" '+(n.status!=="ready"?"disabled":"")+'>Проверить и применить</button>'+
-        '<button class="btn primary" data-node-cert-enroll="'+esc(n.id)+'" type="button" '+
-        (n.status!=="ready"||n.auto_sync?"disabled":"")+'>'+(n.auto_sync?"Автопроверка включена":"Включить авто")+'</button></div>';
+        '<p>Сертификат: '+esc(expiry)+' · '+(n.auto_sync?"Агент онлайн, автопроверка 6 ч":"Агент пока офлайн")+
+        (n.last_checked?" · Проверен "+esc(new Date(n.last_checked*1000).toLocaleString("ru-RU")):"")+'</p>'+
+        '</div><button class="btn subtle" data-node-cert-check="'+esc(n.id)+'" type="button" '+(!n.auto_sync?"disabled":"")+'>Проверить через агент</button></div>';
     }).join("")||'<p class="muted">Ноды пока не добавлены.</p>';
   }catch(e){target.textContent=e.message;target.className="form-feedback error"}
-}
-function openNodeCertAction(id,auto){
-  const node=state.nodes.find(n=>n.id===id);
-  if(!node)return;
-  openModal(auto?"Автоматические сертификаты":"Проверка сертификата","НОДА / "+node.code,
-    '<p class="muted small">'+(auto?
-      'Добавим ограниченный SSH-ключ только для чтения сертификатов с этой VPS. Пароль root не сохраняется. При обновлении Certbot менеджер отправит новый сертификат через Remnawave API.':
-      'Менеджер прочитает сертификат из /opt/nginx/certs на VPS, проверит домен и ключ, затем при необходимости обновит TLS-профиль через Remnawave API.')+
-    '</p><form><label>SSH-пароль root<input name="password" type="password" required autocomplete="new-password"></label>'+
-    (auto?'<label class="check-row"><input type="checkbox" name="confirm" required> Подтверждаю установку ограниченного SSH-ключа на VPS</label>':'')+
-    '<div class="form-buttons"><button class="btn primary" type="submit">'+(auto?"Включить автопроверку":"Проверить сертификат")+'</button></div></form>',
-    async fd=>{
-      const url="/node-certificates/"+encodeURIComponent(id)+"/"+(auto?"enroll":"sync");
-      const payload=auto?{password:fd.get("password"),confirmed:fd.get("confirm")==="on"}:{password:fd.get("password")};
-      const result=await api(url,"POST",payload);
-      message(result.updated?"Сертификат обновлён в Xray. Проверь TLS-клиентов.":"Сертификат проверен, изменений в Xray не требуется.");
-      await renderNodeCertificates();
-    });
 }
 
 function renderNodes(){
@@ -542,12 +609,24 @@ function bindEvents(){
   $("update-check").onclick=checkUpdates;
   $("update-start").onclick=startUpdate;
   updatePolling=setInterval(()=>{if(currentPage==="updates")refreshUpdateStatus()},4500);
+  $("agents-refresh").onclick=renderAgents;
+  $("agents-list").addEventListener("click",e=>{
+    const install=e.target.closest("[data-agent-install]");
+    const action=e.target.closest("[data-agent-action]");
+    if(install)agentBootstrapModal(install.dataset.agentInstall);
+    else if(action)agentActionModal(action.dataset.agentId,action.dataset.agentAction);
+  });
   $("node-certs-refresh").onclick=renderNodeCertificates;
-  $("node-certs-list").addEventListener("click",e=>{
+  $("node-certs-list").addEventListener("click",async e=>{
     const sync=e.target.closest("[data-node-cert-check]");
-    const auto=e.target.closest("[data-node-cert-enroll]");
-    if(sync)openNodeCertAction(sync.dataset.nodeCertCheck,false);
-    else if(auto)openNodeCertAction(auto.dataset.nodeCertEnroll,true);
+    if(!sync)return;
+    try{
+      const job=await api("/node-certificates/"+encodeURIComponent(sync.dataset.nodeCertCheck)+"/sync","POST");
+      message("Запрос проверки TLS отправлен агенту");
+      const result=await waitAgentTask(sync.dataset.nodeCertCheck,job.id);
+      message(result.updated?"TLS сертификат обновлён в Remnawave":"TLS сертификат проверен, обновление не требуется");
+      await renderNodeCertificates();
+    }catch(err){message(err.message,true)}
   });
   $("new-bridge").onclick=bridgeModal;
   $("bridge-list").addEventListener("click",e=>{
