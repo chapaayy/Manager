@@ -19,7 +19,7 @@ import time
 
 import paramiko
 
-from . import remnawave, storage
+from . import remnawave, storage, preset_deploy
 from .template_engine import Endpoint, TemplateError, new_inbound, validate_rendered
 
 POOL = ThreadPoolExecutor(max_workers=2, thread_name_prefix="xppn-vps")
@@ -160,12 +160,31 @@ def preflight(ip: str, port: int, password: str, domain: str, expected_fp: str |
     }
 
 
-def config_profile_name(source: Endpoint) -> str:
+def config_profile_name(source: Endpoint, mode: str = "direct") -> str:
     """Name accepted by Remnawave: only ASCII letters, digits, _, - and spaces."""
-    return f"XPPN {source.code} {source.country} VLESS TLS"
+    return (f"XPPN {source.code} {source.country} BRIDGE VLESS TLS" if mode=="bridge"
+            else f"XPPN {source.code} {source.country} VLESS TLS")
 
 
-def preview_plan(source: Endpoint) -> dict:
+def preview_plan(source: Endpoint, preset_id: str | None = None,
+                 role: str = "regular") -> dict:
+    if preset_id is not None:
+        snap=preset_deploy.render_snapshot(preset_id,source,role)
+        return {
+            "name":config_profile_name(source,snap["mode"]), "xray":snap["xray"],
+            "nginx":snap["nginx"],"preset_name":snap["preset_name"],
+            "preset_mode":snap["mode"],"revisions":snap["revisions"],
+            "note":snap["note"],"files":[
+                "/opt/nginx/nginx.conf","/opt/nginx/docker-compose.yml",
+                "/opt/remnanode/docker-compose.yml","/opt/remnanode/node.env",
+                "/opt/nginx/certs/"+source.domain+"_fullchain.pem",
+                "/opt/nginx/certs/"+source.domain+"_privkey.key"
+            ], "variables":[
+                {"key":"source.code","value":source.code},
+                {"key":"source.domain","value":source.domain},
+                {"key":"deployment.mode","value":snap["mode"]},
+            ],
+        }
     """Public dry-run of the first direct VLESS TLS VPS; no credentials or SSH."""
     tag=source.code+"_VLESS_TLS_IN"
     inbound=new_inbound(tag,443,source.domain)
@@ -208,12 +227,14 @@ def preview_plan(source: Endpoint) -> dict:
     }
 
 
-def render_files(source: Endpoint, secret_key: str, panel_ip: str) -> dict:
+def render_files(source: Endpoint, secret_key: str, panel_ip: str,
+                 snapshot: dict | None = None) -> dict:
     """Render allowlisted shipped artifacts; no arbitrary user-supplied shell."""
     if "\n" in secret_key or "\r" in secret_key:
         raise ValueError("Ключ Remnawave содержит недопустимые символы")
     panel_ip = check_ip(panel_ip)
-    template = (ROOT/"nginx.conf").read_text(encoding="utf8")
+    template = (snapshot["nginx"] if snapshot else
+                (ROOT/"nginx.conf").read_text(encoding="utf8"))
     nginx = template.replace("{{source.domain}}", source.domain)
     if "{{" in nginx:
         raise ValueError("В nginx.conf остались неразрешённые переменные")
@@ -222,8 +243,10 @@ def render_files(source: Endpoint, secret_key: str, panel_ip: str) -> dict:
     return {
         "domain": source.domain+"\n", "panel-ip": panel_ip+"\n",
         "nginx.conf": nginx,
-        "nginx-compose.yml": (ROOT/"nginx-compose.yml").read_text(encoding="utf8"),
-        "remnanode-compose.yml": (ROOT/"remnanode-compose.yml").read_text(encoding="utf8"),
+        "nginx-compose.yml": (snapshot["nginx_compose"] if snapshot else
+                              (ROOT/"nginx-compose.yml").read_text(encoding="utf8")),
+        "remnanode-compose.yml": (snapshot["node_compose"] if snapshot else
+                                 (ROOT/"remnanode-compose.yml").read_text(encoding="utf8")),
         "node.env": "SECRET_KEY="+secret_key+"\n", "index.html": html_site,
         "remote-install.sh": (ROOT/"remote-install.sh").read_text(encoding="utf8"),
     }
@@ -305,8 +328,10 @@ def _stage_files(t, files: dict):
 
 def complete_panel_registration(node_id: str, source: Endpoint):
     """Continue from the panel phase only. Never install or rewrite VPS services."""
-    name = config_profile_name(source)
-    inbound_tag = source.code + "_VLESS_TLS_IN"
+    snapshot=storage.get_install_preset(node_id)
+    mode=snapshot["mode"] if snapshot else "direct"
+    name=config_profile_name(source,mode)
+    expected_tags=snapshot["inbound_tags"] if snapshot else [source.code+"_VLESS_TLS_IN"]
     installation = storage.get_install_job(node_id)
     profiles = remnawave.list_profiles()
     saved_uuid = installation["profile_uuid"]
@@ -321,13 +346,15 @@ def complete_panel_registration(node_id: str, source: Endpoint):
             raise ValueError("В Remnawave уже существует профиль с таким именем. "
                              "Проверь его вручную, чтобы избежать дубликатов.")
         storage.set_install_status(node_id, "installing", "Создаём отдельный Xray Config Profile")
-        profile = remnawave.create_profile(name, xray_config(source))
+        profile = remnawave.create_profile(
+            name, snapshot["xray"] if snapshot else xray_config(source))
         storage.set_install_status(node_id, "installing",
                                    "Профиль создан, готовим регистрацию ноды",
                                    profile_uuid=profile["uuid"])
-    selected = [i["uuid"] for i in profile["inbounds"] if i.get("tag") == inbound_tag]
-    if len(selected) != 1:
-        raise ValueError("Профиль есть, но inbound "+inbound_tag+" не подтверждён Remnawave")
+    matched={i.get("tag"):i.get("uuid") for i in profile["inbounds"]}
+    selected=[matched[tag] for tag in expected_tags if tag in matched]
+    if len(selected)!=len(expected_tags) or len(set(selected))!=len(expected_tags):
+        raise ValueError("Remnawave не подтвердила все inbound выбранного пресета")
     storage.set_install_status(node_id, "installing", "Регистрируем ноду в Remnawave")
     remote_id = remnawave.register_node(
         source.code, source.domain, source.country, profile["uuid"], selected)
@@ -448,7 +475,8 @@ def deploy(node_id: str, ip: str, port: int, password: str,
             raise ValueError("; ".join(outcome["warnings"]))
         stage("installing","Запрашиваем ключ ноды из Remnawave")
         key=remnawave.node_secret()
-        files=render_files(source,key,panel_ip)
+        snapshot=storage.get_install_preset(node_id)
+        files=render_files(source,key,panel_ip,snapshot)
         t,_=ssh_open(ip,port,password,expected_fp)
         try:
             _stage_files(t, files)
@@ -481,9 +509,13 @@ def deploy(node_id: str, ip: str, port: int, password: str,
 
 def start_install(*, code: str, country: str, name: str, domain: str, role: str,
                   ip: str, port: int, password: str, fingerprint_value: str,
-                  panel_ip: str, existing_node_id: str | None = None) -> dict:
-    if role not in ("regular","exit"):
-        raise ValueError("Пока поддерживается установка обычной или выходной ноды. Вход моста требует связанного выходного сервера.")
+                  panel_ip: str, existing_node_id: str | None = None,
+                  preset_id: str | None = None) -> dict:
+    if role not in ("regular","exit","entry"):
+        raise ValueError("Неверное назначение VPS")
+    preset_id=preset_id or preset_deploy.default_preset_id()
+    snapshot=preset_deploy.render_snapshot(
+        preset_id,Endpoint(code,domain,country),role)
     if not FP.fullmatch(fingerprint_value):
         raise ValueError("Нужно подтвердить SSH fingerprint из предварительной проверки")
     if not re.fullmatch(r"[A-Z][A-Z0-9_-]{1,19}",code):
@@ -512,6 +544,7 @@ def start_install(*, code: str, country: str, name: str, domain: str, role: str,
         node = storage.create_node(code=code,name=name,domain=domain,country=country,role=role)
     try:
         storage.create_install_job(node["id"],ip,port,fingerprint_value)
+        storage.save_install_preset(node["id"],preset_id,snapshot)
     except Exception:
         # Remove only a newly-created unscheduled draft, not an existing card.
         if created_new:
