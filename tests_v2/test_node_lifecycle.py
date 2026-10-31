@@ -264,3 +264,20 @@ def test_abandon_does_not_bypass_bridge_protection(setup):
                    (str(uuid.uuid4()),"Dependent bridge",n["id"],0))
     with pytest.raises(node_lifecycle.LifecycleError,match="мостом"):
         node_lifecycle.abandon_interrupted(n["id"],n["code"],True)
+
+
+def test_abandon_ten_minute_stale_lease_without_reconnecting_agent(setup):
+    n,remote,profile,token=setup
+    node_lifecycle._set(n["id"],phase="preparing")
+    with storage.transaction() as db:
+        db.execute("UPDATE manager_agents SET last_seen=? WHERE node_id=?",
+                   (int(__import__("time").time())-800,n["id"]))
+    queued=agent_transport.enqueue(n["id"],"node.cleanup",
+                                    {"domain":n["domain"]},internal=True)
+    agent_transport.poll(n["id"])
+    with storage.transaction() as db:
+        db.execute("UPDATE manager_agent_jobs SET updated_at=? WHERE id=?",
+                   (int(__import__("time").time())-800,queued["id"]))
+    result=node_lifecycle.abandon_interrupted(n["id"],n["code"],True)
+    assert result["remote_cleanup_verified"] is False
+    assert agent_transport.authenticate(n["id"],"Bearer "+token) is False
