@@ -245,7 +245,7 @@ async function nodeLifecycleModal(id){
     const selector=$("modal-content").querySelector('select[name="operation"]');
     const profileOption=$("node-lifecycle-profile-option");
     if(selector&&profileOption){
-      const refreshProfile=()=>{profileOption.hidden=!["full","remnawave","continue"].includes(selector.value);};
+      const refreshProfile=()=>{profileOption.style.display=["full","remnawave","continue"].includes(selector.value)?"":"none";};
       selector.addEventListener("change",refreshProfile);refreshProfile();
     }
   }catch(e){message(e.message,true)}
