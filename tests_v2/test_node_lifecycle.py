@@ -197,3 +197,70 @@ def test_confirmed_local_detach_unblocks_node_deletion_without_touching_remote(s
     assert response["remote_configs_untouched"] is True
     assert node_lifecycle.preview(n["id"])["blocked"] is False
     assert node_lifecycle.forget(n["id"],n["code"])["deleted"] is True
+
+
+
+def test_manual_node_removal_can_be_forgotten_without_online_agent(setup,monkeypatch):
+    """A decommissioned VPS is not required to come online to erase its card."""
+    n,remote,profile,token=setup
+    called=[]
+    monkeypatch.setattr(remnawave,"delete_node",lambda *_:called.append("delete"))
+    with storage.transaction() as db:
+        db.execute("UPDATE manager_agents SET last_seen=0 WHERE node_id=?",(n["id"],))
+    assert node_lifecycle.preview(n["id"])["agent_online"] is False
+    result=node_lifecycle.forget(n["id"],n["code"])
+    assert result=={"deleted":True,"id":n["id"],"server_deleted":False}
+    assert called==[]
+    assert agent_transport.authenticate(n["id"],"Bearer "+token) is False
+    assert n["id"] not in [x["id"] for x in storage.list_nodes()]
+
+
+def test_interrupted_cleanup_offline_requires_explicit_ack_and_cooldown(setup,monkeypatch):
+    n,remote,profile,token=setup
+    calls=[]
+    monkeypatch.setattr(remnawave,"delete_node",lambda *_:calls.append("node"))
+    node_lifecycle._set(n["id"],phase="preparing",job_id="")
+    with pytest.raises(node_lifecycle.LifecycleError,match="ещё не завершено"):
+        node_lifecycle.forget(n["id"],n["code"])
+    with pytest.raises(node_lifecycle.LifecycleError,match="Подтверди"):
+        node_lifecycle.abandon_interrupted(n["id"],n["code"],False)
+    with pytest.raises(node_lifecycle.LifecycleError,match="10 минут"):
+        node_lifecycle.abandon_interrupted(n["id"],n["code"],True)
+    with storage.transaction() as db:
+        db.execute("UPDATE manager_agents SET last_seen=? WHERE node_id=?",
+                   (int(__import__("time").time())-700,n["id"]))
+    outcome=node_lifecycle.abandon_interrupted(n["id"],n["code"],True)
+    assert outcome["deleted"] and outcome["remote_cleanup_verified"] is False
+    assert outcome["server_deleted"] is False
+    assert calls==[]
+    with storage.connect() as db:
+        audit=db.execute("""SELECT action,message FROM events
+                           WHERE target=? ORDER BY id DESC LIMIT 1""",
+                         (n["id"],)).fetchone()
+    assert audit["action"]=="node.full.abandoned"
+    assert "UNVERIFIED" in audit["message"]
+    assert agent_transport.authenticate(n["id"],"Bearer "+token) is False
+
+
+def test_abandon_refuses_when_agent_may_still_be_executing_cleanup(setup):
+    n,remote,profile,token=setup
+    node_lifecycle._set(n["id"],phase="preparing")
+    with storage.transaction() as db:
+        db.execute("UPDATE manager_agents SET last_seen=0 WHERE node_id=?",(n["id"],))
+    task=agent_transport.enqueue(n["id"],"node.cleanup",
+           {"domain":n["domain"]},internal=True)
+    agent_transport.poll(n["id"])
+    with pytest.raises(node_lifecycle.LifecycleError,match="мог выполнять"):
+        node_lifecycle.abandon_interrupted(n["id"],n["code"],True)
+    assert storage.get_node(n["id"])["id"]==n["id"]
+
+
+def test_abandon_does_not_bypass_bridge_protection(setup):
+    n,remote,profile,token=setup
+    node_lifecycle._set(n["id"],phase="preparing")
+    with storage.transaction() as db:
+        db.execute("UPDATE manager_agents SET last_seen=0 WHERE node_id=?",(n["id"],))
+        db.execute("INSERT INTO bridges(id,name,entry_id,created_at) VALUES(?,?,?,?)",
+                   (str(uuid.uuid4()),"Dependent bridge",n["id"],0))
+    with pytest.raises(node_lifecycle.LifecycleError,match="мостом"):
+        node_lifecycle.abandon_interrupted(n["id"],n["code"],True)
