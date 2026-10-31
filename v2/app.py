@@ -558,6 +558,11 @@ class NodeLifecycleConfirm(BaseModel):
     delete_profile: bool = True
 
 
+class NodeAbandonConfirm(BaseModel):
+    code: str = Field(min_length=2,max_length=32)
+    acknowledge_unverified: bool = False
+
+
 @app.get("/api/nodes/{node_id}/lifecycle")
 def lifecycle_preview(node_id: str, _=Depends(read_access)):
     try:
@@ -586,6 +591,15 @@ def lifecycle_detach(node_id: str,body: NodeLifecycleConfirm,_=Depends(write_acc
 def lifecycle_forget(node_id: str,body: NodeLifecycleConfirm,_=Depends(write_access)):
     try:
         return node_lifecycle.forget(node_id,body.code)
+    except (node_lifecycle.LifecycleError,LookupError) as e:
+        raise HTTPException(422,str(e)) from None
+
+
+@app.post("/api/nodes/{node_id}/abandon")
+def lifecycle_abandon(node_id: str,body: NodeAbandonConfirm,_=Depends(write_access)):
+    try:
+        return node_lifecycle.abandon_interrupted(
+            node_id,body.code,body.acknowledge_unverified)
     except (node_lifecycle.LifecycleError,LookupError) as e:
         raise HTTPException(422,str(e)) from None
 

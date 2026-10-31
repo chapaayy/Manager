@@ -63,3 +63,25 @@ New VPS installs get Agent 1.1.0 automatically.
 Simply updating Manager never changes an existing VPS or deletes a node.
 
 API reference: https://docs.rw/api/ (node and config profile DELETE endpoints).
+
+
+## VPS was deleted manually, but its card remains in Manager
+
+A missing agent heartbeat is not proof of deletion. When a VPS no longer
+exists, do NOT select "Полностью очистить VPS": that operation requires a
+running Agent v1.1 to do the work and cannot succeed against a dead server.
+
+Open Ноды > Управление. For an offline agent, the first option is now
+"Уже удалена — убрать запись из менеджера". Type the exact node code.
+This removes only the Manager database record and revokes the agent token,
+with no SSH and no Remnawave API calls. The operation does not verify or
+destroy resources held at the hoster or registered in Remnawave.
+If its Remnawave registration is still present, use the separate
+Remnawave deletion option before forgetting.
+
+If a FULL deletion began and the agent vanished before it completed,
+the panel offers a second, exceptional option to abandon the UNVERIFIED
+deletion and remove the local record. This requires explicit acknowledgment,
+ten minutes with no agent heartbeat, no still-leased job and no bridge
+dependencies. It leaves a permanent audit event and makes NO claims
+about remote cleanup, remaining VPN connections or the hoster's VPS.

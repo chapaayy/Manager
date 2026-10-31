@@ -20,7 +20,7 @@ for(const id of [
   assert(unique.has(id),"Required UI element: "+id);
 }
 assert.match(html,/\/static\/icons\.svg/);
-assert.match(html,/\/static\/app\.js\?v=2\.4\.0/);
+assert.match(html,/\/static\/app\.js\?v=2\.4\.1/);
 assert.match(css,/\.sidebar\.collapsed/);
 assert.match(css,/\.workspace\{flex:1;min-width:0;width:0/);
 assert.match(css,/prefers-reduced-motion/);
@@ -40,3 +40,8 @@ console.log("PASS: clean single-panel v2 interface wiring and layout");
 assert.match(js,/async function nodeLifecycleModal/,"Node lifecycle confirmation UI exists");
 assert.match(js,/continueFullNodeDeletion/,"Full cleanup is resumable in the UI");
 assert.match(html,/nodes-show-archived/,"Archived nodes can be shown");
+
+assert.match(js,/Уже удалена — убрать запись из менеджера/,"Offline VPS prompts local deletion");
+assert.match(js,/value="full" disabled/,"Offline VPS cannot trigger agent-only cleanup");
+assert.match(js,/value="abandon"/,"An interrupted deletion has explicit local-only recovery");
+assert.match(js,/node-lifecycle-profile-option/,"Profile removal checkbox has contextual visibility");
