@@ -58,18 +58,17 @@ still need emergency break-glass access if the agent cannot connect.
 
 ## Certificate lifecycle
 
-Certbot issues and renews on each VPS. Certificate and key files remain in
-/opt/nginx/certs (read-only mount in remnanode). Every six hours while the
-Manager is online, it queues cert.export tasks for connected agents.
-Manager validates domain, validity and key, updates only the dedicated
-Manager-owned Xray Config Profile via Remnawave API, and requests a targeted
-restart when the profile's certificate actually changes. Other Xray fields
-and file-backed/manual profiles remain untouched.
+Certbot and private TLS keys remain on the Node VPS only, in
+/opt/nginx/certs with a read-only mount in remnanode. Manager periodically
+queues cert.status, never cert.export. The agent verifies validity, hostname,
+private-key match and its Node mount, and sends public metadata only.
 
-Remnawave Config Profile currently keeps inline TLS PEM data for API
-compatibility. It does not need any Panel filesystem mount. The Manager
-does not store PEM. Be aware that the Remnawave Panel profile itself contains
-the certificate and private key, as it already did before this change.
+Remnawave Config Profile contains keyFile/certificateFile for the Node,
+not PEM. Renewal restarts only the Node through the Remnawave API, without
+rewriting any profile or changing the Panel server. Existing inline PEM
+profiles need an individually confirmed migration and health check in
+Сертификаты нод. See NODE_CERTIFICATES.md for safety limits.
+
 
 ## Limitations and next phases
 
