@@ -129,6 +129,10 @@ def init_db():
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS starter_seeds (
+            name TEXT PRIMARY KEY,
+            applied_at INTEGER NOT NULL
+        );
         CREATE TABLE IF NOT EXISTS library_configs (
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
