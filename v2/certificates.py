@@ -25,7 +25,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.x509.oid import ExtensionOID
 import paramiko
 
-from . import storage, vps_install
+from . import remnawave, storage, vps_install
 
 PANEL_ROOT = "/var/lib/remnawave/configs/xray/ssl/XPPN"
 CODE = re.compile(r"[A-Z][A-Z0-9_-]{1,19}\Z")
@@ -64,6 +64,10 @@ def configure(enabled_value: bool, confirmed_panel_mount: bool = False) -> dict:
         raise CertError("Подтверди, что том xppn-v2-panel-certs подключён к Remnawave Panel")
     if enabled_value:
         shared_dir()
+    else:
+        with storage.connect() as db:
+            if db.execute("SELECT 1 FROM node_certificates WHERE profile_mode='files' LIMIT 1").fetchone():
+                raise CertError("Сначала верни файловые Xray-профили на прежние сертификаты")
     with storage.transaction() as db:
         db.execute("UPDATE certificate_settings SET enabled=?,updated_at=strftime('%s','now') WHERE id=1",
                    (int(enabled_value),))
@@ -318,11 +322,126 @@ with os.fdopen(fd,"w") as f:
     return sync(node_id)
 
 
+def _profile_candidate(node_id: str) -> tuple[dict, dict, dict, str]:
+    """Read and transform only the Manager-owned TLS inbound, preserving all routes."""
+    if not enabled():
+        raise CertError("Файловая синхронизация выключена")
+    node = storage.get_node(node_id)
+    job = storage.get_install_job(node_id)
+    row = _db_row(node_id)
+    if node["status"] != "ready" or not job["profile_uuid"] or not job["remote_uuid"]:
+        raise CertError("Профиль ещё не принадлежит работающей ноде")
+    now = int(datetime.now(timezone.utc).timestamp())
+    if not row.get("last_synced") or row["expires_at"] <= now+86400:
+        raise CertError("Сначала синхронизируй действующий TLS-сертификат")
+    if not (shared_dir()/node["code"]/"current"/"fullchain.pem").is_file():
+        raise CertError("Сертификат отсутствует в общем томе")
+    # Reject profiles that might be shared or have been edited beyond our known identity.
+    profile = remnawave.detailed_profile(job["profile_uuid"])
+    expected = vps_install.config_profile_name(
+        vps_install.Endpoint(node["code"],node["domain"],node["country"]))
+    if profile.get("name") != expected:
+        raise CertError("Название Xray-профиля изменено вручную. Автоматическая миграция запрещена")
+    from copy import deepcopy
+    current = profile["config"]
+    desired = deepcopy(current)
+    inbound_tag = node["code"]+"_VLESS_TLS_IN"
+    inbounds = [i for i in desired.get("inbounds",[]) if isinstance(i,dict) and i.get("tag")==inbound_tag]
+    if len(inbounds)!=1:
+        raise CertError("Не найден единственный штатный VLESS inbound ноды")
+    tls = inbounds[0].get("streamSettings",{}).get("tlsSettings",{})
+    entries = tls.get("certificates")
+    if not isinstance(entries,list) or len(entries)!=1 or not isinstance(entries[0],dict):
+        raise CertError("Нестандартный TLS-конфиг; автоматическая миграция запрещена")
+    if entries[0].get("keyFile") == paths(node["code"])["keyFile"]:
+        raise CertError("Профиль уже использует файловые сертификаты")
+    if not ("key" in entries[0] and "certificate" in entries[0]):
+        raise CertError("Ожидаемый встроенный TLS-ключ в профиле не найден")
+    # Change only these 2 fields, preserve any additional certificate options.
+    entry=entries[0]
+    entry.pop("key",None)
+    entry.pop("certificate",None)
+    entry.update(paths(node["code"]))
+    signature=hashlib.sha256(json.dumps(current,sort_keys=True,separators=(",",":")).encode()).hexdigest()
+    return node,job,{"original":current,"new":desired},signature
+
+
+def migration_preview(node_id: str) -> dict:
+    node,job,config,signature=_profile_candidate(node_id)
+    return {"node_id":node_id,"code":node["code"],
+            "profile_uuid":job["profile_uuid"],"sha256":signature,
+            "panel_paths":paths(node["code"]),"changes":"Только сертификат указанного inbound",
+            "requires_confirmation":True}
+
+
+def migrate_profile(node_id: str, expected_sha256: str, confirmed: bool) -> dict:
+    """Explicit opt-in. Save encrypted rollback before changing a live profile."""
+    if not confirmed:
+        raise CertError("Подтверди переключение работающего Xray-профиля")
+    if not re.fullmatch(r"[0-9a-f]{64}",expected_sha256):
+        raise CertError("Неверная контрольная сумма конфигурации")
+    with LOCK:
+        node,job,config,signature=_profile_candidate(node_id)
+        if signature != expected_sha256:
+            raise CertError("Профиль Remnawave изменился. Повтори предварительную проверку")
+        with storage.transaction() as db:
+            row=db.execute("SELECT profile_mode FROM node_certificates WHERE node_id=?",(node_id,)).fetchone()
+            if not row or row["profile_mode"]!="inline":
+                raise CertError("Файловый режим уже включён или состояние не определено")
+            db.execute("""INSERT INTO cert_profile_backups
+                          (node_id,config_enc,profile_uuid,created_at)
+                          VALUES(?,?,?,strftime('%s','now'))
+                          ON CONFLICT(node_id) DO UPDATE SET
+                          config_enc=excluded.config_enc,profile_uuid=excluded.profile_uuid,
+                          created_at=excluded.created_at""",
+                       (node_id,storage.encrypt(json.dumps(config["original"])),job["profile_uuid"]))
+            storage.event(db,"cert.profile.backup",node_id,"Encrypted Xray rollback snapshot created")
+        applied=False
+        try:
+            remnawave.replace_profile_config(job["profile_uuid"],config["new"])
+            applied=True
+            remnawave.restart_node(job["remote_uuid"])
+        except Exception:
+            if applied:
+                try:
+                    remnawave.replace_profile_config(job["profile_uuid"],config["original"])
+                    remnawave.restart_node(job["remote_uuid"])
+                except Exception:
+                    raise CertError("Ошибка переключения и отката профиля. Проверь Remnawave вручную") from None
+            raise CertError("Переключение отклонено, предыдущая конфигурация сохранена") from None
+        with storage.transaction() as db:
+            db.execute("""UPDATE node_certificates SET profile_mode='files',
+                          last_applied=strftime('%s','now') WHERE node_id=?""",(node_id,))
+            storage.event(db,"cert.profile.files",node_id,"Xray profile switched to panel-mounted certificate paths")
+        return {"node_id":node_id,"mode":"files","restart_requested":True,
+                "message":"Профиль переключён, запрошен перезапуск ноды. Проверь TLS-клиентов."}
+
+
+def restore_profile(node_id: str, confirmed: bool) -> dict:
+    """Manual rollback using an encrypted snapshot. Does not delete staged certs."""
+    if not confirmed:
+        raise CertError("Подтверди восстановление прежнего Xray-профиля")
+    node=storage.get_node(node_id)
+    job=storage.get_install_job(node_id)
+    with LOCK:
+        with storage.connect() as db:
+            backup=db.execute("SELECT * FROM cert_profile_backups WHERE node_id=?",(node_id,)).fetchone()
+        if not backup or backup["profile_uuid"]!=job["profile_uuid"] or not job["remote_uuid"]:
+            raise CertError("Резервная копия конфигурации не найдена")
+        old=json.loads(storage.decrypt(backup["config_enc"]))
+        remnawave.replace_profile_config(job["profile_uuid"],old)
+        remnawave.restart_node(job["remote_uuid"])
+        with storage.transaction() as db:
+            db.execute("UPDATE node_certificates SET profile_mode='inline',last_applied=strftime('%s','now') WHERE node_id=?",(node_id,))
+            storage.event(db,"cert.profile.restore",node_id,"Previous Xray profile restored")
+        return {"node_id":node_id,"mode":"inline","restart_requested":True}
+
+
 def status() -> dict:
     rows=[]
     with storage.connect() as db:
         result=db.execute("""SELECT n.id,n.code,n.domain,n.status,c.expires_at,
-                          c.last_synced,c.last_error,c.fingerprint,c.sync_key_enc
+                          c.last_synced,c.last_error,c.fingerprint,c.sync_key_enc,c.profile_mode,c.last_applied
                           FROM nodes n LEFT JOIN node_certificates c ON c.node_id=n.id
                           ORDER BY n.code""").fetchall()
     for r in result:
@@ -331,6 +450,8 @@ def status() -> dict:
                      "last_synced":r["last_synced"] or 0,
                      "last_error":r["last_error"] or "",
                      "auto_sync":bool(r["sync_key_enc"]), "staged":bool(r["fingerprint"]),
+                     "profile_mode":r["profile_mode"] or "inline",
+                     "last_applied":r["last_applied"] or 0,
                      "panel_paths":paths(r["code"])})
     return {"enabled": enabled(), "panel_dir":PANEL_ROOT,
             "nodes":rows, "automatic_refresh_interval_hours":6}
