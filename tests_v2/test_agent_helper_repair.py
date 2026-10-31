@@ -11,10 +11,17 @@ def test_installer_keeps_sudo_capabilities_and_scopes_nginx_write():
     repair=Path("v2/agent/repair-helper.sh").read_text()
     assert "CapabilityBoundingSet=\n" not in install
     assert "AmbientCapabilities=\n" in install
-    assert "ReadWritePaths=/opt/nginx /run" in install
+    assert "NoNewPrivileges=no" in install
+    assert "NoNewPrivileges=no" in repair
+    assert "User=nodemanager" in install and "Group=nodemanager" in install
+    for setting in ("ProtectSystem=strict","ProtectKernelTunables=true",
+                    "RestrictAddressFamilies=AF_INET","PrivateDevices=true"):
+        assert setting not in install
     assert "ExecStartPost=/usr/bin/sudo -n /usr/local/libexec/node-manager-helper service.status" in install
     assert "CapabilityBoundingSet=~" in repair
-    assert "ReadWritePaths=/opt/nginx /run" in repair
+    for setting in ("ProtectSystem=no","ProtectKernelTunables=no",
+                    "PrivateDevices=no","ProtectHome=no","RestrictAddressFamilies="):
+        assert setting in repair
     assert "node-manager-agent.service" in repair
     assert "AGENT_REPAIR_FAILURE" in repair
     assert "AGENT_REPAIR_SUCCESS" in repair
