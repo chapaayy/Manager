@@ -670,7 +670,7 @@ function bindEvents(){
       '<p class="muted small">После этого вручную примонтируй /opt/xppn-panel-certs в backend Remnawave по пути /var/lib/remnawave/configs/xray/ssl/XPPN:ro. Только затем включай синхронизацию.</p>'+
       '<div class="form-buttons"><button class="btn primary" type="submit">Подключить сервер панели</button></div></form>',
       async fd=>{
-        await api("/certificates/panel/enroll","POST",{
+        await api("/panel-certificates/enroll","POST",{
           ip:fd.get("ip"),port:Number(fd.get("port")),fingerprint:fd.get("fingerprint"),
           password:fd.get("password"),confirm_panel_access:fd.get("confirmed")==="on"
         });
