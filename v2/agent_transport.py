@@ -189,8 +189,13 @@ def report(node_id: str, body: dict) -> dict:
                     raise node_cert_sync.CertificateSyncError(
                         "Передача приватных TLS ключей отключена")
                 outcome=node_cert_sync.apply_agent_status(node_id,result)
+                # Save only validated, non-sensitive metadata for a
+                # same-node, short-lived migration preflight. Never store PEM.
                 result={"expires_at":outcome["expires_at"],"updated":outcome["updated"],
-                        "fingerprint":outcome["fingerprint"]}
+                        "fingerprint":outcome["fingerprint"],
+                        "mode":outcome.get("mode",""),
+                        "domain":storage.get_node(node_id)["domain"],
+                        "node_tls_mount_verified":result.get("node_tls_mount_verified") is True}
                 error=""
             except node_cert_sync.CertificateSyncError as exc:
                 ok=False
