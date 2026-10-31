@@ -156,7 +156,8 @@ def abandon_interrupted(node_id,code,acknowledge_unverified:bool):
         row=db.execute(
             "SELECT last_seen FROM manager_agents WHERE node_id=?",(node_id,)).fetchone()
         active=db.execute("""SELECT COUNT(*) FROM manager_agent_jobs
-            WHERE node_id=? AND status='leased'""",(node_id,)).fetchone()[0]
+            WHERE node_id=? AND status='leased' AND updated_at>?""",
+            (node_id,now-600)).fetchone()[0]
     last_seen=row["last_seen"] if row else 0
     if last_seen and now-last_seen<600:
         raise LifecycleError("После последней связи с агентом должно пройти 10 минут")
