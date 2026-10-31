@@ -93,7 +93,7 @@
               <p class="subheading">Certbot на каждой VPS. Проверка и обновление через агент VPS и API Remnawave.</p></div>
             <button id="node-certs-refresh" class="btn subtle" type="button"><svg><use href="/static/icons.svg#i-refresh-cw"></use></svg>Обновить</button>
           </div>
-          <p class="inline-info">Сертификаты выпускаются и хранятся на самих VPS в /opt/nginx/certs. Дополнительные папки на сервере панели не создаются. Для совместимости с Remnawave сертификат передаётся в профиль через API. Автоматическая синхронизация включается отдельно для каждой ноды.</p>
+          <p class="inline-info">Сертификаты выпускаются и хранятся на самих VPS в /opt/nginx/certs. Дополнительные папки на сервере панели не создаются. В Remnawave профиль содержит только пути к сертификатам на самой VPS, без передачи PEM. Первая проверка запускается автоматически после установки.</p>
           <div class="section-title"><h2>Состояние сертификатов</h2><span class="muted">Автопроверка каждые 6 часов</span></div>
           <div id="node-certs-list" class="node-grid"><div class="skeleton h90"></div></div>
         </section>
