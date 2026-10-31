@@ -93,14 +93,54 @@ async function installVps(){
       vpsTimer=setInterval(poll,4000);
   }catch(e){message(e.message,true);updateVpsConsent()}
 }
-async function showVpsJob(id){
+async function forgetFailedVps(id){
+  const node=state.nodes.find(n=>n.id===id);
+  if(!node||!["failed","interrupted"].includes(node.status))
+    return message("Нельзя удалять активную или рабочую ноду.",true);
+  if(!confirm("Убрать "+node.code+" из менеджера?\\n\\nУдалится только запись и история неудачной установки. Docker, сертификаты, Remnawave и файлы на VPS останутся без изменений. Если VPS частично настроен, он останется таким же."))
+    return;
+  try{
+    await api("/vps/jobs/"+encodeURIComponent(id)+"/forget","POST",{confirm_local_only:true});
+    const modal=document.getElementById("modal");
+    if(modal.open)modal.close();
+    await refresh();
+    message("Запись "+node.code+" убрана. Сам VPS не изменён.");
+  }catch(e){message(e.message,true)}
+}
+async function showVpsJob(id,focusRetry=false){
   try{
     const info=await api("/vps/jobs/"+encodeURIComponent(id));
-    openModal("Установка VPS","СОСТОЯНИЕ СЕРВЕРА",
+    const node=state.nodes.find(n=>n.id===id);
+    const canRecover=["failed","interrupted"].includes(info.stage)&&!info.remote_uuid;
+    const terminal=["failed","interrupted"].includes(info.stage);
+    const details=
       '<p><strong>'+esc(info.stage)+'</strong></p><p class="muted">'+esc(info.note)+'</p>'+
       '<p class="muted small">SSH: '+esc(info.ip)+':'+esc(info.port)+'</p>'+
       (info.remote_uuid?'<p>Remnawave UUID: '+esc(info.remote_uuid)+'</p>':'')+
-      '<p class="muted small">Регистрация ещё не означает доступность клиентских подключений. Для них необходимы Hosts и Internal Squads.</p>');
+      (terminal?'<p class="inline-info">Удаление записи не удаляет Docker, конфиги или сертификаты с VPS. Для продолжения мы сверим SSH fingerprint и уже запущенные сервисы.</p>':'')+
+      (canRecover?
+        '<form id="failed-vps-resume"><label>SSH-пароль root для продолжения'+
+        '<input name="password" type="password" autocomplete="new-password" required maxlength="512" placeholder="Пароль не сохраняется"></label>'+
+        '<label class="check-row"><input name="confirm_existing" type="checkbox" required value="yes"> Продолжить с настройки Remnawave без переустановки VPS</label>'+
+        '<div class="form-buttons"><button type="submit" class="btn primary">Продолжить подключение</button></div>'+
+        '</form>':'')+
+      (terminal?'<div class="form-buttons"><button type="button" class="btn subtle" id="forget-failed-vps">Убрать запись из менеджера</button></div>':'')+
+      '<p class="muted small">Регистрация ещё не означает доступность клиентских подключений. Для них необходимы Hosts и Internal Squads.</p>';
+    openModal("Установка "+(node?node.code:"VPS"),"СОСТОЯНИЕ СЕРВЕРА",details,
+      canRecover?async fd=>{
+        const result=await api("/vps/jobs/"+encodeURIComponent(id)+"/resume","POST",{
+          password:fd.get("password"),confirm_existing:fd.get("confirm_existing")==="yes"
+        });
+        const field=document.querySelector("#failed-vps-resume input[name=password]");
+        if(field)field.value="";
+        message(result.message||"Продолжение запущено. Проверь статус ноды.");
+      }:undefined);
+    const deleteButton=document.getElementById("forget-failed-vps");
+    if(deleteButton)deleteButton.onclick=()=>forgetFailedVps(id);
+    if(focusRetry&&canRecover){
+      const field=document.querySelector("#failed-vps-resume input[name=password]");
+      if(field)field.focus();
+    }
   }catch(e){message(e.message,true)}
 }
 async function deleteDraft(id){
@@ -115,6 +155,13 @@ async function deleteDraft(id){
 }
 
 document.addEventListener("DOMContentLoaded",()=>{
+  // Keep status cards fresh while a worker runs; do not leave "installing" stuck on screen.
+  setInterval(()=>{
+    if(document.hidden || currentPage!=="nodes")return;
+    if(state.nodes.some(n=>["queued","installing","registered"].includes(n.status)))
+      refresh().catch(()=>{});
+  },8000);
+
   document.getElementById("new-node").onclick=openVpsWizard;
   document.getElementById("vps-form").onsubmit=probeVps;
   document.getElementById("vps-fingerprint-ok").onchange=updateVpsConsent;
@@ -130,6 +177,10 @@ document.addEventListener("DOMContentLoaded",()=>{
   document.getElementById("other-nodes").addEventListener("click",e=>{
     const del=e.target.closest("[data-delete-draft]");
     if(del){deleteDraft(del.dataset.deleteDraft);return}
+    const forget=e.target.closest("[data-forget-vps]");
+    if(forget){forgetFailedVps(forget.dataset.forgetVps);return}
+    const retry=e.target.closest("[data-retry-vps]");
+    if(retry){showVpsJob(retry.dataset.retryVps,true);return}
     const target=e.target.closest("[data-install-node]");
     if(target)showVpsJob(target.dataset.installNode);
   });

@@ -305,6 +305,140 @@ def _read_remote_file(t, path: str, max_bytes: int = 20000) -> str:
         sftp.close()
 
 
+def complete_panel_registration(node_id: str, source: Endpoint,
+                                certificate: str, private_key: str):
+    """Continue from the panel phase only. Never install or rewrite VPS services."""
+    name = f"XPPN {source.code} · {source.country} · VLESS TLS"
+    inbound_tag = source.code + "_VLESS_TLS_IN"
+    installation = storage.get_install_job(node_id)
+    profiles = remnawave.list_profiles()
+    saved_uuid = installation["profile_uuid"]
+    if saved_uuid:
+        profile = next((p for p in profiles if p["uuid"] == saved_uuid), None)
+        if profile is None:
+            raise ValueError("Ранее созданный Xray-профиль не найден в панели. Проверь его вручную.")
+    else:
+        # A previous request may have created a profile and then lost its reply.
+        # Refuse to silently create a duplicate or reuse an unknown profile.
+        if any(p["name"] == name for p in profiles):
+            raise ValueError("В Remnawave уже существует профиль с таким именем. "
+                             "Проверь его вручную, чтобы избежать дубликатов.")
+        storage.set_install_status(node_id, "installing", "Создаём отдельный Xray Config Profile")
+        profile = remnawave.create_profile(name, xray_config(source, certificate, private_key))
+        storage.set_install_status(node_id, "installing",
+                                   "Профиль создан, готовим регистрацию ноды",
+                                   profile_uuid=profile["uuid"])
+    selected = [i["uuid"] for i in profile["inbounds"] if i.get("tag") == inbound_tag]
+    if len(selected) != 1:
+        raise ValueError("Профиль есть, но inbound "+inbound_tag+" не подтверждён Remnawave")
+    storage.set_install_status(node_id, "installing", "Регистрируем ноду в Remnawave")
+    remote_id = remnawave.register_node(
+        source.code, source.domain, source.country, profile["uuid"], selected)
+    storage.set_install_status(node_id, "registered",
+        "Нода зарегистрирована, ожидается подтверждение её связи с Remnawave",
+        remote_uuid=remote_id, profile_uuid=profile["uuid"])
+    # Mark ready only after telemetry confirms Xray.
+    deadline = time.monotonic() + 45
+    while time.monotonic() < deadline:
+        try:
+            health = remnawave.node_health(remote_id)
+            if health["connected"] and health["xray_running"]:
+                storage.set_install_status(
+                    node_id, "ready",
+                    "Remnawave подтвердила подключение и работу Xray ("+
+                    (health["xray_version"] or "активен")+
+                    "). Для клиентского доступа настрой Hosts и Internal Squads.")
+                break
+        except remnawave.PanelError:
+            pass
+        time.sleep(3)
+
+
+# Only read identity, certificate existence and the two container states.
+# No package installation, docker compose up/down or editing remote files.
+RESUME_PROBE = (
+    "set -eu; test \"$(id -u)\" = 0; "
+    "test -s /opt/remnanode/domain; test -s /opt/remnanode/node.env; "
+    "test -s /opt/remnanode/docker-compose.yml; test -s /opt/nginx/docker-compose.yml; "
+    "domain=\"$(cat /opt/remnanode/domain)\"; "
+    "case \"$domain\" in *[!a-zA-Z0-9.-]*|'') exit 65;; esac; "
+    "test -s \"/opt/nginx/certs/${domain}_fullchain.pem\"; "
+    "test -s \"/opt/nginx/certs/${domain}_privkey.key\"; "
+    "test \"$(docker inspect -f '{{.State.Running}}' remnanode)\" = true; "
+    "test \"$(docker inspect -f '{{.State.Running}}' nginx)\" = true; "
+    "printf 'DOMAIN=%s\\n' \"$domain\""
+)
+
+
+def verify_existing_install(t, source: Endpoint):
+    """Fail closed unless the expected node was already installed successfully."""
+    try:
+        result = run_command(t, RESUME_PROBE, timeout=30, max_bytes=1000)
+    except (RuntimeError, TimeoutError, ValueError):
+        raise ValueError("На VPS не подтверждены Nginx, Remnawave Node и TLS. "
+                         "Автоматическое продолжение без проверки запрещено.") from None
+    if result.strip() != "DOMAIN=" + source.domain:
+        raise ValueError("Домен установленной VPS не совпадает с сохранённой нодой")
+
+
+def resume_registration(node_id: str, password: str):
+    """Registration-only worker; the existing VPS is strictly read-only."""
+    def stage(status: str, note: str):
+        storage.set_install_status(node_id, status, note)
+    try:
+        node = storage.get_node(node_id)
+        job = storage.get_install_job(node_id)
+        source = Endpoint(node["code"], node["domain"], node["country"])
+        stage("installing", "Проверяем установленный VPS по SSH")
+        t, _ = ssh_open(job["ip"], job["port"], password, job["ssh_fingerprint"])
+        try:
+            verify_existing_install(t, source)
+            certificate = _read_remote_file(
+                t, f"/opt/nginx/certs/{source.domain}_fullchain.pem")
+            private_key = _read_remote_file(
+                t, f"/opt/nginx/certs/{source.domain}_privkey.key")
+        finally:
+            t.close()
+        stage("installing", "VPS проверен, продолжаем с Remnawave")
+        complete_panel_registration(node_id, source, certificate, private_key)
+    except Exception as exc:
+        if isinstance(exc, (ValueError, TemplateError, remnawave.PanelError)):
+            detail = str(exc)
+        else:
+            detail = type(exc).__name__ + ": смотри состояние сервисов на VPS"
+        if password:
+            detail = detail.replace(password, "[СКРЫТО]")
+        stage("failed", detail[:350])
+    finally:
+        password = ""
+
+
+def start_resume(node_id: str, password: str, confirmed: bool = False) -> dict:
+    """Requires explicit confirmation and re-authentication to the same SSH host."""
+    if not confirmed:
+        raise ValueError("Подтверди продолжение установки без переустановки VPS")
+    node = storage.get_node(node_id)
+    job = storage.get_install_job(node_id)
+    if job["stage"] not in ("failed", "interrupted"):
+        raise ValueError("Продолжить можно только неудачную или прерванную установку")
+    if job["remote_uuid"]:
+        raise ValueError("Нода уже зарегистрирована. Повторная регистрация запрещена.")
+    source = Endpoint(node["code"], node["domain"], node["country"])
+    t, _ = ssh_open(job["ip"], job["port"], password, job["ssh_fingerprint"])
+    try:
+        verify_existing_install(t, source)
+    finally:
+        t.close()
+    storage.queue_resume_install(node_id)
+    try:
+        POOL.submit(resume_registration, node_id, password)
+    except Exception:
+        storage.set_install_status(node_id, "failed", "Не удалось запустить продолжение")
+        raise
+    return {"node_id": node_id, "stage": "queued",
+            "message": "Продолжение с регистрации в Remnawave запущено"}
+
+
 def deploy(node_id: str, ip: str, port: int, password: str,
            expected_fp: str, panel_ip: str):
     """Long-running worker. DB tracks truthful stages and errors. Secrets stay in memory."""
@@ -331,36 +465,7 @@ def deploy(node_id: str, ip: str, port: int, password: str,
             private_key=_read_remote_file(t,f"/opt/nginx/certs/{source.domain}_privkey.key")
         finally:
             t.close()
-        stage("installing","Создаём отдельный Xray Config Profile")
-        profile=remnawave.create_profile(
-            f"XPPN {source.code} · {source.country} · VLESS TLS",
-            xray_config(source,certificate,private_key))
-        inbound_tag=source.code+"_VLESS_TLS_IN"
-        selected=[i["uuid"] for i in profile["inbounds"] if i.get("tag")==inbound_tag]
-        if len(selected)!=1:
-            raise ValueError("Профиль создан, но Remnawave не подтвердила inbound "+inbound_tag)
-        stage("installing","Регистрируем ноду в Remnawave")
-        remote_id=remnawave.register_node(
-            source.code,source.domain,source.country,profile["uuid"],selected)
-        storage.set_install_status(node_id,"registered",
-            "Нода зарегистрирована, ожидается подтверждение её связи с Remnawave",
-            remote_uuid=remote_id,profile_uuid=profile["uuid"])
-        # Do not mistake POST /api/nodes success for a working Xray instance.
-        # Only mark ready when panel telemetry explicitly reports connectivity AND Xray.
-        deadline = time.monotonic() + 45
-        while time.monotonic() < deadline:
-            try:
-                health = remnawave.node_health(remote_id)
-                if health["connected"] and health["xray_running"]:
-                    storage.set_install_status(
-                        node_id,"ready",
-                        "Remnawave подтвердила подключение и работу Xray ("+
-                        (health["xray_version"] or "активен")+
-                        "). Для клиентского доступа настрой Hosts и Internal Squads.")
-                    break
-            except remnawave.PanelError:
-                pass
-            time.sleep(3)
+        complete_panel_registration(node_id,source,certificate,private_key)
     except Exception as exc:
         # Never put SSH password, API token, PEM keys or SECRET_KEY in DB/logs.
         # Error messages from remote commands are intentionally reduced to exception class.

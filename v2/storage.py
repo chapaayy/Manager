@@ -338,6 +338,52 @@ def create_install_job(node_id: str, ip: str, port: int, ssh_fingerprint: str) -
     return get_install_job(node_id)
 
 
+def queue_resume_install(node_id: str) -> dict:
+    """Atomically claim a failed/interrupted installation for registration-only recovery."""
+    with transaction() as c:
+        row = c.execute(
+            """SELECT i.stage,i.remote_uuid,n.status FROM node_installations i
+               JOIN nodes n ON n.id=i.node_id WHERE i.node_id=?""", (node_id,)
+        ).fetchone()
+        if row is None:
+            raise LookupError("Установка не найдена")
+        if row["stage"] not in ("failed", "interrupted") or row["status"] != row["stage"]:
+            raise ValueError("Продолжение доступно только после ошибки или прерывания установки")
+        if row["remote_uuid"]:
+            raise ValueError("Нода уже зарегистрирована в Remnawave. Повторное создание запрещено.")
+        now = int(time.time())
+        c.execute("""UPDATE node_installations SET stage='queued',
+                     note='Возобновление: проверяем установленную VPS', updated_at=?
+                     WHERE node_id=?""", (now,node_id))
+        c.execute("UPDATE nodes SET status='queued' WHERE id=?", (node_id,))
+        event(c,"node.install.resume",node_id,"Registration-only recovery requested")
+    return get_install_job(node_id)
+
+
+def delete_failed_install(node_id: str) -> dict:
+    """Forget a terminal, unregistered attempt locally. Never touch the remote VPS."""
+    with transaction() as c:
+        row = c.execute(
+            """SELECT n.code,n.status,i.stage,i.remote_uuid
+               FROM nodes n JOIN node_installations i ON i.node_id=n.id
+               WHERE n.id=?""", (node_id,)
+        ).fetchone()
+        if row is None:
+            raise LookupError("Завершённая неудачная установка не найдена")
+        if (row["status"] not in ("failed", "interrupted")
+                or row["stage"] != row["status"]):
+            raise ValueError("Удалять можно только завершённые неудачные установки, не активные и не рабочие ноды")
+        if row["remote_uuid"]:
+            raise ValueError("Нода уже зарегистрирована в Remnawave. Удаление записи запрещено.")
+        for table,column in (("bridges","entry_id"),("bridge_exits","exit_id"),("plans","exit_id")):
+            if c.execute(f"SELECT 1 FROM {table} WHERE {column}=? LIMIT 1",(node_id,)).fetchone():
+                raise ValueError("Нода используется мостом или планом. Удаление запрещено.")
+        c.execute("DELETE FROM node_installations WHERE node_id=?",(node_id,))
+        c.execute("DELETE FROM nodes WHERE id=?",(node_id,))
+        event(c,"node.install.forget",node_id,"Forgot unsuccessful unregistered "+row["code"])
+        return {"deleted":True,"id":node_id,"code":row["code"],"remote_untouched":True}
+
+
 def set_install_status(node_id: str, stage: str, note: str, *,
                        remote_uuid: str = "", profile_uuid: str = ""):
     if stage not in {"queued","installing","registered","ready","failed","interrupted"}:

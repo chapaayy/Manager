@@ -185,6 +185,15 @@ class VpsProbeData(BaseModel):
     domain: str = Field(min_length=4,max_length=253)
 
 
+class VpsResumeData(BaseModel):
+    password: str = Field(min_length=1, max_length=512)
+    confirm_existing: bool = False
+
+
+class VpsForgetData(BaseModel):
+    confirm_local_only: bool = False
+
+
 class VpsInstallData(VpsProbeData):
     code: str = Field(min_length=2,max_length=20)
     name: str = Field(min_length=3,max_length=80)
@@ -387,6 +396,26 @@ def vps_job_status(node_id: str, _=Depends(read_access)):
     except LookupError:
         raise HTTPException(404,"Установка не найдена") from None
     return result
+
+
+@app.post("/api/vps/jobs/{node_id}/resume")
+def resume_vps(node_id: str, body: VpsResumeData, _=Depends(write_access)):
+    try:
+        return vps_install.start_resume(node_id, body.password, body.confirm_existing)
+    except (ValueError, TemplateError, remnawave.PanelError, LookupError) as e:
+        _fail(e)
+    except Exception:
+        raise HTTPException(502, "Не удалось подключиться к сохранённому VPS по SSH") from None
+
+
+@app.post("/api/vps/jobs/{node_id}/forget")
+def forget_failed_vps(node_id: str, body: VpsForgetData, _=Depends(write_access)):
+    if not body.confirm_local_only:
+        raise HTTPException(422, "Подтверди удаление только записи без изменений на VPS")
+    try:
+        return storage.delete_failed_install(node_id)
+    except (ValueError, LookupError, sqlite3.IntegrityError) as e:
+        _fail(e)
 
 
 @app.post("/api/nodes")
