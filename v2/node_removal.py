@@ -79,7 +79,8 @@ def _remote_state(node, job):
             full = remnawave.detailed_profile(profile_uuid)
             name = full.get("name")
             expected = vps_install.config_profile_name(Endpoint(
-                node["code"], node["domain"], node["country"]))
+                node["code"], node["domain"], node["country"]),
+                "bridge" if node["role"]=="entry" else "direct")
             data["profile_present"] = True
             data["profile_name"] = str(name or "")[:100]
             data["profile_owned"] = name == expected
