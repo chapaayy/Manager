@@ -111,8 +111,12 @@ async function refreshCertificates(){
     const result=await api("/certificates");
     const ready=result.enabled;
     $("cert-global-status").textContent=ready?
-      "Файловая синхронизация включена. Подключение общего тома к Remnawave обязательно.":
-      "Синхронизация выключена. Прежде чем включать, подключи том к панели Remnawave.";
+      (result.mode==="remote"?
+        "Активен удалённый приёмник "+result.remote_panel_ip+". Сертификаты передаются на VPS панели по защищённому SSH.":
+        "Активен общий Docker volume для Remnawave.") :
+      (result.mode==="remote"?
+        "Удалённый приёмник настроен, но синхронизация выключена. Подключи его папку к контейнеру панели и нажми «Включить».":
+        "Синхронизация выключена. Настрой локальный том или удалённый SSH-приёмник.");
     $("cert-global-status").className="form-feedback "+(ready?"success":"");
     $("cert-enable").disabled=ready;
     $("cert-disable").disabled=!ready;
@@ -655,9 +659,28 @@ function bindEvents(){
     if(remove)removePreset(remove.dataset.presetDelete);
   });
   $("panel-form").onsubmit=e=>{e.preventDefault();savePanel()};
+  $("cert-panel-enroll").onclick=()=>{
+    openModal("Настроить SSH-приёмник Remnawave","TLS / УДАЛЁННАЯ ПАНЕЛЬ",
+      '<p class="muted small">Это VPS, где работает Remnawave Panel, а не нода RUS10 и не VPS менеджера. Потребуется однократный доступ root. На сервер будет добавлен ограниченный SSH-ключ без shell-доступа.</p>'+
+      '<form><div class="two-fields"><label>IPv4 сервера Remnawave<input name="ip" required placeholder="Публичный IPv4"></label>'+
+      '<label>SSH-порт<input name="port" type="number" min="1" max="65535" value="22" required></label></div>'+
+      '<label>SSH fingerprint из консоли сервера<input name="fingerprint" required placeholder="SHA256:..."></label>'+
+      '<label>Одноразовый SSH-пароль root<input name="password" type="password" required autocomplete="new-password"></label>'+
+      '<label class="check-row"><input name="confirmed" type="checkbox" required> Подтверждаю установку ограниченного SSH-приёмника на VPS панели</label>'+
+      '<p class="muted small">После этого вручную примонтируй /opt/xppn-panel-certs в backend Remnawave по пути /var/lib/remnawave/configs/xray/ssl/XPPN:ro. Только затем включай синхронизацию.</p>'+
+      '<div class="form-buttons"><button class="btn primary" type="submit">Подключить сервер панели</button></div></form>',
+      async fd=>{
+        await api("/certificates/panel/enroll","POST",{
+          ip:fd.get("ip"),port:Number(fd.get("port")),fingerprint:fd.get("fingerprint"),
+          password:fd.get("password"),confirm_panel_access:fd.get("confirmed")==="on"
+        });
+        message("Приёмник установлен. Подключи каталог к Remnawave Panel, затем включи синхронизацию.");
+        await refreshCertificates();
+      });
+  };
   $("cert-refresh").onclick=refreshCertificates;
   $("cert-enable").onclick=async()=>{
-    if(!confirm("Я подключил Docker volume xppn-v2-panel-certs в Remnawave Panel и проверил, что панель читает файлы. Включить файловую синхронизацию?"))return;
+    if(!confirm("Я проверил, что Remnawave Panel имеет доступ к каталогу XPPN в контейнере (через общий том или папку удалённого SSH-приёмника). Включить файловую синхронизацию?"))return;
     try{await api("/certificates/settings","POST",{enabled:true,confirmed_panel_mount:true});await refreshCertificates()}
     catch(e){message(e.message,true)}
   };
