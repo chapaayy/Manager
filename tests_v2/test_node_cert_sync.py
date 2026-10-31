@@ -90,6 +90,21 @@ def test_certbot_renewal_restarts_only_owned_node_without_profile_patch(ready_no
     assert len(restarts)==1
 
 
+def test_failed_tls_reload_does_not_mark_renewal_as_applied(ready_node,monkeypatch):
+    _,writes,restarts,_=mock_profile(monkeypatch,ready_node)
+    node_cert_sync.apply_agent_status(ready_node["id"],cert_status(ready_node))
+    monkeypatch.setattr(remnawave,"node_health",lambda *_:{
+        "connected":False,"xray_running":False})
+    monkeypatch.setattr(node_local_tls.time,"sleep",lambda *_:None)
+    with pytest.raises(node_cert_sync.CertificateSyncError,match="не подтвердил запуск"):
+        node_cert_sync.apply_agent_status(ready_node["id"],cert_status(ready_node,"b"*64))
+    with storage.connect() as db:
+        fp=db.execute("SELECT fingerprint FROM node_tls_sync WHERE node_id=?",
+                      (ready_node["id"],)).fetchone()["fingerprint"]
+    assert fp=="a"*64
+    assert not writes and len(restarts)==1
+
+
 def test_inline_profile_requires_explicit_migration_and_no_implicit_write(ready_node,monkeypatch):
     _,writes,restarts,_=mock_profile(monkeypatch,ready_node,inline=True)
     result=node_cert_sync.apply_agent_status(ready_node["id"],cert_status(ready_node))
