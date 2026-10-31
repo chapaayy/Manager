@@ -91,11 +91,19 @@ def test_migration_is_explicit_keeps_full_config_and_rollback(cert_environment,m
             "tlsSettings":{"certificates":[{"key":["SECRET-PRIVATE-KEY"],
                                              "certificate":["SECRET-CERTIFICATE"]}]}}}],
         "outbounds":[{"tag":"DIRECT","protocol":"freedom"}]}
+    from copy import deepcopy
+    current={"config":deepcopy(original)}
     monkeypatch.setattr(remnawave,"detailed_profile",lambda *_:{
-        "name":"XPPN RUS10 RU VLESS TLS","config":original})
+        "name":"XPPN RUS10 RU VLESS TLS","config":deepcopy(current["config"])})
+    job=storage.get_install_job(node["id"])
+    monkeypatch.setattr(remnawave,"request",lambda method,path:{
+        "response":[{"uuid":job["remote_uuid"],
+                     "configProfile":{"activeConfigProfileUuid":job["profile_uuid"]}}]})
     calls=[]
-    monkeypatch.setattr(remnawave,"replace_profile_config",
-                        lambda profile,config:calls.append(("patch",config)))
+    def record_patch(profile,config):
+        calls.append(("patch",deepcopy(config)))
+        current["config"]=deepcopy(config)
+    monkeypatch.setattr(remnawave,"replace_profile_config",record_patch)
     monkeypatch.setattr(remnawave,"restart_node",lambda uid:calls.append(("restart",uid)))
     preview=certs.migration_preview(node["id"])
     assert "SECRET" not in str(preview)
