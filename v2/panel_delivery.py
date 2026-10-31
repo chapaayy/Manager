@@ -194,10 +194,10 @@ with os.fdopen(fd,"w") as f: f.write("\n".join(updated+[authorized])+"\n")
     t=_connect(ip,port,fingerprint,private_pem)
     t.close()
     with storage.transaction() as db:
-        db.execute("""UPDATE certificate_settings SET enabled=1,mode='remote',
+        db.execute("""UPDATE certificate_settings SET enabled=0,mode='remote',
                       remote_ip=?,remote_port=?,remote_fingerprint=?,remote_key_enc=?,
                       updated_at=strftime('%s','now') WHERE id=1""",
                    (ip,port,fingerprint,storage.encrypt(private_pem)))
         storage.event(db,"cert.panel.enroll","panel","Pinned restricted SSH receiver configured")
-    return {"enabled":True,"mode":"remote","panel_ip":ip,"panel_port":port,
+    return {"enabled":False,"mode":"remote","receiver_installed":True,"panel_ip":ip,"panel_port":port,
             "panel_mount_path":"/var/lib/remnawave/configs/xray/ssl/XPPN"}
