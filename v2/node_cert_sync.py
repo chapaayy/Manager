@@ -165,7 +165,8 @@ def status()->dict:
             "last_error":r["last_error"] or "",
             "auto_sync":bool(agents.get(r["id"],{}).get("online")),
             "agent_installed":bool(agents.get(r["id"],{}).get("installed")),
-            "checked":bool(r["fingerprint"]),\n            "checking":bool(r["pending"])} for r in rows]}
+            "checked":bool(r["fingerprint"]),
+            "checking":bool(r["pending"])} for r in rows]}
 
 
 def background_cycle():
