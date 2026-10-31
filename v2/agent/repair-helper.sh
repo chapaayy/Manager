@@ -28,13 +28,22 @@ STAGE=write
 TMP="$(mktemp "$DROP/.helper-permissions.XXXXXXXX")"
 cat >"$TMP" <<'UNIT'
 [Service]
-# The original agent unit accidentally cleared all Linux capabilities.
-# This restores the capabilities sudo needs, while the Go process still
-# runs as an unprivileged system user with no ambient capabilities.
+# Older agent unit accidentally blocked sudo through capability and namespace
+# hardening. Keep the daemon unprivileged; restrict root access via the
+# root-owned helper and its fixed sudoers allowlist.
 CapabilityBoundingSet=~
-# Root helper needs writable Nginx config and sudo runtime state.
-ReadWritePaths=/opt/nginx /run
-# Validate helper operation in exactly the same sandbox as the agent.
+NoNewPrivileges=no
+ProtectSystem=no
+ProtectHome=no
+PrivateTmp=no
+PrivateDevices=no
+ProtectKernelTunables=no
+ProtectKernelModules=no
+ProtectControlGroups=no
+RestrictAddressFamilies=
+LockPersonality=no
+ReadWritePaths=
+# Fail repair if root helper still cannot run in the real agent service.
 ExecStartPost=/usr/bin/sudo -n /usr/local/libexec/node-manager-helper service.status
 UNIT
 chmod 0644 "$TMP"
