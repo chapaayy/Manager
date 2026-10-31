@@ -1,5 +1,6 @@
 """Node-local Certbot TLS, fingerprint-only sync via Agent; no PEM crosses Manager."""
 import threading
+import sqlite3
 import time
 
 
@@ -146,7 +147,7 @@ def queue_initial_check(node_id: str) -> bool:
                 return False
         agent_transport.enqueue(node_id,"cert.status",ttl=240)
         return True
-    except (agent_transport.AgentError,LookupError):
+    except (agent_transport.AgentError,LookupError,sqlite3.OperationalError):
         return False
 
 
