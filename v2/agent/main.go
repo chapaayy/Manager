@@ -69,6 +69,13 @@ func (a *Agent) send(ctx context.Context, method, route string, request interfac
 
 // Read lightweight kernel counters. These are cumulative, not Mbps samples.
 // Use the default-route interface to avoid counting docker/veth traffic twice.
+var lastNetSample struct {
+    iface string
+    rx uint64
+    tx uint64
+    when time.Time
+}
+
 func addNetworkCounters(status map[string]interface{}) {
     iface:=""
     if raw,err:=os.ReadFile("/proc/net/route");err==nil{
@@ -88,6 +95,20 @@ func addNetworkCounters(status map[string]interface{}) {
                 nums:=strings.Fields(parts[1])
                 if len(nums)>=16 {
                     status["net_interface"]=iface
+                    rx,rxErr:=strconv.ParseUint(nums[0],10,64)
+                    tx,txErr:=strconv.ParseUint(nums[8],10,64)
+                    now:=time.Now()
+                    if rxErr==nil && txErr==nil {
+                        elapsed:=now.Sub(lastNetSample.when).Seconds()
+                        if lastNetSample.iface==iface && elapsed>1 && rx>=lastNetSample.rx && tx>=lastNetSample.tx {
+                            status["net_rx_mbps"]=float64(rx-lastNetSample.rx)*8/elapsed/1000000
+                            status["net_tx_mbps"]=float64(tx-lastNetSample.tx)*8/elapsed/1000000
+                        }
+                        lastNetSample.iface=iface
+                        lastNetSample.rx=rx
+                        lastNetSample.tx=tx
+                        lastNetSample.when=now
+                    }
                     for key,index:=range map[string]int{
                         "net_rx_bytes":0,"net_rx_dropped":3,
                         "net_tx_bytes":8,"net_tx_dropped":11}{
