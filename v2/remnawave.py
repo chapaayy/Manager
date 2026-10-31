@@ -101,8 +101,15 @@ def _panel_error_details(raw: bytes) -> str:
 def request(method: str, path: str, body: dict | None = None):
     permitted = (method == "GET" and body is None and (
         path in ("/api/config-profiles", "/api/keygen", "/api/nodes") or
-        re.fullmatch(r"/api/config-profiles/[a-fA-F0-9-]{36}/inbounds", path)
+        re.fullmatch(r"/api/config-profiles/[a-fA-F0-9-]{36}(?:/inbounds)?", path)
     )) or (method == "POST" and path in ("/api/config-profiles", "/api/nodes") and isinstance(body, dict))
+    permitted = permitted or (method == "PATCH" and path == "/api/config-profiles"
+        and isinstance(body,dict) and set(body)=={"uuid","config"}
+        and isinstance(body.get("config"),dict)
+        and isinstance(body.get("uuid"),str)
+        and re.fullmatch(r"[a-fA-F0-9-]{36}",body["uuid"]) is not None)
+    permitted = permitted or (method == "POST" and body == {"forceRestart":True}
+        and re.fullmatch(r"/api/nodes/[a-fA-F0-9-]{36}/actions/restart", path) is not None)
     if not permitted:
         raise PanelError("Запрещённый API-маршрут")
     panel = storage.get_panel()
@@ -156,6 +163,8 @@ def request(method: str, path: str, body: dict | None = None):
         body = response.read(300001)
         if len(body) > 300000:
             raise PanelError("Слишком большой ответ API")
+        if not body and response.status == 204 and path.endswith("/actions/restart"):
+            return {"response":{}}
         payload = json.loads(body)
         if not isinstance(payload, dict):
             raise PanelError("Неожиданный формат JSON")
@@ -282,3 +291,24 @@ def node_health(node_uuid: str) -> dict:
     return {"connected": connected is True,
             "xray_running": bool(version) or (isinstance(uptime,(int,float)) and uptime>0),
             "xray_version": str(version or "")[:50]}
+
+def detailed_profile(uuid: str) -> dict:
+    """Full Xray profile, restricted to an already-known UUID."""
+    if not re.fullmatch(r"[a-fA-F0-9-]{36}",uuid):
+        raise PanelError("Неверный UUID Xray-профиля")
+    data=request("GET",f"/api/config-profiles/{uuid}").get("response")
+    if not isinstance(data,dict) or not isinstance(data.get("config"),dict):
+        raise PanelError("Remnawave не вернула полный Xray-профиль")
+    return data
+
+
+def replace_profile_config(uuid: str, config: dict):
+    if not isinstance(config,dict) or not isinstance(config.get("inbounds"),list):
+        raise PanelError("Нельзя отправить неполный Xray-конфиг")
+    return request("PATCH","/api/config-profiles",{"uuid":uuid,"config":config})
+
+
+def restart_node(uuid: str):
+    if not re.fullmatch(r"[a-fA-F0-9-]{36}",uuid):
+        raise PanelError("Неверный UUID ноды")
+    return request("POST",f"/api/nodes/{uuid}/actions/restart",{"forceRestart":True})
