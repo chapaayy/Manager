@@ -96,6 +96,7 @@ def startup():
     storage.init_db()
     bundled.seed_defaults()
     storage.mark_interrupted_jobs()
+    storage.remove_one_time_test_rus10()
 
 
 @app.middleware("http")
@@ -398,6 +399,16 @@ def create_node(body: NodeData, _=Depends(write_access)):
             country=endpoint.country, role=body.role)
     except (ValueError, sqlite3.IntegrityError) as e:
         _fail(e)
+
+
+@app.delete("/api/nodes/{node_id}")
+def delete_node_draft(node_id: str, _=Depends(write_access)):
+    try:
+        return storage.delete_unused_draft(node_id)
+    except (ValueError, LookupError) as e:
+        _fail(e)
+    except sqlite3.IntegrityError:
+        raise HTTPException(409,"Черновик используется другой записью. Удаление отменено.") from None
 
 
 @app.post("/api/bridges")
