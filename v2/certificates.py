@@ -25,7 +25,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.x509.oid import ExtensionOID
 import paramiko
 
-from . import remnawave, storage, vps_install
+from . import panel_delivery, remnawave, storage, vps_install
 
 PANEL_ROOT = "/var/lib/remnawave/configs/xray/ssl/XPPN"
 CODE = re.compile(r"[A-Z][A-Z0-9_-]{1,19}\Z")
@@ -53,8 +53,12 @@ def shared_dir() -> Path:
 def enabled() -> bool:
     try:
         with storage.connect() as db:
-            row = db.execute("SELECT enabled FROM certificate_settings WHERE id=1").fetchone()
-        return bool(row and row["enabled"]) and shared_dir().is_dir()
+            row = db.execute("SELECT enabled,mode FROM certificate_settings WHERE id=1").fetchone()
+        if not row or not row["enabled"]:
+            return False
+        if row["mode"]=="remote":
+            return panel_delivery.available()
+        return shared_dir().is_dir()
     except (CertError, OSError):
         return False
 
@@ -63,7 +67,12 @@ def configure(enabled_value: bool, confirmed_panel_mount: bool = False) -> dict:
     if enabled_value and not confirmed_panel_mount:
         raise CertError("Подтверди, что том xppn-v2-panel-certs подключён к Remnawave Panel")
     if enabled_value:
-        shared_dir()
+        settings=panel_delivery._settings()
+        if settings.get("mode")=="remote":
+            if not settings.get("remote_key_enc"):
+                raise CertError("Не настроен удалённый приёмник Remnawave")
+        else:
+            shared_dir()
     else:
         with storage.connect() as db:
             if db.execute("SELECT 1 FROM node_certificates WHERE profile_mode='files' LIMIT 1").fetchone():
@@ -127,6 +136,9 @@ def publish(code: str, fullchain: bytes, key: bytes, domain: str) -> dict:
     """Atomic versioned publication. Previous active symlink survives failed writes."""
     info = _validate(fullchain, key, domain)
     with LOCK:
+        if panel_delivery.available():
+            panel_delivery.deliver(code,domain,fullchain,key)
+            return info
         root = shared_dir()
         folder = root / code
         if folder.is_symlink():
@@ -352,7 +364,7 @@ def _profile_candidate(node_id: str) -> tuple[dict, dict, dict, str]:
     now = int(datetime.now(timezone.utc).timestamp())
     if not row.get("last_synced") or row["expires_at"] <= now+86400:
         raise CertError("Сначала синхронизируй действующий TLS-сертификат")
-    if not (shared_dir()/node["code"]/"current"/"fullchain.pem").is_file():
+    if not panel_delivery.available() and not (shared_dir()/node["code"]/"current"/"fullchain.pem").is_file():
         raise CertError("Сертификат отсутствует в общем томе")
     # Reject profiles that might be shared or have been edited beyond our known identity.
     profile = remnawave.detailed_profile(job["profile_uuid"])
@@ -503,7 +515,10 @@ def status() -> dict:
                      "last_applied":r["last_applied"] or 0,
                      "restart_pending":bool(r["profile_mode"]=="files" and r["fingerprint"]!=r["applied_fingerprint"]),
                      "panel_paths":paths(r["code"])})
+    settings = panel_delivery._settings()
     return {"enabled": enabled(), "panel_dir":PANEL_ROOT,
+            "mode":settings.get("mode") or "local",
+            "remote_panel_ip":settings.get("remote_ip") or "",
             "nodes":rows, "automatic_refresh_interval_hours":6}
 
 
