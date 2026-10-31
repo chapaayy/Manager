@@ -55,4 +55,5 @@ def test_baseline_diagnostics_are_allowlisted_and_read_only():
     assert 'if action=="baseline.status":return baseline_status()' in helper
     assert '"read_only":True' in helper
     assert '"net_rx_bytes"' in agent and '"net_tx_bytes"' in agent
+    assert '"net_rx_mbps"' in agent and '"net_tx_mbps"' in agent
     assert '"tcp_retrans_segs"' in agent
