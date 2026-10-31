@@ -151,7 +151,11 @@ function renderNodes(){
     esc(n.code)+' · '+esc(n.name)+'</strong><p>'+esc(n.domain)+' · '+esc(labels[n.role])+
     '</p></div><span class="tiny-chip '+(n.status==="registered"||n.status==="ready"?"success":"warning")+'">'+
     esc(n.status==="planned"?"Черновик":n.status)+'</span>'+
-    (n.status!=="planned"?'<button type="button" class="btn subtle" data-install-node="'+esc(n.id)+'">Статус</button>':"")+'</div>'
+    (n.status==="planned" && (n.role==="regular"||n.role==="exit")?
+       '<button type="button" class="btn subtle" data-draft-install="'+esc(n.id)+'">Установить VPS</button>':
+       n.status!=="planned"?
+       '<button type="button" class="btn subtle" data-install-node="'+esc(n.id)+'">Статус</button>':"")+
+    '</div>'
   ).join(""):'<div class="empty-state"><h3>Незадействованных серверов нет</h3><p>Новые VPS появятся здесь, пока ты не включишь их в мост.</p></div>';
 }
 function openModal(title,kicker,content,submit){
@@ -167,17 +171,6 @@ function openModal(title,kicker,content,submit){
     catch(err){message(err.message,true)}
     finally{if(b)b.disabled=false}
   });
-}
-function nodeModal(){
-  openModal("Добавить сервер","ИНВЕНТАРИЗАЦИЯ / ЧЕРНОВИК",
-    '<p class="muted small">Это только карточка для будущего сценария установки. SSH и Docker пока не запускаются.</p>'+
-    '<form><label>Название<input name="name" required maxlength="80" placeholder="Германия · DE-01"></label>'+
-    '<label>Код сервера<input name="code" required maxlength="20" placeholder="DE1"></label>'+
-    '<label>Страна<select name="country"><option value="RU">🇷🇺 Россия</option><option value="DE" selected>🇩🇪 Германия</option><option value="NL">🇳🇱 Нидерланды</option><option value="PL">🇵🇱 Польша</option><option value="LV">🇱🇻 Латвия</option><option value="US">🇺🇸 США</option></select></label>'+
-    '<label>Домен<input name="domain" required placeholder="de1.example.com"></label>'+
-    '<label>Назначение<select name="role"><option value="regular">Обычная нода</option><option value="entry">Вход моста</option><option value="exit">Выходная нода</option></select></label>'+
-    '<div class="form-buttons"><button class="btn primary" type="submit">Сохранить запись</button></div></form>',
-    async fd=>{await api("/nodes","POST",Object.fromEntries(fd));message("Нода добавлена в схему. На VPS ничего не установлено.")});
 }
 function bridgeModal(){
   const entries=state.nodes.filter(n=>n.role==="entry"&&!state.bridges.some(b=>b.entry_id===n.id));
@@ -505,7 +498,7 @@ function bindEvents(){
   $("update-check").onclick=checkUpdates;
   $("update-start").onclick=startUpdate;
   updatePolling=setInterval(()=>{if(currentPage==="updates")refreshUpdateStatus()},4500);
-  $("new-node").onclick=nodeModal;$("new-bridge").onclick=bridgeModal;
+  $("new-bridge").onclick=bridgeModal;
   $("bridge-list").addEventListener("click",e=>{
     const button=e.target.closest("[data-action]");
     if(!button)return;
