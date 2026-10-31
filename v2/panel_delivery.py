@@ -198,6 +198,8 @@ with os.fdopen(fd,"w") as f: f.write("\n".join(updated+[authorized])+"\n")
                       remote_ip=?,remote_port=?,remote_fingerprint=?,remote_key_enc=?,
                       updated_at=strftime('%s','now') WHERE id=1""",
                    (ip,port,fingerprint,storage.encrypt(private_pem)))
+        # A new receiving host has no guarantee of the files staged on the prior host.
+        db.execute("UPDATE node_certificates SET fingerprint='',last_synced=0,last_error=''")
         storage.event(db,"cert.panel.enroll","panel","Pinned restricted SSH receiver configured")
     return {"enabled":False,"mode":"remote","receiver_installed":True,"panel_ip":ip,"panel_port":port,
             "panel_mount_path":"/var/lib/remnawave/configs/xray/ssl/XPPN"}
