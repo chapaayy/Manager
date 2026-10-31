@@ -15,6 +15,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+      - name: Compile and vet the outbound node agent
+        run: |
+          gofmt -w v2/agent/main.go
+          go build -trimpath -o /tmp/node-manager-agent v2/agent/main.go
+          go vet v2/agent/main.go
+          bash -n v2/agent/install-agent.sh
       - name: Install only v2 dependencies
         run: python -m pip install -r v2/requirements.txt pytest httpx
       - name: Compile and verify the isolated v2 app
