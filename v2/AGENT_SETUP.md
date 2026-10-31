@@ -16,9 +16,12 @@ directory or other services are installed on the Panel VPS.
   heartbeat ~15 seconds. It is not yet WebSocket or mTLS.
 - Go agent is precompiled for amd64 and arm64 in the Manager Docker image;
   node VPS does not require a Go compiler or toolchain.
-- Go daemon runs as unprivileged nodemanager under systemd with isolation.
-  Privileged helper is root-owned and has tightly allowlisted operations
-  through sudoers. No arbitrary shell or arbitrary filesystem access.
+- Go daemon runs as a dedicated unprivileged nodemanager user. The
+  privileged helper is root-owned, callable only through a tightly scoped
+  sudoers allowlist, and validates each operation. No arbitrary shell action
+  is exposed through Manager. The initial systemd namespace/capability
+  sandbox was incompatible with sudo and has been removed; retaining a
+  locked-down helper requires a separate root service/socket architecture.
 - Jobs have a UUID, expiration and status. Timed-out leased jobs are NOT
   automatically retried, preventing duplicate side effects.
 - Agent secret is stored in /etc/node-manager/agent.env as root:nodemanager
@@ -79,3 +82,31 @@ This release is the foundation, not yet the entire planned agent platform:
 
 Do not deploy simultaneously to the whole fleet. Verify on one test VPS
 with the actual manager hostname and Remnawave API before bulk migration.
+
+
+## One-time repair of earlier agent helper permissions
+
+If Сервер works but all Docker, log, Certbot, Nginx and service actions return
+"agent helper rejected operation", an earlier unit may have disabled setuid
+sudo with an empty CapabilityBoundingSet, namespace hardening and implicit
+NoNewPrivileges. Updating the central Manager **does not rewrite the existing
+VPS's systemd unit**.
+
+1. Upgrade the Manager through the existing Updates page.
+2. Open Агенты VPS and choose Исправить helper for the affected online agent.
+3. Confirm the one-time initial installation repair with the root SSH password.
+4. Manager verifies the saved SSH host fingerprint, installs a reversible,
+   root-owned systemd drop-in and restarts ONLY node-manager-agent.service.
+5. The drop-in explicitly resets incompatible restrictions and runs a
+   sudo helper smoke test as part of systemd ExecStartPost.
+6. Press Docker or Службы again. There should be no new SSH requests.
+
+Repair does not rotate the agent token, touch the Remnawave Node container or
+change Certbot/Xray settings. On a failed restart the previous drop-in is
+restored. Keep the out-of-band SSH service for emergency recovery only.
+
+**Security trade-off:** the helper now relies on the unprivileged Unix user,
+root-owned Python helper and strict sudoers allowlist rather than systemd
+namespace hardening. A future release should replace sudo with a root-owned
+Unix socket service using peer credential verification so namespace hardening
+can be enabled without breaking privilege boundaries.
