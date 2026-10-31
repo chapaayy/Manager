@@ -116,6 +116,19 @@ def init_db():
             created_at INTEGER NOT NULL
         );
         CREATE INDEX IF NOT EXISTS idx_plans_bridge ON plans(bridge_id,created_at DESC);
+        CREATE TABLE IF NOT EXISTS node_installations (
+            node_id TEXT PRIMARY KEY REFERENCES nodes(id) ON DELETE CASCADE,
+            ip TEXT NOT NULL,
+            port INTEGER NOT NULL,
+            ssh_fingerprint TEXT NOT NULL,
+            stage TEXT NOT NULL CHECK(stage IN
+               ('queued','installing','registered','ready','failed','interrupted')),
+            note TEXT NOT NULL DEFAULT '',
+            remote_uuid TEXT NOT NULL DEFAULT '',
+            profile_uuid TEXT NOT NULL DEFAULT '',
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
         CREATE TABLE IF NOT EXISTS library_configs (
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
@@ -238,6 +251,58 @@ def get_node(node_id: str) -> dict:
 def list_nodes() -> list[dict]:
     with connect() as c:
         return [dict(row) for row in c.execute("SELECT * FROM nodes ORDER BY role,code").fetchall()]
+
+
+def create_install_job(node_id: str, ip: str, port: int, ssh_fingerprint: str) -> dict:
+    with transaction() as c:
+        now = int(time.time())
+        c.execute(
+            """INSERT INTO node_installations
+                (node_id,ip,port,ssh_fingerprint,stage,note,created_at,updated_at)
+               VALUES(?,?,?,?,'queued','Ожидание установки',?,?)""",
+            (node_id,ip,port,ssh_fingerprint,now,now))
+        c.execute("UPDATE nodes SET status='queued' WHERE id=?",(node_id,))
+        event(c,"node.install.queued",node_id,"Approved clean VPS setup queued")
+    return get_install_job(node_id)
+
+
+def set_install_status(node_id: str, stage: str, note: str, *,
+                       remote_uuid: str = "", profile_uuid: str = ""):
+    if stage not in {"queued","installing","registered","ready","failed","interrupted"}:
+        raise ValueError("Неверное состояние установки")
+    with transaction() as c:
+        changed = c.execute(
+            """UPDATE node_installations
+               SET stage=?, note=?, updated_at=?,
+                   remote_uuid=CASE WHEN ?<>'' THEN ? ELSE remote_uuid END,
+                   profile_uuid=CASE WHEN ?<>'' THEN ? ELSE profile_uuid END
+               WHERE node_id=?""",
+            (stage,note[:350],int(time.time()),remote_uuid,remote_uuid,
+             profile_uuid,profile_uuid,node_id))
+        if changed.rowcount!=1:
+            raise LookupError("Установка ноды не найдена")
+        c.execute("UPDATE nodes SET status=? WHERE id=?",(stage,node_id))
+        event(c,"node.install."+stage,node_id,note[:180])
+
+
+def get_install_job(node_id: str) -> dict:
+    with connect() as c:
+        row = c.execute("SELECT * FROM node_installations WHERE node_id=?",(node_id,)).fetchone()
+    if not row:
+        raise LookupError("Установка не найдена")
+    return dict(row)
+
+
+def mark_interrupted_jobs():
+    """The SSH password is kept only in worker memory; a restart cannot resume."""
+    with transaction() as c:
+        c.execute("""UPDATE node_installations
+                  SET stage='interrupted',
+                    note='Менеджер перезапущен во время установки. Проверь VPS вручную перед повтором.',
+                    updated_at=?
+                  WHERE stage IN ('installing','queued')""",(int(time.time()),))
+        c.execute("""UPDATE nodes SET status='interrupted'
+                    WHERE id IN (SELECT node_id FROM node_installations WHERE stage='interrupted')""")
 
 
 def create_bridge(entry_id: str, name: str) -> dict:
