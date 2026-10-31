@@ -55,7 +55,7 @@ def test_remnawave_requests_both_headers_without_revealing_values(panel_db,monke
     class Connection:
         def __init__(self,hostname,ip):
             assert hostname=="panel.guessway.com"
-        def request(self,method,path,headers):
+        def request(self,method,path,headers,body=None):
             calls.append((method,path,headers))
         def getresponse(self):
             return type("Resp",(),{"status":200,"read":lambda self,n:b'{"response":{}}'})()
@@ -97,7 +97,7 @@ def test_no_caddy_key_no_extra_header(panel_db, monkeypatch):
     ])
     class Connection:
         def __init__(self,*args):pass
-        def request(self,method,path,headers:dict):
+        def request(self,method,path,headers:dict,body=None):
             captured.update(headers)
         def getresponse(self):
             return type("Resp",(),{"status":200,"read":lambda self,n:b'{"response":{}}'})()
