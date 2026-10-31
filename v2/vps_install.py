@@ -345,6 +345,22 @@ def deploy(node_id: str, ip: str, port: int, password: str,
         storage.set_install_status(node_id,"registered",
             "Нода зарегистрирована, ожидается подтверждение её связи с Remnawave",
             remote_uuid=remote_id,profile_uuid=profile["uuid"])
+        # Do not mistake POST /api/nodes success for a working Xray instance.
+        # Only mark ready when panel telemetry explicitly reports connectivity AND Xray.
+        deadline = time.monotonic() + 45
+        while time.monotonic() < deadline:
+            try:
+                health = remnawave.node_health(remote_id)
+                if health["connected"] and health["xray_running"]:
+                    storage.set_install_status(
+                        node_id,"ready",
+                        "Remnawave подтвердила подключение и работу Xray ("+
+                        (health["xray_version"] or "активен")+
+                        "). Для клиентского доступа настрой Hosts и Internal Squads.")
+                    break
+            except remnawave.PanelError:
+                pass
+            time.sleep(3)
     except Exception as exc:
         # Never put SSH password, API token, PEM keys or SECRET_KEY in DB/logs.
         # Error messages from remote commands are intentionally reduced to exception class.
