@@ -118,35 +118,22 @@ def test_remnawave_node_health_requires_actual_xray_telemetry(monkeypatch):
 
 
 
-def test_remnawave_install_preview_never_promises_node_local_keyfile():
-    """The preview mirrors the actual Remnawave API payload's certificate shape."""
+def test_preview_matches_real_node_local_profile():
     from v2.vps_install import preview_plan
     data=preview_plan(Endpoint("RUS10","rus10.gowayot.com","RU"))
     cert=data["xray"]["inbounds"][0]["streamSettings"]["tlsSettings"]["certificates"][0]
-    assert "keyFile" not in cert and "certificateFile" not in cert
-    assert "key" in cert and "certificate" in cert
-    assert "PRIVATE KEY: issued by Certbot" in str(cert["key"])
-    assert "-----BEGIN PRIVATE KEY-----" not in str(data)
-    assert data["tls_profile_mode"]=="inline_pem_required_by_remnawave_panel_api"
-    assert "Panel backend" in data["note"]
-    assert "Remnawave" in data["note"]
+    assert cert=={"keyFile":"/opt/nginx/certs/rus10.gowayot.com_privkey.key",
+                  "certificateFile":"/opt/nginx/certs/rus10.gowayot.com_fullchain.pem"}
+    assert data["tls_profile_mode"]=="node_local_paths"
+    assert "панел" in data["note"].lower()
 
 
-def test_only_node_local_certfile_paths_are_blocked_in_remnawave_api():
-    from v2.remnawave import guard_node_only_tls_paths, PanelError
-    import pytest
-    def config(certificate):
-        return {"inbounds":[{"streamSettings":{"tlsSettings":{
-            "certificates":[certificate]}}}]}
-    for key in ("keyFile","certificateFile"):
-        with pytest.raises(PanelError,match="Панель читает"):
-            guard_node_only_tls_paths(config({
-                key:"/opt/nginx/certs/rus10.gowayot.com_privkey.key"}))
-        with pytest.raises(PanelError,match="Панель читает"):
-            guard_node_only_tls_paths(config({
-                key:"/etc/letsencrypt/live/rus10.gowayot.com/privkey.pem"}))
-    # The official Panel-mounted location is not arbitrarily rejected.
+def test_profile_api_guard_allows_node_paths():
+    from v2.remnawave import guard_node_only_tls_paths,PanelError
+    def config(cert):
+        return {"inbounds":[{"streamSettings":{"tlsSettings":{"certificates":[cert]}}}]}
     guard_node_only_tls_paths(config({
-        "keyFile":"/var/lib/remnawave/configs/xray/ssl/privkey.key",
-        "certificateFile":"/var/lib/remnawave/configs/xray/ssl/fullchain.pem"}))
-    guard_node_only_tls_paths(config({"key":["PRIVATE"],"certificate":["CERT"]}))
+        "keyFile":"/opt/nginx/certs/rus10.gowayot.com_privkey.key",
+        "certificateFile":"/opt/nginx/certs/rus10.gowayot.com_fullchain.pem"}))
+    with pytest.raises(PanelError):
+        guard_node_only_tls_paths(config({"keyFile":"/tmp/other.key"}))
