@@ -98,6 +98,38 @@ def _panel_error_details(raw: bytes) -> str:
     return (" — " + "; ".join(pieces))[:350] if pieces else ""
 
 
+def guard_node_only_tls_paths(config: dict) -> None:
+    """Reject node-only paths in a Panel-resolved Remnawave Config Profile.
+
+    Per https://docs.rw/install/remnawave-node/, the backend reads keyFile and
+    certificateFile before forwarding Xray config to the Node. A volume on the
+    Node does not make its local files visible to Remnawave Panel.
+    """
+    if not isinstance(config,dict):
+        raise PanelError("Неверный Xray Config Profile")
+    for inbound in config.get("inbounds",[]):
+        if not isinstance(inbound,dict):
+            continue
+        tls=inbound.get("streamSettings",{}).get("tlsSettings",{})
+        if not isinstance(tls,dict):
+            continue
+        for certificate in tls.get("certificates",[]):
+            if not isinstance(certificate,dict):
+                continue
+            for field in ("keyFile","certificateFile"):
+                path=certificate.get(field)
+                if isinstance(path,str) and (
+                    path.startswith("/opt/nginx/certs/") or
+                    path.startswith("/etc/letsencrypt/live/")):
+                    raise PanelError(
+                        "Нельзя использовать пути сертификатов VPS ноды в Xray "
+                        "Config Profile Remnawave. Панель читает keyFile и "
+                        "certificateFile на своём сервере; такая настройка "
+                        "может отключить TLS. Используй поддерживаемую "
+                        "синхронизацию сертификата через API."
+                    )
+
+
 def request(method: str, path: str, body: dict | None = None):
     permitted = (method == "GET" and body is None and (
         path in ("/api/config-profiles", "/api/keygen", "/api/nodes") or
@@ -114,6 +146,8 @@ def request(method: str, path: str, body: dict | None = None):
         re.fullmatch(r"/api/(?:nodes|config-profiles)/[a-fA-F0-9-]{36}",path) is not None)
     if not permitted:
         raise PanelError("Запрещённый API-маршрут")
+    if body is not None and method in ("POST","PATCH") and path=="/api/config-profiles":
+        guard_node_only_tls_paths(body.get("config",{}))
     panel = storage.get_panel()
     token = storage.get_panel_token().strip()
     caddy_key = storage.get_caddy_api_key().strip()
