@@ -150,3 +150,28 @@ def test_saved_library_config_encrypted_and_preset_files_are_shared(client):
     # Malformed JSON is never accepted as Xray.
     invalid=client.post("/api/configs",json={"name":"bad","kind":"xray","content":"{not json}"})
     assert invalid.status_code==422
+
+
+
+def test_first_vps_preview_is_resolved_but_read_only(client):
+    response=client.post("/api/vps/preview",json={
+        "code":"de1","domain":"de1.gowayot.com","country":"DE"})
+    assert response.status_code==200,response.text
+    plan=response.json()
+    assert plan["xray"]["inbounds"][0]["tag"]=="DE1_VLESS_TLS_IN"
+    assert plan["xray"]["inbounds"][0]["settings"]["fallbacks"][0]["dest"]=="127.0.0.1:8080"
+    assert "de1.gowayot.com" in plan["nginx"]
+    assert any(x["key"]=="source.domain" for x in plan["variables"])
+    assert storage.list_nodes()==[]
+    assert "SECRET_KEY" not in json.dumps(plan)
+
+
+def test_first_vps_install_requires_explicit_clean_confirmation(client):
+    response=client.post("/api/vps/install",json={
+        "code":"DE1","country":"DE","name":"Germany DE1",
+        "domain":"de1.gowayot.com","role":"regular",
+        "ip":"1.1.1.1","port":22,"password":"example-ssh-password",
+        "fingerprint":"SHA256:"+("a"*43),"confirm_clean":False,
+        "panel_ip":"1.1.1.1"})
+    assert response.status_code==422
+    assert storage.list_nodes()==[]
