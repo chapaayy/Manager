@@ -18,6 +18,7 @@ import secrets
 import socket
 import stat
 import threading
+import time
 
 from cryptography import x509
 from cryptography.hazmat.primitives import serialization
@@ -349,3 +350,24 @@ def background_cycle():
                 db.execute("UPDATE node_certificates SET last_error=?,updated_at=strftime('%s','now') WHERE node_id=?",
                            ("Не удалось обновить сертификат. Проверь SSH, доступность VPS и монтирование.",node["id"]))
                 storage.event(db,"cert.sync.error",node["id"],"Certificate sync failed")
+
+
+_BACKGROUND_STARTED = False
+
+
+def start_background():
+    """Six-hour best-effort polling. Nothing is touched unless admin enabled sync."""
+    global _BACKGROUND_STARTED
+    with LOCK:
+        if _BACKGROUND_STARTED:
+            return
+        _BACKGROUND_STARTED = True
+    def worker():
+        time.sleep(120)
+        while True:
+            try:
+                background_cycle()
+            except Exception:
+                pass
+            time.sleep(6 * 3600)
+    threading.Thread(target=worker, name="xppn-certificate-sync", daemon=True).start()
