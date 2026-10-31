@@ -41,11 +41,11 @@ def validate_url(url: str) -> str:
     return f"https://{u.hostname.lower()}"
 
 
-def request(method: str, path: str):
-    permitted = (method == "GET" and (
-        path in ("/api/config-profiles", "/api/keygen") or
+def request(method: str, path: str, body: dict | None = None):
+    permitted = (method == "GET" and body is None and (
+        path in ("/api/config-profiles", "/api/keygen", "/api/nodes") or
         re.fullmatch(r"/api/config-profiles/[a-fA-F0-9-]{36}/inbounds", path)
-    ))
+    )) or (method == "POST" and path in ("/api/config-profiles", "/api/nodes") and isinstance(body, dict))
     if not permitted:
         raise PanelError("Запрещённый API-маршрут")
     panel = storage.get_panel()
@@ -72,7 +72,13 @@ def request(method: str, path: str):
         # Optional second factor issued by a Caddy Auth Portal in front of Remnawave.
         if caddy_key:
             headers["X-Api-Key"] = caddy_key
-        connection.request("GET", path, headers=headers)
+        encoded = None
+        if body is not None:
+            encoded = json.dumps(body, separators=(",", ":")).encode()
+            if len(encoded) > 180000:
+                raise PanelError("Конфигурация слишком большая")
+            headers["Content-Type"] = "application/json"
+        connection.request(method, path, body=encoded, headers=headers)
         response = connection.getresponse()
         if response.status == 401:
             raise PanelError(
@@ -140,3 +146,58 @@ def panel_status() -> dict:
         key_response.get("secretKey") or key_response.get("pubKey")
     )
     return {"connected": True, "config_profiles": profiles, "node_key_available": key_exists}
+
+
+
+def node_secret() -> str:
+    """The panel-issued base64 SECRET_KEY is never exposed in browser responses."""
+    response = request("GET", "/api/keygen").get("response")
+    if not isinstance(response, dict):
+        raise PanelError("API /api/keygen: неизвестный формат ответа")
+    secret = response.get("secretKey") or response.get("pubKey")
+    if not isinstance(secret, str) or not 16 <= len(secret) <= 32768:
+        raise PanelError("API /api/keygen не вернул подходящий ключ Remnawave Node")
+    if not re.fullmatch(r"[a-zA-Z0-9+/=_-]+", secret):
+        raise PanelError("Ключ Remnawave Node содержит недопустимые символы")
+    return secret
+
+
+def create_profile(name: str, xray_config: dict) -> dict:
+    """Create a dedicated profile, never rewrite a profile used by other VPS."""
+    if not 3 <= len(name) <= 70 or any(ord(c) < 32 for c in name):
+        raise PanelError("Некорректное название профиля")
+    response = request("POST", "/api/config-profiles", {"name": name, "config": xray_config})
+    data = response.get("response")
+    if not isinstance(data, dict) or not isinstance(data.get("uuid"), str):
+        raise PanelError("Remnawave не вернула UUID профиля после создания")
+    created = data["uuid"]
+    result = next((p for p in list_profiles() if p["uuid"] == created), None)
+    if not result:
+        raise PanelError("Профиль создан, но не найден при повторной проверке — проверь Remnawave")
+    return result
+
+
+def register_node(name: str, address: str, country: str,
+                  profile_uuid: str, inbound_uuids: list[str]) -> str:
+    if not 3 <= len(name) <= 30 or any(ord(c) < 32 for c in name):
+        raise PanelError("Имя ноды Remnawave должно содержать 3–30 символов")
+    if not re.fullmatch(r"[A-Z]{2}", country):
+        raise PanelError("Неверный код страны")
+    if not inbound_uuids or len(set(inbound_uuids)) != len(inbound_uuids):
+        raise PanelError("Нет подтверждённых inbound-ов для ноды")
+    rows = request("GET", "/api/nodes").get("response")
+    if not isinstance(rows, list):
+        raise PanelError("Неожиданный формат списка нод")
+    if any(isinstance(n,dict) and (n.get("name")==name or n.get("address")==address) for n in rows):
+        raise PanelError("Нода уже зарегистрирована в Remnawave — повторное создание отменено")
+    payload = {
+        "name": name, "address": address, "port": 2222, "countryCode": country,
+        "isTrafficTrackingActive": False, "consumptionMultiplier": 1,
+        "configProfile": {
+            "activeConfigProfileUuid": profile_uuid, "activeInbounds": inbound_uuids
+        }
+    }
+    created = request("POST", "/api/nodes", payload).get("response")
+    if not isinstance(created,dict) or not isinstance(created.get("uuid"),str):
+        raise PanelError("Remnawave не подтвердила создание ноды")
+    return created["uuid"]
