@@ -149,7 +149,9 @@ function renderNodes(){
   $("other-nodes").innerHTML=others.length?others.map(n=>
     '<div class="node-card"><span class="feature-icon">'+icon("server")+'</span><div><strong>'+
     esc(n.code)+' · '+esc(n.name)+'</strong><p>'+esc(n.domain)+' · '+esc(labels[n.role])+
-    '</p></div><span class="tiny-chip warning">Черновик</span></div>'
+    '</p></div><span class="tiny-chip '+(n.status==="registered"||n.status==="ready"?"success":"warning")+'">'+
+    esc(n.status==="planned"?"Черновик":n.status)+'</span>'+
+    (n.status!=="planned"?'<button type="button" class="btn subtle" data-install-node="'+esc(n.id)+'">Статус</button>':"")+'</div>'
   ).join(""):'<div class="empty-state"><h3>Незадействованных серверов нет</h3><p>Новые VPS появятся здесь, пока ты не включишь их в мост.</p></div>';
 }
 function openModal(title,kicker,content,submit){
@@ -406,44 +408,20 @@ async function savePanel(){
     await checkPanel();
   }catch(e){message(e.message,true)}
 }
-function showProfileInbounds(){
-  const selected=panelProfiles.find(x=>x.uuid===$("panel-profile-select").value);
-  const checked=(selected?.uuid===state.panel.config_profile_uuid?
-    state.panel.inbound_uuids:[]);
-  $("panel-inbounds").innerHTML=(selected?.inbounds||[]).map(i=>
-    '<label><input class="inbound-check" type="checkbox" value="'+esc(i.uuid)+'" '+
-    ((!checked.length||checked.includes(i.uuid))?"checked":"")+'>'+esc(i.tag||i.uuid)+'</label>'
-  ).join("")||'<p class="muted small">Inbound-ов в этом профиле нет.</p>';
-}
 async function checkPanel(){
-  $("panel-status").textContent="Проверяем API и доступные Config Profiles…";
+  $("panel-status").textContent="Проверяем Remnawave API…";
   try{
     const check=await api("/panel/check","POST");
     panelProfiles=check.config_profiles||[];
-    $("panel-profile-area").classList.remove("hidden");
-    $("panel-profile-select").innerHTML=panelProfiles.map(p=>
-      '<option value="'+esc(p.uuid)+'">'+esc(p.name||p.uuid)+'</option>').join("");
-    if(panelProfiles.some(p=>p.uuid===state.panel.config_profile_uuid))
-      $("panel-profile-select").value=state.panel.config_profile_uuid;
-    showProfileInbounds();
     $("panel-status").textContent="API доступен · "+panelProfiles.length+
-      " профилей · ключ ноды "+(check.node_key_available?"получен":"не найден");
+      " профилей · ключ ноды "+(check.node_key_available?"получен":"не найден")+
+      ". Выбор Xray-профиля выполняется при установке VPS.";
     $("panel-status").className="form-feedback success";
   }catch(e){
     $("panel-status").textContent=e.message;
     $("panel-status").className="form-feedback error";
     if(/HTTP (401|403|30[1278])/.test(e.message))$("panel-caddy-details").open=true;
   }
-}
-async function savePanelProfile(){
-  const inbounds=[...document.querySelectorAll(".inbound-check:checked")].map(x=>x.value);
-  if(!inbounds.length)return message("Выбери хотя бы один inbound.",true);
-  try{
-    state.panel=await api("/panel/profile","PUT",{
-      uuid:$("panel-profile-select").value,inbounds
-    });
-    message("Профиль сохранён для новых нод.");
-  }catch(e){message(e.message,true)}
 }
 
 function updateRender(data){
@@ -591,8 +569,6 @@ function bindEvents(){
   });
   $("panel-form").onsubmit=e=>{e.preventDefault();savePanel()};
   $("panel-check").onclick=checkPanel;
-  $("panel-profile-select").onchange=showProfileInbounds;
-  $("panel-profile-save").onclick=savePanelProfile;
   window.addEventListener("beforeunload",e=>{
     if(configDirty){e.preventDefault();e.returnValue=""}
   });
