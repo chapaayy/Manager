@@ -50,13 +50,25 @@ def shared_dir() -> Path:
 
 
 def enabled() -> bool:
-    if os.environ.get("XPPN_V2_FILE_CERTS_ENABLED") != "1":
-        return False
     try:
-        shared_dir()
-    except CertError:
+        with storage.connect() as db:
+            row = db.execute("SELECT enabled FROM certificate_settings WHERE id=1").fetchone()
+        return bool(row and row["enabled"]) and shared_dir().is_dir()
+    except (CertError, OSError):
         return False
-    return True
+
+
+def configure(enabled_value: bool, confirmed_panel_mount: bool = False) -> dict:
+    if enabled_value and not confirmed_panel_mount:
+        raise CertError("Подтверди, что том xppn-v2-panel-certs подключён к Remnawave Panel")
+    if enabled_value:
+        shared_dir()
+    with storage.transaction() as db:
+        db.execute("UPDATE certificate_settings SET enabled=?,updated_at=strftime('%s','now') WHERE id=1",
+                   (int(enabled_value),))
+        storage.event(db, "cert.settings", "panel",
+                      "Certificate sharing enabled" if enabled_value else "Certificate sharing disabled")
+    return status()
 
 
 def paths(code: str) -> dict:
