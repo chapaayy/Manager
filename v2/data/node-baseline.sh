@@ -61,7 +61,7 @@ install_ssh_f2b() {
   if command -v fail2ban-client >/dev/null; then
     say fail2ban-existing-not-modified; return
   fi
-  if ! timeout 110s apt-get install -y -qq fail2ban python3-systemd >/dev/null 2>&1; then
+  if ! NEEDRESTART_MODE=l apt-get -o DPkg::Lock::Timeout=30 install -y -qq fail2ban python3-systemd >/dev/null 2>&1; then
     say fail2ban-package-unavailable; return
   fi
   install -d -m 0755 /etc/fail2ban/jail.d
