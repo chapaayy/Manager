@@ -6,10 +6,10 @@
   <meta name="referrer" content="no-referrer">
   <meta name="theme-color" content="#09090b">
   <title>XPPN Manager 2.3 — рабочая область</title>
-  <link rel="stylesheet" href="/static/style.css?v=2.3.2">
-  <script src="/static/app.js?v=2.5.2" defer></script>
+  <link rel="stylesheet" href="/static/style.css?v=2.6.0">
+  <script src="/static/app.js?v=2.6.0" defer></script>
   <script src="/static/node-detail.js?v=1.0.0" defer></script>
-  <script src="/static/vps.js?v=2.3.1" defer></script>
+  <script src="/static/vps.js?v=2.6.0" defer></script>
 </head>
 <body>
   <div id="login-screen" class="auth-overlay">
@@ -102,6 +102,10 @@
           <div class="page-heading"><div><p class="eyebrow">БИБЛИОТЕКА</p><h1>Конфигурации</h1><p class="subheading">Xray, Nginx и Docker Compose. Выбирай файл, чтобы открыть отдельный редактор.</p></div>
             <button id="new-config" class="btn primary" type="button"><svg><use href="/static/icons.svg#i-plus"></use></svg>Создать конфиг</button>
           </div>
+          <div class="config-category-tabs" role="tablist" aria-label="Тип конфигураций">
+            <button class="config-category-tab active" type="button" role="tab" aria-selected="true" data-config-category="xray">Xray</button>
+            <button class="config-category-tab" type="button" role="tab" aria-selected="false" data-config-category="system">Серверные конфиги</button>
+          </div>
           <div class="library-toolbar"><label class="field-label" for="config-search">Поиск<input type="search" id="config-search" placeholder="Название или тип конфигурации"></label>
           <span class="muted small" id="config-count">0 файлов</span></div>
           <div id="config-files" class="library-grid"><div class="skeleton h90"></div></div>
@@ -191,6 +195,11 @@
                 <section class="panel preset-form-panel"><p class="eyebrow">РЕДАКТОР НАБОРА</p><h2 id="preset-edit-title">Новый пресет</h2>
               <form id="preset-form">
                 <label>Название<input id="preset-name" maxlength="100" placeholder="RU Bridge · стандарт" required></label>
+                <label>Назначение пресета<select id="preset-mode">
+                  <option value="direct">Обычная / выходная нода</option>
+                  <option value="bridge">Входной мост</option>
+                  <option value="custom">Только библиотека (без установки)</option>
+                </select></label>
                 <label>Описание<textarea id="preset-description" rows="3" maxlength="600" placeholder="Какие ноды используют этот набор"></textarea></label>
                 <p class="eyebrow">ФАЙЛЫ В НАБОРЕ</p>
                 <div id="preset-selects" class="preset-selects"></div>
@@ -207,8 +216,10 @@
       <form id="vps-form">
         <div class="two-fields"><label>Название сервера<input name="name" required maxlength="80" placeholder="Германия · DE1"></label>
           <label>Код ноды<input name="code" required maxlength="20" placeholder="DE1"></label></div>
+        <label>Пресет установки<select id="vps-preset" name="preset_id" required></select></label>
+        <p class="muted small" id="vps-preset-description">Выбранный пресет определяет Xray и серверные файлы новой VPS.</p>
         <div class="two-fields"><label>Страна<select name="country"><option value="RU">Россия</option><option value="DE" selected>Германия</option><option value="NL">Нидерланды</option><option value="PL">Польша</option><option value="LV">Латвия</option><option value="US">США</option></select></label>
-          <label>Тип<select name="role"><option value="regular">Обычная нода</option><option value="exit">Выходной сервер для моста</option></select></label></div>
+          <label>Назначение<select name="role"><option value="regular">Обычная нода</option><option value="exit">Выходной сервер для моста</option><option value="entry">Входной мост</option></select></label></div>
         <div class="two-fields"><label>Публичный IPv4 VPS<input name="ip" required placeholder="203.0.113.25"></label>
           <label>SSH-порт<input name="port" type="number" min="1" max="65535" value="22" required></label></div>
         <label>Домен VPS<input name="domain" required placeholder="de1.gowayot.com"></label>
