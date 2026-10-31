@@ -85,7 +85,7 @@ def test_resume_rejects_missing_service_or_wrong_domain(monkeypatch):
 def test_resume_cannot_repeat_create_profile_after_uncertain_creation(failed_job, monkeypatch):
     from v2 import remnawave
     monkeypatch.setattr(remnawave,"list_profiles",lambda:[{
-        "name":"XPPN RUS10 · RU · VLESS TLS","uuid":"someone-profile","inbounds":[]}])
+        "name":"XPPN RUS10 RU VLESS TLS","uuid":"someone-profile","inbounds":[]}])
     monkeypatch.setattr(remnawave,"create_profile",
                         lambda *a,**kw: (_ for _ in ()).throw(AssertionError("Duplicate")))
     with pytest.raises(ValueError,match="уже существует профиль"):
