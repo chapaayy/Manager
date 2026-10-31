@@ -22,22 +22,25 @@ def test_starter_bundle_contains_working_example_nginx_and_compose(db):
     with storage.connect() as c:
         configs=c.execute("SELECT name,kind,content_enc FROM library_configs").fetchall()
         presets=c.execute("SELECT id FROM presets").fetchall()
-    assert len(configs)==4
+    assert len(configs)==5
     assert {c["kind"] for c in configs}=={"xray","nginx","nginx_compose","node_compose"}
-    assert len(presets)==1
-    originals={c["kind"]:storage.decrypt(c["content_enc"]) for c in configs}
-    xray=json.loads(originals["xray"])
+    assert len(presets)==2
+    originals={c["name"]:storage.decrypt(c["content_enc"]) for c in configs}
+    by_kind={c["kind"]:storage.decrypt(c["content_enc"]) for c in configs}
+    xray=json.loads(originals["XPPN · Xray Bridge VLESS TLS"])
+    direct=json.loads(originals["XPPN · Xray Direct VLESS TLS"])
+    assert len(direct["inbounds"])==1
     assert xray["inbounds"][0]["tag"]=="{{source.code}}_{{exit.code}}_VLESS_TLS_IN"
     assert xray["inbounds"][1]["port"]==8443
-    assert "127.0.0.1:8080" in originals["nginx_compose"]
-    assert "acme-challenge" in originals["nginx"]
-    assert "remnawave/node:3.4.1" in originals["node_compose"]
+    assert "127.0.0.1:8080" in by_kind["nginx_compose"]
+    assert "acme-challenge" in by_kind["nginx"]
+    assert "remnawave/node:3.4.1" in by_kind["node_compose"]
     assert "SECRET_KEY" not in originals["node_compose"].split("environment:")[1].split("volumes:")[0]
     # User changes must never be reset.
     storage.encrypt("dummy")  # encryption configured
     bundled.seed_defaults()
     with storage.connect() as c:
-        assert c.execute("SELECT count(*) FROM library_configs").fetchone()[0]==4
+        assert c.execute("SELECT count(*) FROM library_configs").fetchone()[0]==5
 
 
 def test_rendered_node_tls_has_no_old_bridge_routes_or_plaintext_secrets():
