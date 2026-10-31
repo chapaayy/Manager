@@ -199,9 +199,11 @@ async function nodeLifecycleModal(id){
        offline?
        'Агент не на связи. Менеджер не может подтвердить, что VPS удалена или очищена. Удаление записи затрагивает только базу менеджера и ключ доступа агента, НЕ удаляет ноду/профиль из Remnawave и НЕ очищает VPS. Если удаление прервано, оставшиеся ресурсы тоже не проверены.':
        'Полная очистка удаляет Remnawave Node, Nginx, сертификат данного домена, правила установщика и наш агент. ОС, Docker, системный SSH и сама VPS у хостера остаются.';
+    const remoteReminder=offline&&data.remote_registered?
+       '<p class="muted small">В базе ещё сохранён UUID регистрации в Remnawave. Если нода всё ещё есть в Remnawave, сначала удали регистрацию через отдельное действие, иначе она может остаться без управления.</p>':'';
     openModal("Управление · "+data.code,"УДАЛЕНИЕ И АРХИВ",
       '<p class="muted small">Нода: <strong>'+esc(data.code)+'</strong> · '+esc(data.domain)+'</p>'+
-      '<p class="muted small">'+esc(warning)+'</p>'+description+
+      '<p class="muted small">'+esc(warning)+'</p>'+remoteReminder+description+
       '<form><label>Действие<select name="operation">'+options+'</select></label>'+
       '<label>Подтверждение: введи код '+esc(data.code)+
       '<input name="code" placeholder="'+esc(data.code)+'" required autocomplete="off"></label>'+
