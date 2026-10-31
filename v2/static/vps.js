@@ -77,9 +77,9 @@ async function installVps(){
       try{
         const result=await api("/vps/jobs/"+encodeURIComponent(job.node_id));
         document.getElementById("vps-progress-text").textContent=result.note;
-        const done=["registered","ready","failed","interrupted"].includes(result.stage);
+        const done=["ready","failed","interrupted"].includes(result.stage);
         document.getElementById("vps-progress-head").textContent=
-          result.stage==="registered"?"Нода зарегистрирована — проверяем соединение":
+          result.stage==="registered"?"Зарегистрирована, ожидаем связь с Xray":
           result.stage==="ready"?"Нода работает":
           result.stage==="failed"?"Установка завершилась ошибкой":
           result.stage==="interrupted"?"Установка прервана":"Установка · "+result.stage;
@@ -89,7 +89,7 @@ async function installVps(){
       }
     };
     await poll();
-    if(!vpsTimer&&document.getElementById("vps-progress-head").textContent.startsWith("Установка"))
+    if(!vpsTimer&&!["Нода работает","Установка завершилась ошибкой","Установка прервана"].includes(document.getElementById("vps-progress-head").textContent))
       vpsTimer=setInterval(poll,4000);
   }catch(e){message(e.message,true);updateVpsConsent()}
 }
