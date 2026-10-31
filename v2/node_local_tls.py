@@ -27,6 +27,8 @@ def agent_status(node_id,data):
     details=data.get("details")
     if not isinstance(fingerprint,str) or not re.fullmatch("[0-9a-f]{64}",fingerprint):
         raise LocalTLSError("Агент не подтвердил отпечаток сертификата")
+    if data.get("node_tls_mount_verified") is False:
+        raise LocalTLSError("Агент не подтвердил файловые сертификаты внутри Xray")
     if not isinstance(details,str) or len(details)>500 or "notAfter=" not in details:
         raise LocalTLSError("Агент не подтвердил срок действия сертификата")
     try:
@@ -79,7 +81,10 @@ def report(node_id,data):
     cert=certs[0]
     if cert!=paths(node["domain"]):
         if "key" in cert or "certificate" in cert:
-            raise LocalTLSError("Профиль содержит PEM: сначала выполни миграцию на файловые пути")
+            # A read-only cert.status must succeed so the operator can use
+            # this fresh authenticated agent report for the migration wizard.
+            return {"expires_at":expires,"fingerprint":fp,
+                    "updated":False,"mode":"migration_required"}
         raise LocalTLSError("Пути сертификатов в профиле отличаются от файлов ноды")
     with storage.connect() as db:
         previous=db.execute("SELECT fingerprint,last_checked FROM node_tls_sync WHERE node_id=?",
