@@ -60,19 +60,13 @@ ExecStartPost=/usr/bin/sudo -n /usr/local/libexec/node-manager-helper service.st
 Restart=always
 RestartSec=5
 WorkingDirectory=/
-ProtectSystem=strict
-# The root helper writes only validated /opt/nginx files; sudo needs /run.
-ReadWritePaths=/opt/nginx /run
-ProtectHome=true
-PrivateTmp=true
-PrivateDevices=true
-ProtectKernelTunables=true
-ProtectKernelModules=true
-ProtectControlGroups=true
-# Do not empty CapabilityBoundingSet: sudo must retain its setuid privileges.
+# Privilege boundary: unprivileged Go agent -> sudo allowlisted, root-owned
+# helper. Systemd namespace/seccomp hardening is deliberately NOT enabled here:
+# several directives imply NoNewPrivileges/nosuid and break sudo setuid.
+# Use a separate root socket service to reintroduce sandboxing later.
+NoNewPrivileges=no
 AmbientCapabilities=
-RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
-LockPersonality=true
+UMask=0077
 MemoryMax=120M
 [Install]
 WantedBy=multi-user.target
