@@ -143,11 +143,27 @@ async function renderAgents(){
         '<button class="btn subtle" data-agent-id="'+esc(n.id)+'" data-agent-action="cert.status">Certbot</button>'+
         '<button class="btn subtle" data-agent-id="'+esc(n.id)+'" data-agent-action="config.read">Nginx</button>'+
         '<button class="btn subtle" data-agent-id="'+esc(n.id)+'" data-agent-action="docker.restart">Рестарт ноды</button>'+
+        '<button class="btn subtle" data-agent-repair="'+esc(n.id)+'" title="Восстановление после ошибки sudo при первой установке">Исправить helper</button>'+
         '<button class="btn subtle" data-agent-revoke="'+esc(n.id)+'">Отозвать доступ</button>':
         (!n.installed||n.revoked||!n.last_seen)?'<button class="btn primary" data-agent-install="'+esc(n.id)+'">'+(n.revoked?"Повторная регистрация":n.installed?"Повторить первичную установку":"Установить агент (один раз SSH)")+'</button>':'')+
         '</div>';
     }).join("")||'<p class="muted">Серверов пока нет.</p>';
   }catch(e){target.textContent=e.message;target.className="form-feedback error";}
+}
+function agentRepairModal(id){
+  const node=state.nodes.find(n=>n.id===id);
+  if(!node)return;
+  openModal("Исправить helper: "+node.code,"ВОССТАНОВЛЕНИЕ ПЕРВИЧНОЙ УСТАНОВКИ",
+    '<p class="muted small">Исправляем системные ограничения первоначально установленного агента, из-за которых Docker, логи и Certbot показывают «agent helper rejected operation». Однократно используется SSH. Токен агента, Xray, Nginx и сертификаты не меняются; перезапустится только служба самого агента.</p>'+
+    '<form><label>SSH-пароль root<input name="password" type="password" required autocomplete="new-password"></label>'+
+    '<label class="check-row"><input name="confirm" type="checkbox" required> Подтверждаю исправление только службы агента на VPS</label>'+
+    '<div class="form-buttons"><button class="btn primary" type="submit">Исправить права агента</button></div></form>',
+    async fd=>{
+      await api("/agents/"+encodeURIComponent(id)+"/repair-helper","POST",{
+        password:fd.get("password"),confirm_ssh_migration:fd.get("confirm")==="on"});
+      message("Права helper исправлены. Проверь кнопки Docker и Службы.");
+      await renderAgents();
+    });
 }
 function agentBootstrapModal(id){
   const node=state.nodes.find(n=>n.id===id);
@@ -617,6 +633,8 @@ function bindEvents(){
   updatePolling=setInterval(()=>{if(currentPage==="updates")refreshUpdateStatus()},4500);
   $("agents-refresh").onclick=renderAgents;
   $("agents-list").addEventListener("click",e=>{
+    const repair=e.target.closest("[data-agent-repair]");
+    if(repair){agentRepairModal(repair.dataset.agentRepair);return;}
     const revoke=e.target.closest("[data-agent-revoke]");
     if(revoke){
       const id=revoke.dataset.agentRevoke;
