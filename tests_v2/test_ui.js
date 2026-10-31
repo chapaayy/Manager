@@ -20,7 +20,7 @@ for(const id of [
   assert(unique.has(id),"Required UI element: "+id);
 }
 assert.match(html,/\/static\/icons\.svg/);
-assert.match(html,/\/static\/app\.js\?v=2\.4\.1/);
+assert.match(html,/\/static\/app\.js\?v=2\.5\.0/);
 assert.match(css,/\.sidebar\.collapsed/);
 assert.match(css,/\.workspace\{flex:1;min-width:0;width:0/);
 assert.match(css,/prefers-reduced-motion/);
@@ -45,3 +45,6 @@ assert.match(js,/Уже удалена — убрать запись из мен
 assert.match(js,/value="full" disabled/,"Offline VPS cannot trigger agent-only cleanup");
 assert.match(js,/value="abandon"/,"An interrupted deletion has explicit local-only recovery");
 assert.match(js,/node-lifecycle-profile-option/,"Profile removal checkbox has contextual visibility");
+
+assert.match(js,/migrateNodeTLSModal/,"UI supports per-node TLS path migration");
+assert.match(js,/data-tls-migrate/,"TLS migration is visible only as an explicit action");
