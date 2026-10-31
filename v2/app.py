@@ -326,6 +326,22 @@ def update_panel_profile(body: PanelProfile, _=Depends(write_access)):
         raise HTTPException(422, str(e)) from None
 
 
+class VpsPreviewData(BaseModel):
+    code: str = Field(min_length=2,max_length=20)
+    domain: str = Field(min_length=4,max_length=253)
+    country: str = Field(pattern=r"^[A-Za-z]{2}$")
+
+
+@app.post("/api/vps/preview")
+def vps_preview(body: VpsPreviewData, _=Depends(write_access)):
+    try:
+        endpoint=Endpoint(body.code.upper().strip(),body.domain.lower().strip(),
+                          body.country.upper().strip())
+        return vps_install.preview_plan(endpoint)
+    except (TemplateError,ValueError) as e:
+        raise HTTPException(422,str(e)) from None
+
+
 @app.post("/api/vps/probe")
 def probe_vps(body: VpsProbeData, request: Request, _=Depends(write_access)):
     try:
