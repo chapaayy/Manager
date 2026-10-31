@@ -63,7 +63,7 @@ def test_no_ssh_passwords_or_pem_in_general_job_results(node):
     agent_transport.issue_token(node["id"])
     with pytest.raises(agent_transport.AgentError,match="Неподдерживаемая"):
         agent_transport.enqueue(node["id"],"shell.exec",{"command":"id"})
-    job=agent_transport.enqueue(node["id"],"cert.status")
+    job=agent_transport.enqueue(node["id"],"docker.status")
     agent_transport.poll(node["id"])
     with pytest.raises(agent_transport.AgentError,match="Секретные"):
         agent_transport.report(node["id"],{"id":job["id"],"ok":True,
