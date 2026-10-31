@@ -6,8 +6,8 @@
   <meta name="referrer" content="no-referrer">
   <meta name="theme-color" content="#09090b">
   <title>XPPN Manager 2.3 — рабочая область</title>
-  <link rel="stylesheet" href="/static/style.css?v=2.3.0">
-  <script src="/static/app.js?v=2.3.0" defer></script>
+  <link rel="stylesheet" href="/static/style.css?v=2.3.1">
+  <script src="/static/app.js?v=2.3.1" defer></script>
 </head>
 <body>
   <div id="login-screen" class="auth-overlay">
@@ -103,12 +103,7 @@
                 <div class="form-buttons"><button type="submit" class="btn primary">Сохранить и проверить API</button><button id="panel-check" type="button" class="btn subtle"><svg><use href="/static/icons.svg#i-refresh-cw"></use></svg>Проверить API</button></div>
               </form>
               <p id="panel-status" class="form-feedback"></p>
-              <div class="panel-profile-area hidden" id="panel-profile-area">
-                <h3>Профиль для новых нод</h3>
-                <label>Config Profile<select id="panel-profile-select"></select></label>
-                <div id="panel-inbounds" class="inbound-list"></div>
-                <button class="btn primary" id="panel-profile-save">Сохранить выбранные inbound-ы</button>
-              </div>
+
             </section>
             <aside class="panel info-panel"><svg class="info-icon"><use href="/static/icons.svg#i-shield-check"></use></svg><h3>Безопасный предпросмотр</h3><p>Действующие VPN-конфиги и ключи не изменяются при редактировании библиотеки или создании плана моста. Применение будет подключено отдельно после проверки совместимости и отката.</p><p>Глубокая проверка сетевой доступности из регионов потребует независимых измерительных узлов и не подменяется проверкой с одного VPS.</p></aside>
           </div>
@@ -176,6 +171,39 @@
                 <div class="form-buttons"><button class="btn subtle" id="preset-reset" type="button">Очистить</button><button class="btn primary" type="submit">Сохранить пресет</button></div>
               </form>
             </section>
+  </dialog>
+  <dialog id="vps-dialog" class="modal vps-dialog">
+    <div class="modal-header"><div><p class="eyebrow">НОВАЯ VPS / АВТОМАТИЧЕСКАЯ УСТАНОВКА</p><h2>Добавить сервер</h2></div>
+      <button type="button" class="icon-button" id="vps-close" aria-label="Закрыть"><svg><use href="/static/icons.svg#i-x"></use></svg></button></div>
+    <div id="vps-fields">
+      <p class="muted small">Сначала проверим чистый VPS по SSH, затем установим Docker, Nginx, TLS и Remnawave Node и создадим профиль в панели.</p>
+      <form id="vps-form">
+        <div class="two-fields"><label>Название сервера<input name="name" required maxlength="80" placeholder="Германия · DE1"></label>
+          <label>Код ноды<input name="code" required maxlength="20" placeholder="DE1"></label></div>
+        <div class="two-fields"><label>Страна<select name="country"><option value="RU">Россия</option><option value="DE" selected>Германия</option><option value="NL">Нидерланды</option><option value="PL">Польша</option><option value="LV">Латвия</option><option value="US">США</option></select></label>
+          <label>Тип<select name="role"><option value="regular">Обычная нода</option><option value="exit">Выходной сервер для моста</option></select></label></div>
+        <div class="two-fields"><label>Публичный IPv4 VPS<input name="ip" required placeholder="203.0.113.25"></label>
+          <label>SSH-порт<input name="port" type="number" min="1" max="65535" value="22" required></label></div>
+        <label>Домен VPS<input name="domain" required placeholder="de1.gowayot.com"></label>
+        <div class="two-fields"><label>SSH-пароль root<input type="password" name="password" autocomplete="new-password" required></label>
+          <label>Исходящий IPv4 Remnawave (доступ к порту 2222)<input name="panel_ip" required placeholder="Публичный IP управляющей панели"></label></div>
+        <p class="muted small">Установка только на пустой Ubuntu/Debian. DNS домена должен указывать на указанный IPv4. Порт 2222 разрешается только IP панели. Пароль SSH не сохраняется в базе.</p>
+        <button id="vps-probe-button" type="submit" class="btn primary">Проверить SSH, DNS и порты</button>
+      </form>
+    </div>
+    <div id="vps-preflight" class="hidden">
+      <h3>Результат проверки</h3><div class="panel wizard-check" id="vps-check-details"></div>
+      <label class="check-row"><input id="vps-fingerprint-ok" type="checkbox"> Я сверил SSH fingerprint с консолью своего VPS</label>
+      <label class="check-row"><input id="vps-clean-ok" type="checkbox"> Подтверждаю установку на чистый VPS с изменением системных сервисов</label>
+      <div class="modal-footer"><button class="btn subtle" id="vps-back" type="button">Назад</button>
+      <button class="btn primary" id="vps-install" type="button" disabled>Установить и подключить</button></div>
+    </div>
+    <div id="vps-progress" class="hidden">
+      <h3 id="vps-progress-head">Подготовка установки…</h3>
+      <p class="muted" id="vps-progress-text">Запрос отправлен.</p>
+      <p class="muted small">Проверяй статус здесь или в карточке ноды. Не запускай второй установщик на тот же VPS.</p>
+      <div class="modal-footer"><button class="btn subtle" id="vps-progress-close" type="button">Закрыть</button></div>
+    </div>
   </dialog>
   <dialog id="modal" class="modal">
     <div class="modal-header"><div><p class="eyebrow" id="modal-kicker">ДЕЙСТВИЕ</p><h2 id="modal-title">Настройка</h2></div><button class="icon-button" id="modal-close" type="button" aria-label="Закрыть"><svg><use href="/static/icons.svg#i-x"></use></svg></button></div>
