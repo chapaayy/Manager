@@ -128,7 +128,7 @@ function nodeWorkspaceBody(n,a,c){
       '<span>TCP-соединения (установлены)</span><strong>'+esc(m.tcp_established??"—")+'</strong>'+
       '<span>TCP retransmits (всего)</span><strong>'+esc(m.tcp_retrans_segs??"—")+'</strong>'+
       '<span>Потери пакетов RX / TX (всего)</span><strong>'+esc(m.net_rx_dropped??"—")+' / '+esc(m.net_tx_dropped??"—")+'</strong></div>'+
-      '<p class="muted small">Счётчики накопительные с запуска системы, не скорость Мбит/с и не процент потерь. Наличие соединений не равно количеству пользователей.</p></div>'+
+      '<p class="muted small">RX/TX — скорость между последними замерами агента; остальные счётчики накопительные, не процент потерь. Соединения не равны количеству пользователей.</p></div>'+
       '<div class="node-panel"><div class="node-panel-head"><h2>Базовая защита VPS</h2>'+
       '<button class="btn subtle" data-node-task="baseline.status" '+(!online||!/^1\.(?:[2-9]|[1-9][0-9])\./.test(a.version||"")?'disabled':'')+'>Проверить настройки</button></div>'+
       '<p class="muted small">Только чтение: BBR, FQ, SSH Fail2Ban и существующая защита порта 2222. Никаких изменений на VPS.</p>'+
