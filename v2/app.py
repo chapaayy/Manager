@@ -421,38 +421,17 @@ def forget_failed_vps(node_id: str, body: VpsForgetData, _=Depends(write_access)
 
 
 
-class NodeCertificateSyncRequest(BaseModel):
-    password: str = Field(default="", max_length=512)
-
-
-class NodeCertificateEnrollRequest(BaseModel):
-    password: str = Field(min_length=1,max_length=512)
-    confirmed: bool = False
-
-
 @app.get("/api/node-certificates")
 def node_certificates(_=Depends(read_access)):
     return node_cert_sync.status()
 
 
 @app.post("/api/node-certificates/{node_id}/sync")
-def sync_node_certificate(node_id: str, body: NodeCertificateSyncRequest, _=Depends(write_access)):
+def sync_node_certificate(node_id: str, _=Depends(write_access)):
     try:
-        return node_cert_sync.sync(node_id,body.password or None)
-    except (node_cert_sync.CertificateSyncError,LookupError) as e:
+        return node_cert_sync.sync(node_id)
+    except (node_cert_sync.CertificateSyncError,agent_transport.AgentError,LookupError) as e:
         raise HTTPException(422,str(e)) from None
-    except Exception:
-        raise HTTPException(502,"Не удалось безопасно обновить TLS-сертификат через API") from None
-
-
-@app.post("/api/node-certificates/{node_id}/enroll")
-def enroll_node_certificate(node_id: str, body: NodeCertificateEnrollRequest, _=Depends(write_access)):
-    try:
-        return node_cert_sync.enroll(node_id,body.password,body.confirmed)
-    except (node_cert_sync.CertificateSyncError,LookupError) as e:
-        raise HTTPException(422,str(e)) from None
-    except Exception:
-        raise HTTPException(502,"Не удалось настроить SSH-синхронизацию TLS на VPS") from None
 
 
 class AgentHeartbeatData(BaseModel):
