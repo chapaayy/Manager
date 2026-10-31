@@ -23,7 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from pydantic import BaseModel, Field
 
-from . import agent_bootstrap, agent_transport, bundled, library, node_cert_sync, node_lifecycle, remnawave, service, storage, vps_install, web_updates
+from . import agent_bootstrap, agent_transport, bundled, library, node_cert_sync, node_lifecycle, node_removal, remnawave, service, storage, vps_install, web_updates
 from .template_engine import Endpoint, TemplateError, safe_preview, variables_map
 
 STATIC = Path(__file__).resolve().parent / "static"
@@ -567,6 +567,35 @@ def create_node(body: NodeData, _=Depends(write_access)):
         _fail(e)
 
 
+class NodeRemovalConfirm(BaseModel):
+    code: str = Field(min_length=2, max_length=32)
+    remove_remote: bool = True
+    delete_profile: bool = True
+    shared_confirmation: str = Field(default="", max_length=100)
+    expected_shared_ids: list[str] = Field(default_factory=list, max_length=1000)
+
+
+@app.get("/api/nodes/{node_id}/removal-preview")
+def node_removal_preview(node_id: str, _=Depends(read_access)):
+    try:
+        return node_removal.preview(node_id)
+    except (node_lifecycle.LifecycleError, LookupError) as e:
+        raise HTTPException(422, str(e)) from None
+
+
+@app.post("/api/nodes/{node_id}/remove")
+def node_removal_execute(node_id: str, body: NodeRemovalConfirm,
+                        _=Depends(write_access)):
+    try:
+        return node_removal.remove(
+            node_id, body.code, delete_remote=body.remove_remote,
+            delete_profile=body.delete_profile,
+            shared_confirmation=body.shared_confirmation,
+            expected_shared_ids=body.expected_shared_ids)
+    except (node_removal.RemovalError, node_lifecycle.LifecycleError, LookupError) as e:
+        raise HTTPException(422, str(e)) from None
+
+
 class NodeArchiveData(BaseModel):
     archived: bool
 
@@ -632,6 +661,7 @@ def lifecycle_remnawave(node_id: str,body: NodeLifecycleConfirm,_=Depends(write_
 
 @app.post("/api/nodes/{node_id}/full/start")
 def lifecycle_start(node_id: str,body: NodeLifecycleConfirm,_=Depends(write_access)):
+    raise HTTPException(410,"Очистка VPS отключена. Используй безопасное удаление из менеджера и Remnawave.")
     try:
         return node_lifecycle.begin_full(node_id,body.code,body.delete_profile)
     except (node_lifecycle.LifecycleError,agent_transport.AgentError,LookupError) as e:
@@ -640,6 +670,7 @@ def lifecycle_start(node_id: str,body: NodeLifecycleConfirm,_=Depends(write_acce
 
 @app.post("/api/nodes/{node_id}/full/advance")
 def lifecycle_advance(node_id: str,body: NodeLifecycleConfirm,_=Depends(write_access)):
+    raise HTTPException(410,"Очистка VPS отключена. Используй безопасное удаление из менеджера и Remnawave.")
     try:
         return node_lifecycle.advance_full(node_id,body.code)
     except (node_lifecycle.LifecycleError,agent_transport.AgentError,LookupError) as e:
