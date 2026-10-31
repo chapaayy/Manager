@@ -6,6 +6,8 @@ const html=fs.readFileSync("v2/static/index.html","utf8");
 const js=fs.readFileSync("v2/static/app.js","utf8");
 const css=fs.readFileSync("v2/static/style.css","utf8");
 new vm.Script(js);
+const vps=fs.readFileSync("v2/static/vps.js","utf8");
+new vm.Script(vps);
 const ids=[...html.matchAll(/\bid="([^"]+)"/g)].map(m=>m[1]);
 const unique=new Set(ids);
 assert.equal(unique.size,ids.length,"Every HTML id must be unique");
@@ -13,15 +15,17 @@ for(const id of [
   "login-screen","login-username","login-password","panel-caddy-key","panel-caddy-details","shell","sidebar","toggle-sidebar","page-nodes","page-configs",
   "page-presets","page-settings","page-updates","update-check","update-start","update-status","bridge-list","other-nodes","modal","plan-dialog",
   "config-files","config-content","config-save","preset-form","panel-form",
-  "panel-profile-select","plan-diff","plan-json","plan-approve",
+  "plan-diff","plan-json","plan-approve","vps-dialog","vps-form","vps-probe-button","vps-install",
 ]){
   assert(unique.has(id),"Required UI element: "+id);
 }
 assert.match(html,/\/static\/icons\.svg/);
-assert.match(html,/\/static\/app\.js\?v=2\.2\.0/);
+assert.match(html,/\/static\/app\.js\?v=2\.3\.1/);
 assert.match(css,/\.sidebar\.collapsed/);
 assert.match(css,/\.workspace\{flex:1;min-width:0;width:0/);
 assert.match(css,/prefers-reduced-motion/);
+assert.match(vps,/async function installVps/,"SSH VPS wizard must launch install");
+assert(!html.includes('id="panel-profile-select"'),"Remove obsolete global profile setting");
 assert.match(js,/bridgeExitModal/,"Bridge expansion is functional");
 assert.match(js,/highlightTokens/,"Editor highlights template parameters");
 assert.match(js,/X-CSRF-Token/,"Mutating calls need CSRF");
