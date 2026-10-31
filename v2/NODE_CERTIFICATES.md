@@ -1,86 +1,71 @@
-# Node-owned Certbot certificates
+# Certbot on the node: TLS profile compatibility
 
-This feature does not create, copy or mount any certificate files on the
-Remnawave Panel VPS. The Panel is used only through its existing HTTP API.
+**Important:** with unmodified Remnawave Panel and only the documented
+Remnawave HTTP API, node-local `keyFile` / `certificateFile` references
+inside a Remnawave Config Profile are **not supported**. These paths
+are resolved and read on the **Panel backend**, which then forwards the
+certificate material to the Node. A Docker volume that exists only on the
+Node cannot make these file paths available to the Panel.
 
-## Installed VPS layout
+Official reference: https://docs.rw/install/remnawave-node/#xray-ssl-cert-for-node
 
-On every new node, Certbot issues and renews TLS files under
-/etc/letsencrypt/live/<domain>. The deploy hook copies the latest certificate
-and private key to the node's /opt/nginx/certs directory.
+## What actually happens today
 
-The remnanode Docker Compose already mounts that directory read-only:
+- Certbot issues and renews certificates **on the Node VPS**.
+- The source PEM and private key are stored in
+  `/opt/nginx/certs/<domain>_fullchain.pem` and
+  `/opt/nginx/certs/<domain>_privkey.key` (private key with restricted
+  filesystem permissions).
+- Remnawave Node Docker mounts these files read-only at the same paths.
+  **This volume alone does not make Remnawave Profile file references work.**
+- Agent v1.x reads the latest files through its authenticated outbound HTTPS
+  connection to Manager. Manager validates the domain, validity period,
+  and key/certificate match; it updates the dedicated Remnawave Xray
+  Config Profile through the existing API and requests a targeted restart
+  only if the material actually changed.
+- **Remnawave itself therefore also stores the full certificate and
+  private key as inline PEM in its Xray Config Profile**, as visible in its
+  configuration editor. Manager does not persist PEM in its own database
+  or return it to the browser.
+- No certificate directories, Docker volumes or other components are
+  installed on the Panel VPS by Manager.
 
-    volumes:
-      - /opt/nginx/certs:/opt/nginx/certs:ro
-      - /var/log/remnanode:/var/log/remnanode
+## Why we did not silently replace PEM with paths
 
-No extra mounts on the Panel or other servers are needed.
+A working Xray-core process can read its own local keyFile directly, but
+Remnawave's documented pipeline performs its file expansion *before*
+sending the Xray config to the Node. Replacing the inline PEM with a path
+only present on the Node risks the Panel failing to push a valid config,
+breaking all TLS clients on the affected Node.
 
-## Important Remnawave compatibility limitation
+The Manager wizard now shows a **redacted inline PEM representation**
+instead of incorrectly promising node-only paths in the actual Remnawave
+profile. The API adapter explicitly rejects node-only `/opt/nginx/certs/`
+and `/etc/letsencrypt/live/` paths when creating/updating a Remnawave
+profile. This protects existing working Nodes.
 
-Xray-core can use keyFile and certificateFile on its own machine. However,
-Remnawave documents that file references inside a Remnawave Xray Config Profile
-are resolved by the Panel backend, not by a Node. A keyFile pointing only to
-the node-local directory therefore cannot be assumed to work through this API.
+## Paths-only architecture requires a deliberate upstream change
 
-To keep the known-working Remnawave integration without changing the Panel:
+To keep the certificate's private key **exclusively** on the Node and
+show only `keyFile` / `certificateFile` in Remnawave Config Profiles,
+Remnawave must pass these paths through to the Node *without* resolving
+them on the Panel. This requires a supported upstream feature or a
+carefully versioned change to the Remnawave Panel/Node protocol. Neither
+can be safely delivered through today's API-only integration.
 
-- Certbot and the authoritative certificate files stay on the node.
-- The Manager fetches the newest files using pinned SSH access and validates
-  SAN/domain, validity dates and the matching private key.
-- Only the TLS key/certificate fields of this Manager-owned dedicated profile
-  are refreshed via the existing Remnawave API. Other Xray fields are preserved.
-- Remnawave's Config Profile therefore necessarily retains inline PEM just as
-  it did with the original installer. The Manager does not persist those bytes.
-- A file-backed, shared or otherwise unfamiliar profile is never rewritten.
+Alternatively, the supported upstream model can use file references
+by mounting the certificate files on the Panel backend; however, that
+violates the project's explicit requirement that no certificate files
+be created or mounted on the Panel VPS. Manager therefore does **not**
+implement that route.
 
-Thus this design **does not** make Remnawave's API JSON smaller. It avoids
-unverified changes that might break a working Node.
+## Security
 
-## Automatic update after Certbot renewal
-
-1. Update Manager from v2/rebuild-single-panel.
-2. Open the new Сертификаты нод page.
-3. For an already installed, ready node, use Включить авто and provide the
-   root SSH password once. Approve the installation of the restricted SSH key.
-4. The key is restricted by an authorized_keys forced command and cannot open
-   an interactive shell. It can read only that VPS's certificate and key.
-   The private SSH key is encrypted in the Manager database. The root
-   password is never stored.
-5. Every six hours while Manager is running, it reads the latest TLS files
-   from the VPS. When required, it patches only that node's dedicated Xray
-   profile through the Remnawave API and requests a targeted node restart.
-
-For a one-off sync without SSH key enrollment, use Проверить и применить.
-
-If the Remnawave profile belongs to another node, has been changed manually,
-or the pinned SSH fingerprint differs, the Manager refuses to rewrite it.
-
-Installing this update changes no existing VPS or Xray profile. Automatic
-certificate synchronization is opt-in, per node.
-
-## Verify on the node
-
-Without printing private certificate contents:
-
-    systemctl status certbot.timer --no-pager
-    ls -ld /opt/nginx/certs
-    docker compose -f /opt/remnanode/docker-compose.yml config -q
-
-Use the Сертификаты нод page for expiry and last-checked status.
-
-The TLS private key previously pasted from RUS10 should be rotated by
-reissuing the certificate with a genuinely new private key before using it
-for live traffic.
-
-## Security notes
-
-Remnawave receives inline PEM material over its TLS-protected API by design;
-the private key can still exist in Remnawave's own profile store. It is not
-stored or returned by the Manager. Do not log API payloads or publish the
-Remnawave configuration JSON.
-
-A renewed certificate is applied on the next successful Manager sync. The
-certbot deploy hook intentionally does not restart Remnawave Node before the
-API profile has been updated; otherwise it would reload the old PEM.
+- Treat Remnawave Config Profile access as access to your live TLS private
+  key. Restrict which administrators can read or export these profiles.
+- Do not paste or screenshot visible PEM private key lines from the Panel.
+- Rotate any key previously exposed in chat or screenshots and reissue
+  the certificate with a **new private key**, then synchronize it via
+  Agent / Remnawave API after verifying that the new files are correct.
+- Installing this compatibility update does **not** change an already
+  running Node or rewrite an existing Remnawave profile.
