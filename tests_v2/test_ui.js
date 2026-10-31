@@ -22,7 +22,7 @@ for(const id of [
   assert(unique.has(id),"Required UI element: "+id);
 }
 assert.match(html,/\/static\/icons\.svg/);
-assert.match(html,/\/static\/app\.js\?v=2\.5\.2/);
+assert.match(html,/\/static\/app\.js\?v=2\.6\.0/);
 assert.match(css,/\.sidebar\.collapsed/);
 assert.match(css,/\.workspace\{flex:1;min-width:0;width:0/);
 assert.match(css,/prefers-reduced-motion/);
@@ -30,6 +30,13 @@ assert.match(vps,/async function installVps/,"SSH VPS wizard must launch install
 assert(!html.includes('id="panel-profile-select"'),"Remove obsolete global profile setting");
 assert.match(js,/bridgeExitModal/,"Bridge expansion is functional");
 assert.match(js,/highlightTokens/,"Editor highlights template parameters");
+assert.match(html,/data-config-category="xray"/,"Xray tab shown");
+assert.match(html,/data-config-category="system"/,"Server configuration tab shown");
+assert.match(js,/configCategory==="xray"/,"Tab actually filters configuration files");
+assert.match(html,/id="preset-mode"/,"Preset deployment mode editable");
+assert.match(vps,/renderVpsPresets/,"VPS wizard lists installation presets");
+assert.match(vps,/preset_id:data.preset_id/,"Preview uses chosen preset");
+
 assert.match(js,/X-CSRF-Token/,"Mutating calls need CSRF");
 assert.match(js,/caddy_api_key/,"Save-and-check sends optional Caddy API key");
 assert.match(js,/async function checkUpdates/,"Check GitHub updates inside the panel");

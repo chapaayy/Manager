@@ -1,0 +1,91 @@
+{
+  "log": {
+    "error": "/var/log/remnanode/error.log",
+    "access": "/var/log/remnanode/access.log",
+    "loglevel": "warning"
+  },
+  "inbounds": [
+    {
+      "tag": "{{source.code}}_VLESS_TLS_IN",
+      "port": 443,
+      "listen": "0.0.0.0",
+      "protocol": "vless",
+      "settings": {
+        "clients": [],
+        "fallbacks": [
+          {
+            "dest": "127.0.0.1:8080"
+          }
+        ],
+        "decryption": "none"
+      },
+      "sniffing": {
+        "enabled": true,
+        "destOverride": [
+          "http",
+          "tls",
+          "quic"
+        ]
+      },
+      "streamSettings": {
+        "network": "raw",
+        "security": "tls",
+        "tlsSettings": {
+          "alpn": [
+            "http/1.1"
+          ],
+          "certificates": [
+            {
+              "keyFile": "/opt/nginx/certs/{{source.domain}}_privkey.key",
+              "certificateFile": "/opt/nginx/certs/{{source.domain}}_fullchain.pem"
+            }
+          ],
+          "rejectUnknownSni": true
+        }
+      }
+    }
+  ],
+  "outbounds": [
+    {
+      "tag": "DIRECT",
+      "protocol": "freedom"
+    },
+    {
+      "tag": "BLOCKED",
+      "protocol": "blackhole"
+    }
+  ],
+  "routing": {
+    "rules": [
+      {
+        "type": "field",
+        "ip": [
+          "geoip:private"
+        ],
+        "outboundTag": "BLOCKED"
+      },
+      {
+        "type": "field",
+        "domain": [
+          "geosite:private"
+        ],
+        "outboundTag": "BLOCKED"
+      },
+      {
+        "type": "field",
+        "protocol": [
+          "bittorrent"
+        ],
+        "outboundTag": "BLOCKED"
+      },
+      {
+        "type": "field",
+        "inboundTag": [
+          "{{source.code}}_VLESS_TLS_IN"
+        ],
+        "outboundTag": "DIRECT"
+      }
+    ],
+    "domainStrategy": "IPIfNonMatch"
+  }
+}

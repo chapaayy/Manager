@@ -98,7 +98,9 @@ def list_presets():
 
 
 def save_preset(*, name: str, description: str = "", config_ids: list[str],
-                preset_id: str = ""):
+                preset_id: str = "", mode: str = "custom"):
+    if mode not in ("direct","bridge","custom"):
+        raise ValueError("Неизвестное назначение пресета")
     if not 1 <= len(name.strip()) <= 100 or len(description) > 600:
         raise ValueError("Название 1–100, описание до 600 символов")
     if not 1 <= len(config_ids) <= 4 or len(config_ids) != len(set(config_ids)):
@@ -117,14 +119,16 @@ def save_preset(*, name: str, description: str = "", config_ids: list[str],
                 raise ValueError("Пресет может содержать только один файл каждого типа")
             types.add(row["kind"])
             selected.append(row)
+        if mode != "custom" and "xray" not in types:
+            raise ValueError("Для установочного пресета нужен Xray JSON")
         if preset_id:
-            if c.execute("UPDATE presets SET name=?,description=?,updated_at=? WHERE id=?",
-                         (name.strip(), description.strip(), now, ident)).rowcount != 1:
+            if c.execute("UPDATE presets SET name=?,description=?,mode=?,updated_at=? WHERE id=?",
+                         (name.strip(), description.strip(), mode, now, ident)).rowcount != 1:
                 raise LookupError("Пресет не найден")
             c.execute("DELETE FROM preset_items WHERE preset_id=?", (ident,))
         else:
-            c.execute("INSERT INTO presets(id,name,description,created_at,updated_at) VALUES(?,?,?,?,?)",
-                      (ident, name.strip(), description.strip(), now, now))
+            c.execute("INSERT INTO presets(id,name,description,mode,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                      (ident, name.strip(), description.strip(), mode, now, now))
         for row in selected:
             c.execute("INSERT INTO preset_items(preset_id,config_id,kind) VALUES(?,?,?)",
                       (ident, row["id"], row["kind"]))

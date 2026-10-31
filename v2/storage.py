@@ -126,6 +126,8 @@ def init_db():
             note TEXT NOT NULL DEFAULT '',
             remote_uuid TEXT NOT NULL DEFAULT '',
             profile_uuid TEXT NOT NULL DEFAULT '',
+            preset_id TEXT NOT NULL DEFAULT '',
+            preset_snapshot_enc TEXT NOT NULL DEFAULT '',
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL
         );
@@ -164,6 +166,7 @@ def init_db():
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
             description TEXT NOT NULL DEFAULT '',
+            mode TEXT NOT NULL DEFAULT 'custom',
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL
         );
@@ -186,6 +189,14 @@ def init_db():
         columns = {r["name"] for r in c.execute("PRAGMA table_info(panel)").fetchall()}
         if "caddy_api_key_enc" not in columns:
             c.execute("ALTER TABLE panel ADD COLUMN caddy_api_key_enc TEXT NOT NULL DEFAULT ''")
+        installation_columns={r["name"] for r in c.execute("PRAGMA table_info(node_installations)")}
+        if "preset_id" not in installation_columns:
+            c.execute("ALTER TABLE node_installations ADD COLUMN preset_id TEXT NOT NULL DEFAULT ''")
+        if "preset_snapshot_enc" not in installation_columns:
+            c.execute("ALTER TABLE node_installations ADD COLUMN preset_snapshot_enc TEXT NOT NULL DEFAULT ''")
+        preset_columns={r["name"] for r in c.execute("PRAGMA table_info(presets)")}
+        if "mode" not in preset_columns:
+            c.execute("ALTER TABLE presets ADD COLUMN mode TEXT NOT NULL DEFAULT 'custom'")
 
 
 def event(c, action: str, target: str, message: str):
@@ -429,7 +440,31 @@ def get_install_job(node_id: str) -> dict:
         row = c.execute("SELECT * FROM node_installations WHERE node_id=?",(node_id,)).fetchone()
     if not row:
         raise LookupError("Установка не найдена")
-    return dict(row)
+    result=dict(row)
+    result.pop("preset_snapshot_enc",None)
+    return result
+
+
+def save_install_preset(node_id: str, preset_id: str, snapshot: dict) -> None:
+    # Freeze exact selected configuration revision before the background worker
+    # starts; edits to the library cannot silently change an in-flight install.
+    raw=json.dumps(snapshot,ensure_ascii=False,separators=(",",":"))
+    with transaction() as c:
+        changed=c.execute(
+            "UPDATE node_installations SET preset_id=?,preset_snapshot_enc=? WHERE node_id=? AND stage='queued'",
+            (preset_id,encrypt(raw),node_id))
+        if changed.rowcount!=1:
+            raise ValueError("Пресет установки можно зафиксировать только до старта")
+
+
+def get_install_preset(node_id: str) -> dict | None:
+    with connect() as c:
+        row=c.execute(
+            "SELECT preset_snapshot_enc FROM node_installations WHERE node_id=?",
+            (node_id,)).fetchone()
+    if not row or not row["preset_snapshot_enc"]:
+        return None
+    return json.loads(decrypt(row["preset_snapshot_enc"]))
 
 
 def mark_interrupted_jobs():

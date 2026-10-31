@@ -201,7 +201,8 @@ class VpsInstallData(VpsProbeData):
     code: str = Field(min_length=2,max_length=20)
     name: str = Field(min_length=3,max_length=80)
     country: str = Field(pattern=r"^[A-Za-z]{2}$")
-    role: str = Field(pattern=r"^(regular|exit)$")
+    role: str = Field(pattern=r"^(regular|exit|entry)$")
+    preset_id: str | None = Field(default=None,max_length=64)
     fingerprint: str
     confirm_clean: bool = False
     panel_ip: str = ""
@@ -343,6 +344,8 @@ def update_panel_profile(body: PanelProfile, _=Depends(write_access)):
 
 
 class VpsPreviewData(BaseModel):
+    preset_id: str | None = Field(default=None,max_length=64)
+    role: str = Field(default="regular",pattern=r"^(regular|exit|entry)$")
     code: str = Field(min_length=2,max_length=20)
     domain: str = Field(min_length=4,max_length=253)
     country: str = Field(pattern=r"^[A-Za-z]{2}$")
@@ -353,7 +356,9 @@ def vps_preview(body: VpsPreviewData, _=Depends(write_access)):
     try:
         endpoint=Endpoint(body.code.upper().strip(),body.domain.lower().strip(),
                           body.country.upper().strip())
-        return vps_install.preview_plan(endpoint)
+        from . import preset_deploy
+        selected=body.preset_id or preset_deploy.default_preset_id()
+        return vps_install.preview_plan(endpoint,selected,body.role)
     except (TemplateError,ValueError) as e:
         raise HTTPException(422,str(e)) from None
 
@@ -381,7 +386,7 @@ def install_vps(body: VpsInstallData, request: Request, _=Depends(write_access))
             name=body.name.strip(),domain=body.domain.strip().lower(),
             role=body.role,ip=body.ip,port=body.port,password=body.password,
             fingerprint_value=body.fingerprint,panel_ip=body.panel_ip,
-            existing_node_id=body.existing_node_id)
+            existing_node_id=body.existing_node_id,preset_id=body.preset_id)
     except (ValueError,TemplateError,remnawave.PanelError) as e:
         raise HTTPException(422,str(e)) from None
     except LookupError:
@@ -769,6 +774,7 @@ class ConfigFileData(BaseModel):
 
 
 class PresetData(BaseModel):
+    mode: str = Field(default="custom",pattern=r"^(custom|direct|bridge)$")
     name: str = Field(min_length=1, max_length=100)
     description: str = Field(default="", max_length=600)
     config_ids: list[str] = Field(min_length=1, max_length=4)
@@ -822,7 +828,7 @@ def presets(_=Depends(read_access)):
 def new_preset(body: PresetData, _=Depends(write_access)):
     try:
         return library.save_preset(
-            name=body.name, description=body.description, config_ids=body.config_ids)
+            name=body.name, description=body.description, config_ids=body.config_ids,mode=body.mode)
     except (ValueError, LookupError, sqlite3.IntegrityError) as e:
         _fail(e)
 
@@ -832,7 +838,7 @@ def edit_preset(preset_id: str, body: PresetData, _=Depends(write_access)):
     try:
         return library.save_preset(
             name=body.name, description=body.description,
-            config_ids=body.config_ids, preset_id=preset_id)
+            config_ids=body.config_ids, preset_id=preset_id,mode=body.mode)
     except (ValueError, LookupError) as e:
         _fail(e)
 

@@ -102,3 +102,12 @@
 @media(max-width:720px){.node-ws-columns,.node-status-grid{grid-template-columns:1fr}.node-panel{padding:15px}.node-ws-head{gap:9px}.node-ws-summary{gap:8px}.node-ws-stat{padding:13px}.node-ws-stat strong{font-size:15px}.node-ws-tab{padding:9px 11px}}
 
 .node-list-meta{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:7px}.node-list-meta .node-state{font-size:10px;padding:3px 7px}.node-card .node-list-meta{max-width:100%}
+
+/* Configuration library is one page with two clearly separated collections. */
+.config-category-tabs{display:flex;width:fit-content;max-width:100%;gap:5px;padding:4px;margin:24px 0 2px;border-radius:10px;border:1px solid #38383f;background:#17171b}
+.config-category-tab{border:1px solid transparent;border-radius:8px;background:transparent;color:#b5b5c1;padding:10px 18px;font-weight:690;font-size:12px;white-space:nowrap}
+.config-category-tab:hover{background:#29292e;color:#f9f9fa}
+.config-category-tab.active{background:#303036;border-color:#57575f;color:#fff}
+.preset-mode{display:inline-flex;color:#c8c9d2;border:1px solid #55555e;background:#292930;padding:4px 10px;border-radius:7px;font-size:10px;font-weight:680;margin:4px 0 12px}
+.vps-dialog #vps-preset-description{line-height:1.7;padding:10px 12px;background:#202026;border:1px solid #404049;border-radius:8px;margin-top:-6px}
+@media(max-width:620px){.config-category-tabs{width:100%}.config-category-tab{flex:1;padding:10px 8px}}
