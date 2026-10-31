@@ -163,6 +163,8 @@ def request(method: str, path: str, body: dict | None = None):
         body = response.read(300001)
         if len(body) > 300000:
             raise PanelError("Слишком большой ответ API")
+        if not body and response.status == 204 and "/actions/restart" in path:
+            return {"response":{}}
         payload = json.loads(body)
         if not isinstance(payload, dict):
             raise PanelError("Неожиданный формат JSON")
