@@ -5,7 +5,7 @@ const esc = value => String(value ?? "").replace(/[&<>"']/g, c => ({
 }[c]));
 const icon = name => '<svg><use href="/static/icons.svg#i-'+name+'"></use></svg>';
 const types = {xray:"Xray JSON",nginx:"Nginx",nginx_compose:"Nginx Compose",node_compose:"Remnawave Compose"};
-const titles = {nodes:"Ноды",configs:"Конфигурации",presets:"Пресеты",settings:"Настройки",updates:"Обновления"};
+const titles = {nodes:"Ноды",certificates:"Сертификаты",configs:"Конфигурации",presets:"Пресеты",settings:"Настройки",updates:"Обновления"};
 const labels = {regular:"Обычная",entry:"Входная / мост",exit:"Выходная"};
 let csrf = "", currentPage = "nodes", currentConfig = null, configRevision = 0,
     configBase = "", configDirty = false, currentPreset = null, currentPlan = null,
@@ -103,7 +103,62 @@ function showPage(page){
     el.classList.toggle("hidden",el.id!=="page-"+page));
   $("current-page-name").textContent=titles[page]||page;
   if(page==="updates")refreshUpdateStatus();
+  if(page==="certificates")refreshCertificates();
 }
+async function refreshCertificates(){
+  const target=$("cert-nodes");
+  try{
+    const result=await api("/certificates");
+    const ready=result.enabled;
+    $("cert-global-status").textContent=ready?
+      "Файловая синхронизация включена. Подключение общего тома к Remnawave обязательно.":
+      "Синхронизация выключена. Прежде чем включать, подключи том к панели Remnawave.";
+    $("cert-global-status").className="form-feedback "+(ready?"success":"");
+    $("cert-enable").disabled=ready;
+    $("cert-disable").disabled=!ready;
+    target.innerHTML=(result.nodes||[]).map(n=>{
+      let expiration=n.expires_at?
+        new Date(n.expires_at*1000).toLocaleDateString("ru-RU"):"Сертификат не синхронизирован";
+      const expired=n.expires_at&&n.expires_at*1000<Date.now();
+      const warning=n.expires_at&&n.expires_at*1000<Date.now()+21*86400000;
+      return '<div class="node-card"><span class="feature-icon">'+icon("shield-check")+
+        '</span><div style="flex:1;min-width:200px"><strong>'+esc(n.code)+' · '+esc(n.domain)+
+        '</strong><p>'+esc(expiration)+' · '+(n.auto_sync?"Автоматически (6 ч)":"Только вручную")+
+        '</p>'+(n.last_synced?'<p>Синхронизирован: '+esc(new Date(n.last_synced*1000).toLocaleString("ru-RU"))+'</p>':'')+
+        (n.last_error?'<p class="form-feedback error">'+esc(n.last_error)+'</p>':'')+
+        (n.staged?'<details><summary class="muted small">Пути для Remnawave</summary><code>'+esc(n.panel_paths.certificateFile)+
+        '</code><p><code>'+esc(n.panel_paths.keyFile)+'</code></p></details>':'')+
+        '</div><span class="tiny-chip '+(expired||warning?"warning":"success")+'">'+
+        (expired?"Истёк":warning?"Скоро истечёт":n.staged?"Синхронизирован":"Не настроен")+
+        '</span><button class="btn subtle" type="button" data-cert-sync="'+esc(n.id)+
+        '" '+(!ready?"disabled":"")+'>Синхронизировать</button>'+
+        '<button class="btn subtle" type="button" data-cert-enroll="'+esc(n.id)+
+        '" '+(!ready?"disabled":"")+'>Автосинхронизация</button></div>';
+    }).join("")||'<p class="muted">Нет серверов для синхронизации.</p>';
+  }catch(e){target.textContent=e.message;target.className="form-feedback error";}
+}
+function certSyncModal(id, auto=false){
+  const node=state.nodes.find(n=>n.id===id);
+  if(!node)return;
+  openModal(auto?"Подключить автосинхронизацию":"Синхронизировать сертификат",
+    "TLS / "+node.code,
+    '<p class="muted small">'+(auto?
+      'Установим на VPS отдельный SSH-ключ, который позволяет только прочитать TLS-сертификат и ключ. Пароль root не сохраняется.':
+      'Прочитаем сертификат и ключ по защищённому SSH, проверим домен и срок, затем поместим в том Remnawave. Действующий Xray-конфиг не изменится.')+
+    '</p><form><label>SSH-пароль root<input type="password" name="password" required autocomplete="new-password"></label>'+
+    (auto?'<label class="check-row"><input name="confirm" type="checkbox" required> Подтверждаю установку ограниченного SSH-ключа на VPS</label>':'')+
+    '<div class="form-buttons"><button class="btn primary" type="submit">'+
+      (auto?"Подключить и проверить":"Синхронизировать")+'</button></div></form>',
+    async fd=>{
+      const password=fd.get("password");
+      const target=auto?"/certificates/"+encodeURIComponent(id)+"/enroll":
+        "/certificates/"+encodeURIComponent(id)+"/sync";
+      await api(target,"POST",auto?{password,confirm_root_forced_command:fd.get("confirm")==="on"}:{password});
+      message("Сертификат "+node.code+" проверен и сохранён в общем томе панели.");
+      await refreshCertificates();
+    });
+}
+
 function renderNodes(){
   $("metric-nodes").textContent=String(state.nodes.length);
   $("metric-bridges").textContent=String(state.bridges.length);
@@ -566,6 +621,23 @@ function bindEvents(){
     if(remove)removePreset(remove.dataset.presetDelete);
   });
   $("panel-form").onsubmit=e=>{e.preventDefault();savePanel()};
+  $("cert-refresh").onclick=refreshCertificates;
+  $("cert-enable").onclick=async()=>{
+    if(!confirm("Я подключил Docker volume xppn-v2-panel-certs в Remnawave Panel и проверил, что панель читает файлы. Включить файловую синхронизацию?"))return;
+    try{await api("/certificates/settings","POST",{enabled:true,confirmed_panel_mount:true});await refreshCertificates()}
+    catch(e){message(e.message,true)}
+  };
+  $("cert-disable").onclick=async()=>{
+    if(!confirm("Выключить синхронизацию? Уже созданные файлы и действующие профили не изменятся."))return;
+    try{await api("/certificates/settings","POST",{enabled:false});await refreshCertificates()}
+    catch(e){message(e.message,true)}
+  };
+  $("cert-nodes").addEventListener("click",e=>{
+    const sync=e.target.closest("[data-cert-sync]");
+    const auto=e.target.closest("[data-cert-enroll]");
+    if(sync)certSyncModal(sync.dataset.certSync,false);
+    else if(auto)certSyncModal(auto.dataset.certEnroll,true);
+  });
   $("panel-check").onclick=checkPanel;
   window.addEventListener("beforeunload",e=>{
     if(configDirty){e.preventDefault();e.returnValue=""}
