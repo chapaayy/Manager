@@ -9,6 +9,7 @@ import copy
 import json
 import re
 from pathlib import Path
+import yaml
 
 from . import storage
 from .template_engine import Endpoint, TemplateError, validate_rendered
@@ -30,6 +31,61 @@ def default_preset_id():
     return row["id"]
 
 
+def _safe_compose(text: str, baseline: str) -> bool:
+    """Allow harmless Compose revision changes without risking VPS root access."""
+    try:
+        proposed=yaml.safe_load(text)
+        expected=yaml.safe_load(baseline)
+        if not isinstance(proposed,dict) or set(proposed)!={"services"}:
+            return False
+        services=proposed["services"]
+        if not isinstance(services,dict) or set(services)!=set(expected["services"]):
+            return False
+        for service_name, ref in expected["services"].items():
+            actual=services[service_name]
+            if not isinstance(actual,dict):
+                return False
+            allowed=set(ref)|{"ulimits"}
+            if set(actual)-allowed:
+                return False
+            # Container identity, image, mounts, network and env stay immutable.
+            mandatory=set(ref)-{"logging","restart"}
+            if any(actual.get(k)!=ref[k] for k in mandatory):
+                return False
+            if actual.get("restart",ref.get("restart")) not in ("unless-stopped","always"):
+                return False
+            logging=actual.get("logging",ref.get("logging",{}))
+            if not isinstance(logging,dict) or set(logging)-{"options","driver"}:
+                return False
+            if logging.get("driver","json-file")!="json-file":
+                return False
+            options=logging.get("options",{})
+            if not isinstance(options,dict) or set(options)-{"max-size","max-file"}:
+                return False
+            size=str(options.get("max-size","10m"))
+            limit=str(options.get("max-file","3"))
+            if not re.fullmatch(r"(?:[1-9]|[1-4][0-9]|50)m",size):
+                return False
+            if not limit.isdigit() or not 1<=int(limit)<=8:
+                return False
+            if "ulimits" in actual:
+                limit_spec=actual["ulimits"]
+                if not isinstance(limit_spec,dict) or set(limit_spec)!={"nofile"}:
+                    return False
+                nofile=limit_spec["nofile"]
+                if isinstance(nofile,dict):
+                    if set(nofile)!={"soft","hard"}:
+                        return False
+                    values=list(nofile.values())
+                else:
+                    values=[nofile]
+                if any(not isinstance(v,int) or not 1024<=v<=1048576 for v in values):
+                    return False
+        return True
+    except yaml.YAMLError:
+        return False
+
+
 def load_preset(preset_id: str) -> dict:
     with storage.connect() as db:
         p=db.execute("SELECT * FROM presets WHERE id=?",(preset_id,)).fetchone()
@@ -46,9 +102,9 @@ def load_preset(preset_id: str) -> dict:
     for kind,filename in (("nginx_compose","nginx-compose.yml"),
                           ("node_compose","remnanode-compose.yml")):
         baseline=(ROOT/filename).read_text("utf-8")
-        if files[kind]!=baseline:
-            raise ValueError("Изменённый Docker Compose пока нельзя автоматически применять к VPS. "
-                             "Верни штатный файл или используй согласованный установщик.")
+        if not _safe_compose(files[kind],baseline):
+            raise ValueError("Docker Compose содержит небезопасные изменения портов, "
+                             "контейнеров, образов, путей или прав. Установка заблокирована.")
     config=json.loads(files["xray"])
     if not isinstance(config,dict):
         raise ValueError("Xray-шаблон должен быть JSON-объектом")
