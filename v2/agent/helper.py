@@ -128,6 +128,29 @@ def execute(action, data):
         if name not in CONTAINERS:fail("container not allowed")
         run(["docker","restart","--time","8",name],timeout=30)
         return {"restarted":name}
+    if action=="logs.read":
+        entries={
+            "xray-error":Path("/var/log/remnanode/error.log"),
+            "xray-access":Path("/var/log/remnanode/access.log"),
+            "nginx-access":Path("/opt/nginx/logs/access.log"),
+            "nginx-error":Path("/opt/nginx/logs/error.log"),
+            "certbot":Path("/var/log/letsencrypt/letsencrypt.log"),
+        }
+        source=data.get("source")
+        if not isinstance(source,str) or source not in entries:
+            fail("log source not allowed")
+        path=entries[source]
+        if path.is_symlink():fail("symlinked log source is not allowed")
+        if not path.is_file():return {"source":source,"logs":"Лог пока не создан"}
+        with open(path,"rb") as log:
+            log.seek(0,2)
+            size=log.tell()
+            log.seek(max(0,size-65536))
+            raw=log.read(65536)
+        count=data.get("tail",100)
+        if not isinstance(count,int) or not 1<=count<=200:fail("invalid log tail")
+        return {"source":source,
+                "logs":b"\n".join(raw.splitlines()[-count:])[-26000:].decode("utf-8","replace")}
     if action == "docker.logs":
         name=data.get("name")
         if name not in CONTAINERS:fail("container not allowed")
