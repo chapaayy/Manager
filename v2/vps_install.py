@@ -378,7 +378,7 @@ def deploy(node_id: str, ip: str, port: int, password: str,
 
 def start_install(*, code: str, country: str, name: str, domain: str, role: str,
                   ip: str, port: int, password: str, fingerprint_value: str,
-                  panel_ip: str) -> dict:
+                  panel_ip: str, existing_node_id: str | None = None) -> dict:
     if role not in ("regular","exit"):
         raise ValueError("Пока поддерживается установка обычной или выходной ноды. Вход моста требует связанного выходного сервера.")
     if not FP.fullmatch(fingerprint_value):
@@ -391,13 +391,32 @@ def start_install(*, code: str, country: str, name: str, domain: str, role: str,
         raise ValueError("Установка отменена: "+"; ".join(inspection["warnings"]))
     # Check panel API and key before inserting anything or touching VPS.
     remnawave.node_secret()
-    node=storage.create_node(code=code,name=name,domain=domain,country=country,role=role)
+    # Reuse a previously saved *draft* only when explicitly selected by its ID.
+    # Never reassign a different VPS, an active bridge entry or an installed node.
+    created_new = existing_node_id is None
+    if existing_node_id:
+        node = storage.get_node(existing_node_id)
+        if node["status"] != "planned":
+            raise ValueError("Сервер уже устанавливался. Повторная установка запрещена.")
+        expected = {"code":code, "name":name, "domain":domain,
+                    "country":country, "role":role}
+        if any(node[key] != value for key,value in expected.items()):
+            raise ValueError(
+                "Данные отличаются от сохранённого черновика. "
+                "Открой его карточку для продолжения установки."
+            )
+    else:
+        node = storage.create_node(code=code,name=name,domain=domain,country=country,role=role)
     try:
         storage.create_install_job(node["id"],ip,port,fingerprint_value)
     except Exception:
-        # Transactional recovery if this IP is already queued under another name.
-        with storage.transaction() as c:
-            c.execute("DELETE FROM nodes WHERE id=? AND status='planned'",(node["id"],))
+        # Remove only a newly-created unscheduled draft, not an existing card.
+        if created_new:
+            with storage.transaction() as c:
+                c.execute("""DELETE FROM nodes
+                           WHERE id=? AND status='planned' AND
+                           NOT EXISTS (SELECT 1 FROM node_installations WHERE node_id=?)""",
+                          (node["id"],node["id"]))
         raise
     POOL.submit(deploy,node["id"],ip,port,password,fingerprint_value,panel_ip)
     return {"node_id":node["id"],"stage":"queued","message":"Установка запущена"}
