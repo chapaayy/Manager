@@ -550,7 +550,7 @@ function resetConfig(force=false){
   if(!force&&!discardConfig())return;
   currentConfig=null;configRevision=0;
   $("config-name").value="";$("config-content").value="";
-  $("config-kind").disabled=false;$("config-kind").value="xray";
+  $("config-kind").disabled=false;$("config-kind").value=configCategory==="xray"?"xray":"nginx";
   $("config-editor-title").textContent="Новый файл";
   $("config-version").textContent="Не сохранён";
   $("config-delete").classList.add("hidden");
