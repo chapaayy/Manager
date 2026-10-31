@@ -93,3 +93,24 @@ def test_interrupted_jobs_preserve_truth_without_password(db):
     with storage.connect() as c:
         tables=[x["name"] for x in c.execute("PRAGMA table_info(node_installations)")]
     assert not any("password" in t for t in tables)
+
+
+
+def test_remnawave_node_health_requires_actual_xray_telemetry(monkeypatch):
+    from v2 import remnawave
+    one="aaaa-bbbb"
+    rows=[
+        {"uuid":one,"isConnected":True,"versions":{"xray":"25.8.1"},"xrayUptime":123},
+    ]
+    monkeypatch.setattr(remnawave,"request",lambda method,path:{"response":rows})
+    assert remnawave.node_health(one)["connected"]
+    assert remnawave.node_health(one)["xray_running"]
+    rows[0]["isConnected"]=False
+    assert remnawave.node_health(one)["connected"] is False
+    rows[0]["isConnected"]=True
+    rows[0]["versions"]={"xray":None}
+    rows[0]["xrayUptime"]=0
+    assert remnawave.node_health(one)["xray_running"] is False
+    rows.clear()
+    with pytest.raises(remnawave.PanelError):
+        remnawave.node_health(one)
