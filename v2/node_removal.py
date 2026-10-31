@@ -6,6 +6,7 @@ queues a job, uses SSH, edits the Remnawave host or touches Docker.
 from __future__ import annotations
 
 import threading
+import re
 
 from . import node_lifecycle, remnawave, storage, vps_install
 from .node_cert_sync import _attached_profile
@@ -183,7 +184,10 @@ def remove(node_id, code, *, delete_remote, delete_profile,
                                       "Owned Xray profile removed or confirmed absent via API")
                 kept_profile = bool(profile_id and not delete_profile)
             except remnawave.PanelError as exc:
-                raise RemovalError("Remnawave API не подтвердила операцию: " + str(exc)[:160]) from None
+                # Remnawave error bodies can contain secrets; expose only HTTP status.
+                match = re.search(r"(?<!\\d)HTTP\\s+([45]\\d\\d)\\b", str(exc))
+                suffix = " (HTTP " + match.group(1) + ")" if match else ""
+                raise RemovalError("Remnawave API не подтвердила операцию" + suffix) from None
         elif not delete_remote:
             kept_profile = bool(job and job["profile_uuid"])
         with storage.transaction() as db:
