@@ -219,6 +219,11 @@ def begin_full(node_id,code,delete_profile:bool):
         raise LifecycleError("Нужен Node Manager Agent 1.1 или новее для безопасной очистки VPS")
     if node["status"]!="ready":
         raise LifecycleError("Полное удаление возможно только для установленной ноды")
+    with storage.connect() as db:
+        pending=db.execute("""SELECT COUNT(*) FROM manager_agent_jobs
+            WHERE node_id=? AND status IN ('queued','leased')""",(node_id,)).fetchone()[0]
+    if pending:
+        raise LifecycleError("На ноде есть незавершённые задания агента. Дождись их завершения.")
     task=agent_transport.enqueue(node_id,"node.cleanup",
         {"domain":node["domain"]},ttl=600,internal=True)
     _set(node_id,phase="preparing",job_id=task["id"],delete_profile=int(delete_profile))
