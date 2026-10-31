@@ -129,6 +129,7 @@ def init_db():
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL
         );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_installed_vps_ip ON node_installations(ip);
         CREATE TABLE IF NOT EXISTS starter_seeds (
             name TEXT PRIMARY KEY,
             applied_at INTEGER NOT NULL
