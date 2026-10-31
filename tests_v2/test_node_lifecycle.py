@@ -181,3 +181,19 @@ def test_cleanup_acknowledgement_for_wrong_vps_never_deletes_panel_node(setup,mo
         node_lifecycle.advance_full(n["id"],n["code"])
     assert storage.get_install_job(n["id"])["remote_uuid"]==remote
     assert node_lifecycle.preview(n["id"])["phase"]=="preparing"
+
+
+def test_confirmed_local_detach_unblocks_node_deletion_without_touching_remote(setup,monkeypatch):
+    n,remote,profile,_=setup
+    bridge=str(uuid.uuid4())
+    with storage.transaction() as db:
+        db.execute("INSERT INTO bridges(id,name,entry_id,created_at) VALUES(?,?,?,?)",
+                   (bridge,"temporary",n["id"],0))
+    monkeypatch.setattr(remnawave,"delete_node",lambda *_:pytest.fail("do not contact Remnawave"))
+    with pytest.raises(node_lifecycle.LifecycleError,match="точный код"):
+        node_lifecycle.detach_dependencies(n["id"],"WRONG")
+    assert node_lifecycle.preview(n["id"])["blocked"] is True
+    response=node_lifecycle.detach_dependencies(n["id"],n["code"])
+    assert response["remote_configs_untouched"] is True
+    assert node_lifecycle.preview(n["id"])["blocked"] is False
+    assert node_lifecycle.forget(n["id"],n["code"])["deleted"] is True
