@@ -125,7 +125,10 @@ def _profile_used_by_other(remote_nodes,remote_uuid,profile_uuid):
     for item in remote_nodes:
         if not isinstance(item,dict):
             raise LifecycleError("Неверный ответ Remnawave")
-        attached,known=_attached_profile(item)
+        try:
+            attached,known=_attached_profile(item)
+        except ValueError:
+            raise LifecycleError("Remnawave вернула некорректные данные профиля") from None
         if not known:
             raise LifecycleError("Неизвестны привязки других Xray-профилей")
         if item.get("uuid")==remote_uuid:
@@ -189,7 +192,10 @@ def _assert_unshared(rows,profile_uuid):
         raise LifecycleError("Не удалось проверить использование Xray-профиля")
     for item in rows:
         if not isinstance(item,dict):raise LifecycleError("Неправильный ответ Remnawave")
-        attached,known=_attached_profile(item)
+        try:
+            attached,known=_attached_profile(item)
+        except ValueError:
+            raise LifecycleError("Remnawave вернула некорректные данные профиля") from None
         if not known:raise LifecycleError("Привязки профилей неизвестны")
         if attached==profile_uuid:raise LifecycleError("Профиль ещё используется нодой")
 
@@ -243,6 +249,12 @@ def advance_full(node_id,code):
         if state["status"]!="done":
             raise LifecycleError("Очистка VPS не подтверждена агентом: "+
                                  (state.get("error") or state["status"]))
+        result=state.get("result") or {}
+        if (result.get("cleaned") is not True or
+            result.get("node")!=node["domain"] or
+            result.get("containers_removed") is not True or
+            result.get("agent_remains") is not True):
+            raise LifecycleError("Агент не подтвердил полную очистку нужной VPS")
         _set(node_id,phase="prepared",job_id="")
         phase="prepared"
     if phase=="prepared":
