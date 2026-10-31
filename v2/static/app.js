@@ -319,6 +319,31 @@ async function agentActionModal(id,action){
     }
   }catch(e){message(e.message,true)}
 }
+function migrateNodeTLSModal(id){
+  const n=state.nodes.find(v=>v.id===id);
+  if(!n)return message("Нода не найдена в менеджере",true);
+  openModal("TLS на VPS · "+n.code,"БЕЗ ИЗМЕНЕНИЙ СЕРВЕРА ПАНЕЛИ",
+    '<p class="muted small">Агент проверит сертификат и Docker Compose на '+esc(n.domain)+
+    '. Затем API изменит только отдельный профиль этой ноды: PEM заменится на keyFile/certificateFile. При проблемах с Xray менеджер попробует откатить профиль. Другие ноды и файлы Remnawave Panel не затрагиваются.</p>'+
+    '<form><label>Введи код '+esc(n.code)+' для подтверждения'+
+    '<input name="code" required autocomplete="off" placeholder="'+esc(n.code)+'"></label>'+
+    '<label class="check-row"><input type="checkbox" name="confirmed" required> Подтверждаю кратковременный перезапуск Xray только этой ноды</label>'+
+    '<div class="form-buttons"><button class="btn primary" type="submit">Проверить и мигрировать</button></div></form>',
+    async fd=>{
+      if(fd.get("code")!==n.code)throw Error("Код ноды не совпадает");
+      message("Проверяем TLS и Docker Compose на "+n.code);
+      const base="/agents/"+encodeURIComponent(id)+"/tasks";
+      const cert=await api(base,"POST",{action:"cert.status",payload:{}});
+      await waitAgentTask(id,cert.id);
+      const compose=await api(base,"POST",{action:"config.read",payload:{name:"node-compose"}});
+      await waitAgentTask(id,compose.id);
+      const result=await api("/node-certificates/"+encodeURIComponent(id)+"/migrate","POST",{
+        code:n.code,certificate_job_id:cert.id,compose_job_id:compose.id});
+      message(result.migrated?"Xray теперь использует сертификаты только на VPS":"Файловые пути уже настроены");
+      await renderNodeCertificates();
+    });
+}
+
 async function renderNodeCertificates(){
   const target=$("node-certs-list");
   try{
@@ -330,7 +355,8 @@ async function renderNodeCertificates(){
         '<p>Сертификат: '+esc(expiry)+' · '+(n.auto_sync?"Агент онлайн, автопроверка 6 ч":"Агент пока офлайн")+
         (n.last_checked?" · Проверен "+esc(new Date(n.last_checked*1000).toLocaleString("ru-RU")):"")+'</p>'+
         (n.last_error?'<p class="form-feedback error" role="status">Ошибка TLS: '+esc(n.last_error)+'</p>':'')+
-        '</div><button class="btn subtle" data-node-cert-check="'+esc(n.id)+'" type="button" '+(!n.auto_sync?"disabled":"")+'>Проверить через агент</button></div>';
+        '</div><button class="btn subtle" data-node-cert-check="'+esc(n.id)+'" type="button" '+(!n.auto_sync?"disabled":"")+'>Проверить через агент</button>'+
+        '<button class="btn subtle" data-tls-migrate="'+esc(n.id)+'" type="button" '+(!n.auto_sync?"disabled":"")+'>Перейти на локальные TLS</button></div>';
     }).join("")||'<p class="muted">Ноды пока не добавлены.</p>';
   }catch(e){target.textContent=e.message;target.className="form-feedback error"}
 }
