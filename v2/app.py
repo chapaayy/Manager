@@ -23,7 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from pydantic import BaseModel, Field
 
-from . import bundled, certificates, library, panel_delivery, remnawave, service, storage, vps_install, web_updates
+from . import bundled, library, remnawave, service, storage, vps_install, web_updates
 from .template_engine import Endpoint, TemplateError, safe_preview, variables_map
 
 STATIC = Path(__file__).resolve().parent / "static"
@@ -97,7 +97,6 @@ def startup():
     bundled.seed_defaults()
     storage.mark_interrupted_jobs()
     storage.remove_one_time_test_rus10()
-    certificates.start_background()
 
 
 @app.middleware("http")
@@ -417,105 +416,6 @@ def forget_failed_vps(node_id: str, body: VpsForgetData, _=Depends(write_access)
         return storage.delete_failed_install(node_id)
     except (ValueError, LookupError, sqlite3.IntegrityError) as e:
         _fail(e)
-
-
-class CertificateSettingsData(BaseModel):
-    enabled: bool
-    confirmed_panel_mount: bool = False
-
-
-class CertificateSyncData(BaseModel):
-    password: str = Field(default="", max_length=512)
-
-
-class CertificateEnrollData(BaseModel):
-    password: str = Field(min_length=1, max_length=512)
-    confirm_root_forced_command: bool = False
-
-
-@app.get("/api/certificates")
-def certificate_status(_=Depends(read_access)):
-    return certificates.status()
-
-
-@app.post("/api/certificates/settings")
-def certificate_settings(body: CertificateSettingsData, _=Depends(write_access)):
-    try:
-        return certificates.configure(body.enabled, body.confirmed_panel_mount)
-    except certificates.CertError as e:
-        raise HTTPException(422, str(e)) from None
-
-
-@app.post("/api/certificates/{node_id}/sync")
-def certificate_sync(node_id: str, body: CertificateSyncData, _=Depends(write_access)):
-    try:
-        return certificates.sync(node_id, password=body.password or None)
-    except (certificates.CertError, LookupError) as e:
-        raise HTTPException(422, str(e)) from None
-    except Exception:
-        raise HTTPException(502, "Не удалось прочитать или проверить сертификат VPS") from None
-
-
-@app.post("/api/certificates/{node_id}/enroll")
-def certificate_enroll(node_id: str, body: CertificateEnrollData, _=Depends(write_access)):
-    try:
-        return certificates.enroll(node_id, body.password, body.confirm_root_forced_command)
-    except (certificates.CertError, LookupError) as e:
-        raise HTTPException(422, str(e)) from None
-    except Exception:
-        raise HTTPException(502, "Не удалось настроить ограниченный SSH-доступ к сертификатам") from None
-
-
-class CertificateMigrateData(BaseModel):
-    sha256: str = Field(min_length=64, max_length=64)
-    confirm_change: bool = False
-
-
-class CertificateRestoreData(BaseModel):
-    confirm_restore: bool = False
-
-
-@app.get("/api/certificates/{node_id}/migration")
-def certificate_migration_preview(node_id: str, _=Depends(read_access)):
-    try:
-        return certificates.migration_preview(node_id)
-    except (certificates.CertError, remnawave.PanelError, LookupError) as e:
-        raise HTTPException(422, str(e)) from None
-
-
-@app.post("/api/certificates/{node_id}/migration")
-def certificate_migrate(node_id: str, body: CertificateMigrateData, _=Depends(write_access)):
-    try:
-        return certificates.migrate_profile(node_id, body.sha256, body.confirm_change)
-    except (certificates.CertError, remnawave.PanelError, LookupError) as e:
-        raise HTTPException(422, str(e)) from None
-
-
-@app.post("/api/certificates/{node_id}/restore")
-def certificate_restore(node_id: str, body: CertificateRestoreData, _=Depends(write_access)):
-    try:
-        return certificates.restore_profile(node_id, body.confirm_restore)
-    except (certificates.CertError, remnawave.PanelError, LookupError) as e:
-        raise HTTPException(422, str(e)) from None
-
-
-class RemotePanelCertEnrollData(BaseModel):
-    ip: str = Field(min_length=7,max_length=45)
-    port: int = Field(default=22,ge=1,le=65535)
-    fingerprint: str = Field(min_length=40,max_length=80)
-    password: str = Field(min_length=1,max_length=512)
-    confirm_panel_access: bool = False
-
-
-@app.post("/api/panel-certificates/enroll")
-def certificate_panel_enroll(body: RemotePanelCertEnrollData, _=Depends(write_access)):
-    try:
-        return panel_delivery.enroll(body.ip,body.port,body.fingerprint,body.password,
-                                     body.confirm_panel_access)
-    except (panel_delivery.DeliveryError,ValueError) as e:
-        raise HTTPException(422,str(e)) from None
-    except Exception:
-        raise HTTPException(502,"Не удалось установить защищённое соединение с VPS панели") from None
 
 
 @app.post("/api/nodes")
