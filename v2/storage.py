@@ -133,6 +133,11 @@ def init_db():
         CREATE TABLE IF NOT EXISTS certificate_settings (
             id INTEGER PRIMARY KEY CHECK(id=1),
             enabled INTEGER NOT NULL DEFAULT 0,
+            mode TEXT NOT NULL DEFAULT 'local',
+            remote_ip TEXT NOT NULL DEFAULT '',
+            remote_port INTEGER NOT NULL DEFAULT 22,
+            remote_fingerprint TEXT NOT NULL DEFAULT '',
+            remote_key_enc TEXT NOT NULL DEFAULT '',
             updated_at INTEGER NOT NULL DEFAULT 0
         );
         INSERT OR IGNORE INTO certificate_settings(id) VALUES(1);
@@ -194,6 +199,16 @@ def init_db():
         columns = {r["name"] for r in c.execute("PRAGMA table_info(panel)").fetchall()}
         if "caddy_api_key_enc" not in columns:
             c.execute("ALTER TABLE panel ADD COLUMN caddy_api_key_enc TEXT NOT NULL DEFAULT ''")
+        settings_columns={r["name"] for r in c.execute("PRAGMA table_info(certificate_settings)")}
+        for field, definition in (
+            ("mode", "TEXT NOT NULL DEFAULT 'local'"),
+            ("remote_ip", "TEXT NOT NULL DEFAULT ''"),
+            ("remote_port", "INTEGER NOT NULL DEFAULT 22"),
+            ("remote_fingerprint", "TEXT NOT NULL DEFAULT ''"),
+            ("remote_key_enc", "TEXT NOT NULL DEFAULT ''"),
+        ):
+            if field not in settings_columns:
+                c.execute(f"ALTER TABLE certificate_settings ADD COLUMN {field} {definition}")
         cert_columns = {r["name"] for r in c.execute("PRAGMA table_info(node_certificates)")}
         if "profile_mode" not in cert_columns:
             c.execute("ALTER TABLE node_certificates ADD COLUMN profile_mode TEXT NOT NULL DEFAULT 'inline'")
