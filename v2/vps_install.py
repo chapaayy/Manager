@@ -302,17 +302,6 @@ def _stage_files(t, files: dict):
         sftp.close()
 
 
-def _read_remote_file(t, path: str, max_bytes: int = 20000) -> str:
-    sftp=paramiko.SFTPClient.from_transport(t)
-    try:
-        with sftp.file(path,"rb") as src:
-            data=src.read(max_bytes + 1)
-            if len(data)>max_bytes:
-                raise ValueError("Получен слишком большой сертификат")
-            return data.decode("ascii")
-    finally:
-        sftp.close()
-
 
 def complete_panel_registration(node_id: str, source: Endpoint):
     """Continue from the panel phase only. Never install or rewrite VPS services."""
