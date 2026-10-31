@@ -185,7 +185,7 @@ def remove(node_id, code, *, delete_remote, delete_profile,
                 kept_profile = bool(profile_id and not delete_profile)
             except remnawave.PanelError as exc:
                 # Remnawave error bodies can contain secrets; expose only HTTP status.
-                match = re.search(r"(?<!\\d)HTTP\\s+([45]\\d\\d)\\b", str(exc))
+                match = re.search(r"(?<!\d)HTTP\s+([45]\d\d)\b", str(exc))
                 suffix = " (HTTP " + match.group(1) + ")" if match else ""
                 raise RemovalError("Remnawave API не подтвердила операцию" + suffix) from None
         elif not delete_remote:
