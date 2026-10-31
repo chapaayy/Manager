@@ -499,6 +499,19 @@ def bootstrap_agent(node_id: str,body: AgentBootstrapData,_=Depends(write_access
         raise HTTPException(502,"Не удалось установить агент по первоначальному SSH") from None
 
 
+@app.post("/api/agents/{node_id}/repair-helper")
+def repair_agent_helper(node_id: str, body: AgentBootstrapData, _=Depends(write_access)):
+    """One-time recovery for the first agent install's broken sudo sandbox."""
+    try:
+        return agent_bootstrap.repair_existing(
+            node_id,body.password,body.confirm_ssh_migration)
+    except (LookupError,agent_bootstrap.AgentBootstrapError,ValueError) as e:
+        raise HTTPException(422,str(e)) from None
+    except Exception:
+        raise HTTPException(502,
+            "Не удалось исправить служебные права агента на VPS") from None
+
+
 @app.post("/api/agents/{node_id}/tasks")
 def agent_enqueue(node_id: str, body: AgentTaskData, _=Depends(write_access)):
     if body.action in ("docker.restart","service.restart","config.apply") and not body.confirmed:
