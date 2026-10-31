@@ -123,7 +123,7 @@ function nodeWorkspaceBody(n,a,c){
       '<button class="btn subtle" data-node-network-refresh>Обновить</button></div>'+
       '<div class="node-kv">'+
       '<span>Интерфейс</span><strong>'+esc(m.net_interface||"Не определён")+'</strong>'+
-      '<span>Входящий трафик (всего)</span><strong>'+esc(nodeSize(m.net_rx_bytes))+'</strong>'+
+      '<span>Текущая скорость RX / TX</span><strong>'+esc(typeof m.net_rx_mbps==="number"&&typeof m.net_tx_mbps==="number"?m.net_rx_mbps.toFixed(1)+" / "+m.net_tx_mbps.toFixed(1)+" Мбит/с":"Ожидаем второй замер")+'</strong>'+
       '<span>Исходящий трафик (всего)</span><strong>'+esc(nodeSize(m.net_tx_bytes))+'</strong>'+
       '<span>TCP-соединения (установлены)</span><strong>'+esc(m.tcp_established??"—")+'</strong>'+
       '<span>TCP retransmits (всего)</span><strong>'+esc(m.tcp_retrans_segs??"—")+'</strong>'+
