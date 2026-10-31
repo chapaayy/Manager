@@ -130,6 +130,15 @@ def init_db():
             updated_at INTEGER NOT NULL
         );
         CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_installed_vps_ip ON node_installations(ip);
+        CREATE TABLE IF NOT EXISTS node_tls_sync (
+            node_id TEXT PRIMARY KEY REFERENCES nodes(id) ON DELETE CASCADE,
+            sync_key_enc TEXT NOT NULL DEFAULT '',
+            fingerprint TEXT NOT NULL DEFAULT '',
+            expires_at INTEGER NOT NULL DEFAULT 0,
+            last_checked INTEGER NOT NULL DEFAULT 0,
+            last_applied INTEGER NOT NULL DEFAULT 0,
+            last_error TEXT NOT NULL DEFAULT ''
+        );
         CREATE TABLE IF NOT EXISTS starter_seeds (
             name TEXT PRIMARY KEY,
             applied_at INTEGER NOT NULL

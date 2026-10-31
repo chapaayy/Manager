@@ -40,6 +40,7 @@
       <p class="nav-heading">РАБОЧЕЕ ПРОСТРАНСТВО</p>
       <nav aria-label="Разделы">
         <button class="nav-link active" data-page="nodes" title="Ноды" type="button"><svg><use href="/static/icons.svg#i-server"></use></svg><span>Ноды</span></button>
+        <button class="nav-link" data-page="node-certs" title="Сертификаты нод" type="button"><svg><use href="/static/icons.svg#i-shield-check"></use></svg><span>Сертификаты нод</span></button>
         <button class="nav-link" data-page="configs" title="Конфигурации" type="button"><svg><use href="/static/icons.svg#i-file-code"></use></svg><span>Конфигурации</span></button>
         <button class="nav-link" data-page="presets" title="Пресеты" type="button"><svg><use href="/static/icons.svg#i-layers"></use></svg><span>Пресеты</span></button>
         <button class="nav-link" data-page="settings" title="Настройки" type="button"><svg><use href="/static/icons.svg#i-settings-2"></use></svg><span>Настройки</span></button>
@@ -70,6 +71,17 @@
           <div class="section-title standalone-heading"><h2>Другие серверы</h2></div>
           <div id="other-nodes" class="node-grid"></div>
           <p class="inline-info"><svg><use href="/static/icons.svg#i-circle-alert"></use></svg>«Добавить VPS» проверяет чистый сервер по SSH и запускает установку после подтверждения. Для неудачных попыток доступны продолжение и удаление записи без изменения VPS.</p>
+        </section>
+
+        <section id="page-node-certs" class="page hidden">
+          <div class="page-heading">
+            <div><p class="eyebrow">TLS / СЕРВЕРЫ</p><h1>Сертификаты нод</h1>
+              <p class="subheading">Certbot на каждой VPS. Проверка и обновление через защищённый SSH и API Remnawave.</p></div>
+            <button id="node-certs-refresh" class="btn subtle" type="button"><svg><use href="/static/icons.svg#i-refresh-cw"></use></svg>Обновить</button>
+          </div>
+          <p class="inline-info">Сертификаты выпускаются и хранятся на самих VPS в /opt/nginx/certs. Дополнительные папки на сервере панели не создаются. Для совместимости с Remnawave сертификат передаётся в профиль через API. Автоматическая синхронизация включается отдельно для каждой ноды.</p>
+          <div class="section-title"><h2>Состояние сертификатов</h2><span class="muted">Автопроверка каждые 6 часов</span></div>
+          <div id="node-certs-list" class="node-grid"><div class="skeleton h90"></div></div>
         </section>
 
         <section id="page-configs" class="page hidden">

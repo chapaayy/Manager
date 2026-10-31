@@ -23,7 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from pydantic import BaseModel, Field
 
-from . import bundled, library, remnawave, service, storage, vps_install, web_updates
+from . import bundled, library, node_cert_sync, remnawave, service, storage, vps_install, web_updates
 from .template_engine import Endpoint, TemplateError, safe_preview, variables_map
 
 STATIC = Path(__file__).resolve().parent / "static"
@@ -97,6 +97,7 @@ def startup():
     bundled.seed_defaults()
     storage.mark_interrupted_jobs()
     storage.remove_one_time_test_rus10()
+    node_cert_sync.start_background()
 
 
 @app.middleware("http")
@@ -416,6 +417,41 @@ def forget_failed_vps(node_id: str, body: VpsForgetData, _=Depends(write_access)
         return storage.delete_failed_install(node_id)
     except (ValueError, LookupError, sqlite3.IntegrityError) as e:
         _fail(e)
+
+
+
+class NodeCertificateSyncRequest(BaseModel):
+    password: str = Field(default="", max_length=512)
+
+
+class NodeCertificateEnrollRequest(BaseModel):
+    password: str = Field(min_length=1,max_length=512)
+    confirmed: bool = False
+
+
+@app.get("/api/node-certificates")
+def node_certificates(_=Depends(read_access)):
+    return node_cert_sync.status()
+
+
+@app.post("/api/node-certificates/{node_id}/sync")
+def sync_node_certificate(node_id: str, body: NodeCertificateSyncRequest, _=Depends(write_access)):
+    try:
+        return node_cert_sync.sync(node_id,body.password or None)
+    except (node_cert_sync.CertificateSyncError,LookupError) as e:
+        raise HTTPException(422,str(e)) from None
+    except Exception:
+        raise HTTPException(502,"Не удалось безопасно обновить TLS-сертификат через API") from None
+
+
+@app.post("/api/node-certificates/{node_id}/enroll")
+def enroll_node_certificate(node_id: str, body: NodeCertificateEnrollRequest, _=Depends(write_access)):
+    try:
+        return node_cert_sync.enroll(node_id,body.password,body.confirmed)
+    except (node_cert_sync.CertificateSyncError,LookupError) as e:
+        raise HTTPException(422,str(e)) from None
+    except Exception:
+        raise HTTPException(502,"Не удалось настроить SSH-синхронизацию TLS на VPS") from None
 
 
 @app.post("/api/nodes")

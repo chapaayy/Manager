@@ -49,9 +49,10 @@ domain="$(cat /opt/remnanode/domain)"
 source="/etc/letsencrypt/live/$domain"
 install -m 0644 "$source/fullchain.pem" "/opt/nginx/certs/$domain""_fullchain.pem"
 install -m 0600 "$source/privkey.pem" "/opt/nginx/certs/$domain""_privkey.key"
-if docker container inspect remnanode >/dev/null 2>&1; then
-  docker compose -f /opt/remnanode/docker-compose.yml restart remnanode
-fi
+# TLS profile still needs an update through Remnawave API.
+# The Manager's certificate checker pushes the new PEM from THIS VPS.
+# Do not restart Xray here: that would reload the old inline certificate.
+logger -t node-certbot "TLS files refreshed on this VPS; manager API sync will apply them"
 HOOK
 chmod 0700 /usr/local/sbin/xppn-cert-refresh
 install -m 0600 /root/.xppn-pending/domain /opt/remnanode/domain
