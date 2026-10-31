@@ -13,7 +13,7 @@ services:
     volumes:
       - v2-data:/data
       - /var/lib/xppn-v2-update:/updater:rw
-      - xppn-panel-certs:/panel-certs:rw
+      - remnawave-managed-certs:/panel-certs:rw
     read_only: true
     tmpfs:
       - /tmp:size=32m,noexec,nosuid
@@ -25,5 +25,5 @@ services:
     mem_limit: 512m
 volumes:
   v2-data:
-  xppn-panel-certs:
-    name: xppn-v2-panel-certs
+  remnawave-managed-certs:
+    name: remnawave-managed-certs
