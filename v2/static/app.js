@@ -298,7 +298,7 @@ function agentBootstrapModal(id){
   if(!node)return;
   openModal("Установить агент: "+node.code,"ОДИН РАЗ ЧЕРЕЗ SSH",
     '<p class="muted small">Этот шаг установит Go-агент, выделенного системного пользователя и ограниченный helper на уже работающий VPS. Сначала используется сохранённый SSH-пароль этой ноды; при необходимости его можно указать вручную. Дальше управление идёт через Agent.</p>'+
-    '<form><label>SSH-пароль root<input name="password" type="password" required autocomplete="new-password"></label>'+
+    '<form><label>SSH-пароль root <span class="muted">· необязательно, если сохранён</span><input name="password" type="password" autocomplete="new-password" placeholder="Использовать сохранённый пароль"></label>'+
     '<label class="check-row"><input name="confirm" type="checkbox" required> Подтверждаю установку агента на VPS</label>'+
     '<div class="form-buttons"><button class="btn primary" type="submit">Установить</button></div></form>',
     async fd=>{
