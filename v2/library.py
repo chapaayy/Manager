@@ -99,8 +99,8 @@ def list_presets():
 
 def save_preset(*, name: str, description: str = "", config_ids: list[str],
                 preset_id: str = "", mode: str = "custom"):
-    if mode not in ("direct","bridge","custom"):
-        raise ValueError("Неизвестное назначение пресета")
+    if mode not in ("direct","custom"):
+        raise ValueError("Система мостов отключена: пресет может быть direct или custom")
     if not 1 <= len(name.strip()) <= 100 or len(description) > 600:
         raise ValueError("Название 1–100, описание до 600 символов")
     if not 1 <= len(config_ids) <= 4 or len(config_ids) != len(set(config_ids)):
