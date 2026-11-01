@@ -529,7 +529,7 @@ def start_install(*, code: str, country: str, name: str, domain: str, role: str,
     # Check panel API and key before inserting anything or touching VPS.
     remnawave.node_secret()
     # Reuse a previously saved *draft* only when explicitly selected by its ID.
-    # Never reassign a different VPS, an active bridge entry or an installed node.
+    # Never reassign a different VPS or an installed node.
     created_new = existing_node_id is None
     if existing_node_id:
         node = storage.get_node(existing_node_id)
@@ -547,6 +547,7 @@ def start_install(*, code: str, country: str, name: str, domain: str, role: str,
     try:
         storage.create_install_job(node["id"],ip,port,fingerprint_value,password)
         storage.save_install_preset(node["id"],preset_id,snapshot)
+        storage.set_node_config_choices_from_preset(node["id"],preset_id)
     except Exception:
         # Remove only a newly-created unscheduled draft, not an existing card.
         if created_new:
