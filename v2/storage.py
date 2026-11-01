@@ -75,6 +75,7 @@ def init_db():
             caddy_api_key_enc TEXT NOT NULL DEFAULT '',
             config_profile_uuid TEXT NOT NULL DEFAULT '',
             inbound_uuids_json TEXT NOT NULL DEFAULT '[]',
+            monitor_interval_ms INTEGER NOT NULL DEFAULT 5000,
             updated_at INTEGER NOT NULL DEFAULT 0
         );
         CREATE TABLE IF NOT EXISTS nodes (
@@ -128,6 +129,7 @@ def init_db():
             profile_uuid TEXT NOT NULL DEFAULT '',
             preset_id TEXT NOT NULL DEFAULT '',
             preset_snapshot_enc TEXT NOT NULL DEFAULT '',
+            ssh_password_enc TEXT NOT NULL DEFAULT '',
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL
         );
@@ -189,11 +191,15 @@ def init_db():
         columns = {r["name"] for r in c.execute("PRAGMA table_info(panel)").fetchall()}
         if "caddy_api_key_enc" not in columns:
             c.execute("ALTER TABLE panel ADD COLUMN caddy_api_key_enc TEXT NOT NULL DEFAULT ''")
+        if "monitor_interval_ms" not in columns:
+            c.execute("ALTER TABLE panel ADD COLUMN monitor_interval_ms INTEGER NOT NULL DEFAULT 5000")
         installation_columns={r["name"] for r in c.execute("PRAGMA table_info(node_installations)")}
         if "preset_id" not in installation_columns:
             c.execute("ALTER TABLE node_installations ADD COLUMN preset_id TEXT NOT NULL DEFAULT ''")
         if "preset_snapshot_enc" not in installation_columns:
             c.execute("ALTER TABLE node_installations ADD COLUMN preset_snapshot_enc TEXT NOT NULL DEFAULT ''")
+        if "ssh_password_enc" not in installation_columns:
+            c.execute("ALTER TABLE node_installations ADD COLUMN ssh_password_enc TEXT NOT NULL DEFAULT ''")
         preset_columns={r["name"] for r in c.execute("PRAGMA table_info(presets)")}
         if "mode" not in preset_columns:
             c.execute("ALTER TABLE presets ADD COLUMN mode TEXT NOT NULL DEFAULT 'custom'")
@@ -215,8 +221,26 @@ def get_panel() -> dict:
         "has_caddy_api_key": bool(r["caddy_api_key_enc"]),
         "config_profile_uuid": r["config_profile_uuid"],
         "inbound_uuids": json.loads(r["inbound_uuids_json"]),
+        "monitor_interval_ms": int(r["monitor_interval_ms"] or 5000),
         "updated_at": r["updated_at"],
     }
+
+
+def get_monitor_interval_ms() -> int:
+    with connect() as c:
+        row=c.execute("SELECT monitor_interval_ms FROM panel WHERE id=1").fetchone()
+    value=int(row["monitor_interval_ms"] or 5000) if row else 5000
+    return value if value in (1000,5000) else 5000
+
+
+def set_monitor_interval_ms(value: int) -> int:
+    if value not in (1000,5000):
+        raise ValueError("Интервал мониторинга: только 1 или 5 секунд")
+    with transaction() as c:
+        c.execute("UPDATE panel SET monitor_interval_ms=?,updated_at=? WHERE id=1",
+                  (value,int(time.time())))
+        event(c,"monitor.interval","panel",f"Monitoring interval {value} ms")
+    return value
 
 
 def set_panel(*, url: str, outbound_ip: str = "", token: str | None = None,
@@ -350,7 +374,8 @@ def remove_one_time_test_rus10() -> bool:
         return removed
 
 
-def create_install_job(node_id: str, ip: str, port: int, ssh_fingerprint: str) -> dict:
+def create_install_job(node_id: str, ip: str, port: int, ssh_fingerprint: str,
+                       ssh_password: str = "") -> dict:
     with transaction() as c:
         now = int(time.time())
         record = c.execute("SELECT status FROM nodes WHERE id=?",(node_id,)).fetchone()
@@ -362,9 +387,9 @@ def create_install_job(node_id: str, ip: str, port: int, ssh_fingerprint: str) -
             raise ValueError("Для этой ноды уже существует задача установки.")
         c.execute(
             """INSERT INTO node_installations
-                (node_id,ip,port,ssh_fingerprint,stage,note,created_at,updated_at)
-               VALUES(?,?,?,?,'queued','Ожидание установки',?,?)""",
-            (node_id,ip,port,ssh_fingerprint,now,now))
+                (node_id,ip,port,ssh_fingerprint,ssh_password_enc,stage,note,created_at,updated_at)
+               VALUES(?,?,?,?,?,'queued','Ожидание установки',?,?)""",
+            (node_id,ip,port,ssh_fingerprint,encrypt(ssh_password) if ssh_password else "",now,now))
         c.execute("UPDATE nodes SET status='queued' WHERE id=?",(node_id,))
         event(c,"node.install.queued",node_id,"Approved clean VPS setup queued")
     return get_install_job(node_id)
@@ -442,7 +467,39 @@ def get_install_job(node_id: str) -> dict:
         raise LookupError("Установка не найдена")
     result=dict(row)
     result.pop("preset_snapshot_enc",None)
+    secret=result.pop("ssh_password_enc","")
+    result["has_saved_ssh_password"]=bool(secret)
     return result
+
+
+def save_ssh_password(node_id: str, password: str) -> dict:
+    if not isinstance(password,str) or not 1<=len(password)<=512 or "\x00" in password:
+        raise ValueError("Некорректный SSH-пароль")
+    with transaction() as c:
+        changed=c.execute("UPDATE node_installations SET ssh_password_enc=?,updated_at=? WHERE node_id=?",
+                          (encrypt(password),int(time.time()),node_id))
+        if changed.rowcount!=1:
+            raise LookupError("Нода не найдена")
+        event(c,"node.ssh.saved",node_id,"Encrypted SSH credential updated")
+    return get_install_job(node_id)
+
+
+def get_saved_ssh_password(node_id: str) -> str:
+    with connect() as c:
+        row=c.execute("SELECT ssh_password_enc FROM node_installations WHERE node_id=?",(node_id,)).fetchone()
+    if not row or not row["ssh_password_enc"]:
+        return ""
+    return decrypt(row["ssh_password_enc"])
+
+
+def clear_ssh_password(node_id: str) -> dict:
+    with transaction() as c:
+        changed=c.execute("UPDATE node_installations SET ssh_password_enc='',updated_at=? WHERE node_id=?",
+                          (int(time.time()),node_id))
+        if changed.rowcount!=1:
+            raise LookupError("Нода не найдена")
+        event(c,"node.ssh.cleared",node_id,"Stored SSH credential removed")
+    return get_install_job(node_id)
 
 
 def save_install_preset(node_id: str, preset_id: str, snapshot: dict) -> None:
@@ -468,7 +525,7 @@ def get_install_preset(node_id: str) -> dict | None:
 
 
 def mark_interrupted_jobs():
-    """The SSH password is kept only in worker memory; a restart cannot resume."""
+    """Mark incomplete remote work interrupted; saved SSH is encrypted and never auto-resumes work."""
     with transaction() as c:
         c.execute("""UPDATE node_installations
                   SET stage='interrupted',
