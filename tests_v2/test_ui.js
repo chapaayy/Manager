@@ -68,7 +68,7 @@ assert.match(js,/selectedNodeTab==="monitor"/,"Fast interval only refreshes Moni
 assert.doesNotMatch(js,/if\(selectedNodeId\)\{\s*await refreshNodeWorkspaceData/,"Fast timer must not rerender management tabs");
 assert.match(nodeSecurity,/function saveNodeSecuritySettings/,"Structured security profile can be saved and applied");
 assert.match(nodeSecurity,/function unbanNodeSSH/,"Unban action requires confirmation");
-assert.match(nodeSecurity,/security-settings\\/apply/,"Security changes use a dedicated confirmed endpoint");
+assert.match(nodeSecurity,new RegExp("security-settings/apply"),"Security changes use a dedicated confirmed endpoint");
 assert.match(nodeSecurity,/Remnawave Node API · TCP 2222/,"Node API firewall is clearly named");
 
 assert.match(nodeDetail,/function nodeCertText/,"Inline certificate state");
