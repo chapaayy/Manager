@@ -117,15 +117,18 @@ function showPage(page){
   if(page==="settings")loadMonitoringSettings();
 }
 async function waitAgentTask(nodeId,jobId){
-  for(let i=0;i<30;i++){
+  const started=performance.now(),deadline=Date.now()+60000;
+  while(Date.now()<deadline){
     const result=await api("/agents/"+encodeURIComponent(nodeId)+"/tasks/"+encodeURIComponent(jobId));
     if(["done","failed","expired"].includes(result.status)){
       if(result.status!=="done")throw Error(result.error||"Агент не выполнил задачу");
+      result.result._manager_latency_ms=Math.round(performance.now()-started);
       return result.result;
     }
-    await new Promise(resolve=>setTimeout(resolve,2000));
+    const elapsed=performance.now()-started;
+    await new Promise(resolve=>setTimeout(resolve,elapsed<3000?120:500));
   }
-  throw Error("Агент ещё выполняет задачу. Результат будет доступен в истории заданий.");
+  throw Error("Агент ещё выполняет задачу. Результат будет доступен позже.");
 }
 async function agentTask(nodeId,action,payload={},confirmed=false){
   const job=await api("/agents/"+encodeURIComponent(nodeId)+"/tasks","POST",{action,payload,confirmed});
