@@ -30,24 +30,44 @@ function securityNetworkBody(n,a,m){
     '</div></div>';
 }
 
+function securitySameSet(a,b){
+  const left=[...(Array.isArray(a)?a:[])].map(String).sort();
+  const right=[...(Array.isArray(b)?b:[])].map(String).sort();
+  return left.length===right.length&&left.every((v,i)=>v===right[i]);
+}
 function securityActualMatches(data){
   const state=nodeSecuritySettings?.config;if(!state)return {};
   const f=state.fail2ban,fw=state.firewall,tcp=state.tcp,logs=state.logs;
   const tcpOk=tcp.enabled
     ? data.tcp_congestion===tcp.congestion_control&&data.default_qdisc===tcp.qdisc
     : data.bbr_config_managed!==true;
+
+  const expectedIgnore=["127.0.0.1/8","::1",...f.trusted_sources];
+  if(fw.enabled&&data.panel_firewall_panel_ip)expectedIgnore.push(data.panel_firewall_panel_ip+"/32");
   const f2bOk=f.enabled
     ? data.fail2ban_active===true&&data.sshd_jail_active===true&&
       Number(data.fail2ban_maxretry)===f.maxretry&&
       Number(data.fail2ban_findtime)===f.findtime_seconds&&
-      Number(data.fail2ban_bantime)===f.bantime_seconds
+      Number(data.fail2ban_bantime)===f.bantime_seconds&&
+      securitySameSet(data.fail2ban_ignoreip,expectedIgnore)
     : data.sshd_jail_active!==true;
+
+  const expectedFirewall=[...fw.extra_allowed_sources];
+  if(fw.enabled&&data.panel_firewall_panel_ip)expectedFirewall.unshift(data.panel_firewall_panel_ip+"/32");
   const fwOk=fw.enabled
     ? data.panel_firewall_ipv4_rule===true&&data.panel_firewall_service_active===true&&
-      data.panel_firewall_service_enabled===true&&(!fw.block_ipv6||data.panel_firewall_ipv6_rule===true)
-    : data.panel_firewall_ipv4_rule!==true;
-  const logOk=(!logs.nginx.enabled||data.nginx_logrotate===true)&&
-    (!logs.remnanode.enabled||data.remnanode_logrotate===true)&&
+      data.panel_firewall_service_enabled===true&&
+      securitySameSet(data.panel_firewall_allowed_sources,expectedFirewall)&&
+      (!fw.block_ipv6||data.panel_firewall_ipv6_rule===true)
+    : data.panel_firewall_ipv4_rule!==true&&data.panel_firewall_ipv6_rule!==true&&
+      data.panel_firewall_service_active!==true;
+
+  const logMatch=(desired,actual)=>desired.enabled
+    ? actual?.enabled===true&&actual?.valid===true&&actual?.size_mb===desired.size_mb&&
+      actual?.archives===desired.archives&&actual?.compress===desired.compress
+    : actual?.enabled!==true;
+  const logOk=logMatch(logs.nginx,data.nginx_logrotate_state)&&
+    logMatch(logs.remnanode,data.remnanode_logrotate_state)&&
     ((!logs.nginx.enabled&&!logs.remnanode.enabled)||data.logrotate_timer_active===true);
   return {tcpOk,f2bOk,fwOk,logOk};
 }
