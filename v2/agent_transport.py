@@ -293,6 +293,11 @@ def report(node_id: str, body: dict) -> dict:
     return {"ok":True}
 
 
+def online_window() -> float:
+    # Slow monitoring intervals must not make a healthy Agent flap offline.
+    return max(45.0, storage.monitoring_interval()*2.5)
+
+
 def nodes_status() -> list[dict]:
     now=int(time.time())
     with storage.connect() as db:
@@ -303,7 +308,7 @@ def nodes_status() -> list[dict]:
     return [{"id":r["id"],"code":r["code"],"domain":r["domain"],
             "installed":r["enabled"] is not None,
             "revoked":bool(r["enabled"] is not None and not r["enabled"]),
-            "online":bool(r["enabled"] and r["last_seen"] and now-r["last_seen"]<45),
+            "online":bool(r["enabled"] and r["last_seen"] and now-r["last_seen"]<online_window()),
             "version":r["version"] or "", "last_seen":r["last_seen"] or 0,
             "metrics":json.loads(r["last_status_json"] or "{}"),
             "auto_update":bool(r["auto_update"])}
