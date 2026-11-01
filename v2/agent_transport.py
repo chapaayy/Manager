@@ -25,6 +25,13 @@ MAX_RESULT = 48000
 LEASE_SECONDS = 120
 METRIC_SAMPLE_SECONDS = 5
 METRIC_RETENTION_SECONDS = 6 * 60 * 60
+MONITOR_FIELDS = {
+    "cpu_percent","MemTotal_bytes","MemAvailable_bytes",
+    "disk_total_bytes","disk_available_bytes",
+    "net_interface","net_rx_mbps","net_tx_mbps",
+    "net_rx_bytes","net_tx_bytes","net_rx_dropped","net_tx_dropped",
+    "tcp_established","tcp_retrans_segs","load1","load5","load15","uptime_seconds"
+}
 _METRIC_PRUNE_LOCK=threading.Lock()
 _last_metric_prune=0
 
@@ -145,6 +152,8 @@ def heartbeat(node_id: str, data: dict) -> dict:
         raise AgentError("Слишком большой heartbeat")
     now=int(time.time())
     metrics_raw=json.dumps(metrics,separators=(",",":"))
+    history_raw=json.dumps({k:v for k,v in metrics.items() if k in MONITOR_FIELDS},
+                           separators=(",",":"))
     bucket=now-(now%METRIC_SAMPLE_SECONDS)
     global _last_metric_prune
     with storage.transaction() as db:
@@ -153,7 +162,7 @@ def heartbeat(node_id: str, data: dict) -> dict:
         # Persist at most one point per 5-second bucket even when live heartbeat is 1s.
         # The current 1s value still comes from manager_agents for the live chart.
         db.execute("""INSERT OR IGNORE INTO manager_agent_metrics(node_id,ts,metrics_json)
-                      VALUES(?,?,?)""",(node_id,bucket,metrics_raw))
+                      VALUES(?,?,?)""",(node_id,bucket,history_raw))
         if now-_last_metric_prune>=300:
             with _METRIC_PRUNE_LOCK:
                 if now-_last_metric_prune>=300:
