@@ -323,15 +323,16 @@ def online_window() -> float:
     return max(45.0, storage.monitoring_interval()*2.5)
 
 
-def monitoring_history(node_id: str, seconds: int = 3600) -> dict:
+def monitoring_history(node_id: str, seconds: int = 3600, since: int = 0) -> dict:
     storage.get_node(node_id)
     seconds=max(60,min(int(seconds),METRIC_RETENTION_SECONDS))
     now=int(time.time())
+    lower=max(now-seconds,max(0,int(since)))
     with storage.connect() as db:
         rows=db.execute("""SELECT ts,metrics_json FROM manager_agent_metrics
                            WHERE node_id=? AND ts>=? ORDER BY ts""",
-                        (node_id,now-seconds)).fetchall()
-        current=db.execute("""SELECT last_seen,last_status_json FROM manager_agents
+                        (node_id,lower)).fetchall()
+        current=db.execute("""SELECT version,last_seen,last_status_json FROM manager_agents
                               WHERE node_id=? AND enabled=1""",(node_id,)).fetchone()
     samples=[]
     for row in rows:
@@ -345,8 +346,12 @@ def monitoring_history(node_id: str, seconds: int = 3600) -> dict:
             samples.append({"ts":current["last_seen"],"metrics":latest})
         elif current["last_seen"]==samples[-1]["ts"]:
             samples[-1]={"ts":current["last_seen"],"metrics":latest}
-    return {"node_id":node_id,"seconds":seconds,
-            "sample_interval":METRIC_SAMPLE_SECONDS,"samples":samples}
+    return {"node_id":node_id,"seconds":seconds,"since":lower,
+            "sample_interval":METRIC_SAMPLE_SECONDS,
+            "version":current["version"] if current else "",
+            "last_seen":current["last_seen"] if current else 0,
+            "online":bool(current and current["last_seen"] and now-current["last_seen"]<online_window()),
+            "samples":samples}
 
 
 def nodes_status() -> list[dict]:
