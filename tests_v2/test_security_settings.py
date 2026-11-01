@@ -1,4 +1,5 @@
 """Structured per-node network/security desired state and safe application."""
+import importlib.util
 import json
 from pathlib import Path
 
@@ -8,6 +9,10 @@ from cryptography.fernet import Fernet
 from v2 import agent_transport, security_settings, storage
 
 ROOT=Path(__file__).resolve().parents[1]
+
+spec=importlib.util.spec_from_file_location("security_helper_test",ROOT/"v2/agent/helper.py")
+helper=importlib.util.module_from_spec(spec)
+spec.loader.exec_module(helper)
 
 
 @pytest.fixture()
@@ -114,3 +119,25 @@ def test_security_ui_exposes_all_managed_groups():
                    "security-log-","-size","-archives",
                    "saveNodeSecuritySettings"):
         assert marker in js
+
+
+def test_firewall_script_owns_only_dedicated_2222_chains():
+    script=helper._firewall_script(
+        "8.8.8.8",["8.8.8.8/32","9.9.9.0/24"],True,True,False)
+    assert "XPPN_NODE_API4" in script and "XPPN_NODE_API6" in script
+    assert "iptables -A XPPN_NODE_API4 -s 8.8.8.8/32 -j ACCEPT" in script
+    assert "iptables -A XPPN_NODE_API4 -s 9.9.9.0/24 -j ACCEPT" in script
+    assert "iptables -A XPPN_NODE_API4 -j DROP" in script
+    assert "iptables -F INPUT" not in script
+    assert "iptables -P INPUT" not in script
+    assert "ip6tables -C INPUT -p tcp --dport \"$PORT\" -j DROP" not in script
+
+
+def test_only_recognized_legacy_migration_removes_old_ipv6_drop():
+    normal=helper._firewall_script(
+        "8.8.8.8",["8.8.8.8/32"],True,True,False)
+    migration=helper._firewall_script(
+        "8.8.8.8",["8.8.8.8/32"],True,True,True)
+    legacy='ip6tables -C INPUT -p tcp --dport "$PORT" -j DROP'
+    assert legacy not in normal
+    assert legacy in migration
