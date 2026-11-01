@@ -111,6 +111,10 @@ def _auto_schedule_locked(node_id:str,version:str,metrics:dict)->bool:
                        (node_id,)).fetchone()
     if not row or not row["auto_update"] or now-row["last_update_check"]<3600:
         return False
+    # Record the check even when no update exists, otherwise 1-second heartbeat
+    # mode would re-run release discovery on every request.
+    with storage.transaction() as db:
+        db.execute("UPDATE manager_agents SET last_update_check=? WHERE node_id=?",(now,node_id))
     release=agent_release.release()
     if arch not in release["binaries"] or agent_release.compare(release["version"],version)<=0:
         return False
