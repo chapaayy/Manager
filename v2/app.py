@@ -571,9 +571,10 @@ def agents_status(_=Depends(read_access)):
 
 
 @app.get("/api/agents/{node_id}/monitoring")
-def agent_monitoring(node_id: str, seconds: int = 3600, _=Depends(read_access)):
+def agent_monitoring(node_id: str, seconds: int = 3600, since: int = 0,
+                     _=Depends(read_access)):
     try:
-        return agent_transport.monitoring_history(node_id,seconds)
+        return agent_transport.monitoring_history(node_id,seconds,since)
     except (LookupError,ValueError) as exc:
         raise HTTPException(422,str(exc)) from None
 
