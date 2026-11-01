@@ -187,6 +187,10 @@ async function securityReload(){
   try{await loadNodeSecuritySettings()}catch(e){message(e.message,true)}
   if(selectedNodeId!==id||selectedNodeTab!=="network")return;
   if(currentAgent().online)await executeNodeTask("baseline.status");
+  if(selectedNodeId===id&&selectedNodeTab==="network"&&nodeSecuritySettings){
+    const box=$("security-settings-panel");
+    if(box)box.innerHTML=securitySettingsEditor(currentNode(),currentAgent());
+  }
 }
 async function saveNodeSecuritySettings(applyNow=false){
   const id=selectedNodeId;if(!id||!nodeSecuritySettings)return;
