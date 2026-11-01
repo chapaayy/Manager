@@ -515,6 +515,12 @@ def set_node_config_choices(node_id: str, choices: dict) -> dict:
     return get_node_config_choices(node_id)
 
 
+def set_node_config_choices_from_preset(node_id: str, preset_id: str) -> dict:
+    with connect() as c:
+        rows=c.execute("SELECT kind,config_id FROM preset_items WHERE preset_id=?",(preset_id,)).fetchall()
+    return set_node_config_choices(node_id,{r["kind"]:r["config_id"] for r in rows})
+
+
 def save_ssh_password(node_id: str, password: str) -> dict:
     if not isinstance(password,str) or not 1<=len(password)<=512 or "\x00" in password:
         raise ValueError("Некорректный SSH-пароль")
