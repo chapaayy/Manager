@@ -149,7 +149,7 @@
               <p id="panel-status" class="form-feedback"></p>
 
             </section>
-            <aside class="panel info-panel"><svg class="info-icon"><use href="/static/icons.svg#i-shield-check"></use></svg><h3>Безопасный предпросмотр</h3><p>Действующие VPN-конфиги и ключи не изменяются при редактировании библиотеки или создании плана моста. Применение будет подключено отдельно после проверки совместимости и отката.</p><p>Глубокая проверка сетевой доступности из регионов потребует независимых измерительных узлов и не подменяется проверкой с одного VPS.</p></aside>
+            <aside class="panel info-panel"><svg class="info-icon"><use href="/static/icons.svg#i-shield-check"></use></svg><h3>Безопасный предпросмотр</h3><p>Действующие VPN-конфиги и ключи не изменяются при редактировании библиотеки. Конфигурации хранятся отдельно и применяются только явным действием на выбранной ноде.</p><p>Глубокая проверка сетевой доступности из регионов потребует независимых измерительных узлов и не подменяется проверкой с одного VPS.</p></aside>
           </div>
         </section>
         <section id="page-updates" class="page hidden">
@@ -258,12 +258,6 @@
   <dialog id="modal" class="modal">
     <div class="modal-header"><div><p class="eyebrow" id="modal-kicker">ДЕЙСТВИЕ</p><h2 id="modal-title">Настройка</h2></div><button class="icon-button" id="modal-close" type="button" aria-label="Закрыть"><svg><use href="/static/icons.svg#i-x"></use></svg></button></div>
     <div id="modal-content"></div>
-  </dialog>
-  <dialog id="plan-dialog" class="modal wide-dialog">
-    <div class="modal-header"><div><p class="eyebrow">XRAY / ПРЕДПРОСМОТР</p><h2>Что изменится в мосте</h2></div><button class="icon-button" id="plan-close" type="button" aria-label="Закрыть"><svg><use href="/static/icons.svg#i-x"></use></svg></button></div>
-    <p class="inline-info">Это черновик. Ни Xray, ни Remnawave, ни VPS не изменились.</p>
-    <div class="plan-grid"><div><h3>Изменения JSON</h3><pre id="plan-diff" class="diff-view"></pre></div><div><h3>Конфигурация после изменений (секреты скрыты)</h3><pre id="plan-json" class="json-view"></pre></div></div>
-    <div class="modal-footer"><button class="btn subtle" id="plan-dismiss">Закрыть</button><button class="btn primary" id="plan-approve">Утвердить черновик (без применения)</button></div>
   </dialog>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 </body>
