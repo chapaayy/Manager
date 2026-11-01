@@ -110,7 +110,12 @@ echo "STEP: REMNANODE_RUNNING"
 # This runs only on a clean VPS after Remnawave Node is already running.
 if [[ -f /root/.xppn-pending/node-baseline.sh ]]; then
   echo "STEP: Safe BBR, SSH protection and log rotation"
-  bash /root/.xppn-pending/node-baseline.sh || echo "STEP: Baseline skipped; VPN services unchanged"
+  bash /root/.xppn-pending/node-baseline.sh |
+    while IFS= read -r line; do
+      case "$line" in
+        BASELINE:*) echo "STEP: Base: ${line#BASELINE:}" ;;
+      esac
+    done || echo "STEP: Baseline skipped; VPN services unchanged"
 fi
 rm -rf /root/.xppn-pending
 echo "STEP: COMPLETE"
