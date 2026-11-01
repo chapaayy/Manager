@@ -486,7 +486,7 @@ def _apply_fail2ban_settings(cfg, panel_ip):
             "bantime_seconds":bantime,"trusted_sources":trusted}
 
 
-def _firewall_script(panel_ip, allowed, block_ipv6, enabled):
+def _firewall_script(panel_ip, allowed, block_ipv6, enabled, legacy_ipv6=False):
     old_panel=panel_ip
     lines=["#!/usr/bin/env bash","set -Eeuo pipefail",
            "PORT=2222",
@@ -504,10 +504,13 @@ def _firewall_script(panel_ip, allowed, block_ipv6, enabled):
            "}",
            "cleanup4","cleanup6"]
     if old_panel:
-        lines += [
-          "while iptables -C INPUT -p tcp --dport \"$PORT\" ! -s "+old_panel+" -j DROP 2>/dev/null; do iptables -D INPUT -p tcp --dport \"$PORT\" ! -s "+old_panel+" -j DROP; done",
-          "if command -v ip6tables >/dev/null; then while ip6tables -C INPUT -p tcp --dport \"$PORT\" -j DROP 2>/dev/null; do ip6tables -D INPUT -p tcp --dport \"$PORT\" -j DROP; done; fi"
-        ]
+        lines.append(
+          "while iptables -C INPUT -p tcp --dport \"$PORT\" ! -s "+old_panel+" -j DROP 2>/dev/null; do iptables -D INPUT -p tcp --dport \"$PORT\" ! -s "+old_panel+" -j DROP; done")
+    if legacy_ipv6:
+        # Remove the one rule created by the legacy XPPN installer only during
+        # migration. Never keep deleting generic user-owned IPv6 DROP rules.
+        lines.append(
+          "if command -v ip6tables >/dev/null && ip6tables -C INPUT -p tcp --dport \"$PORT\" -j DROP 2>/dev/null; then ip6tables -D INPUT -p tcp --dport \"$PORT\" -j DROP; fi")
     if not enabled:return "\n".join(lines)+"\n"
     ipv4=[];ipv6=[]
     for source in allowed:
@@ -548,8 +551,10 @@ def _apply_firewall_settings(cfg):
         panel_ip=old_panel if re.fullmatch(r"[0-9.]+",old_panel or "") else ""
     script_path=Path("/usr/local/sbin/xppn-node-firewall")
     unit=Path("/etc/systemd/system/xppn-node-firewall.service")
-    script=_firewall_script(old_panel or panel_ip,allowed,block_ipv6,enabled)
     old_script=script_path.read_bytes() if script_path.is_file() and not script_path.is_symlink() else None
+    legacy_ipv6=bool(old_script and b"XPPN_NODE_API6" not in old_script and
+                     b"ip6tables -C INPUT -p tcp --dport 2222 -j DROP" in old_script)
+    script=_firewall_script(old_panel or panel_ip,allowed,block_ipv6,enabled,legacy_ipv6)
     _replace_root_file(script_path,script,0o700)
     _replace_root_file(unit,
         "[Unit]\nDescription=Restrict Remnawave Node API to allowed sources\n"
@@ -570,7 +575,7 @@ def _apply_firewall_settings(cfg):
         run(["systemctl","enable","xppn-node-firewall.service"],timeout=15,limit=1000)
         run(["systemctl","restart","xppn-node-firewall.service"],timeout=20,limit=1000)
     else:
-        subprocess.run(["systemctl","disable","xppn-node-firewall.service"],
+        subprocess.run(["systemctl","disable","--now","xppn-node-firewall.service"],
                        capture_output=True,timeout=15)
     return {"enabled":enabled,"allowed_sources":allowed,
             "block_ipv6":block_ipv6,"panel_ip":panel_ip if enabled else ""}
