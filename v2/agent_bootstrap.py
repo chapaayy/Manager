@@ -286,3 +286,70 @@ def upgrade_existing(node_id:str,password:str,confirmed:bool)->dict:
                 "pending_heartbeat":True}
     finally:
         t.close()
+
+
+def enable_ssh_security(node_id: str,password: str,confirmed: bool) -> dict:
+    """Explicit one-time SSH helper rollout; never reinstall or rotate Agent."""
+    if not confirmed:
+        raise AgentBootstrapError("Подтверди установку SSH-защиты на VPS")
+    node=storage.get_node(node_id)
+    if node["status"]!="ready":
+        raise AgentBootstrapError("Нода должна быть установлена")
+    agent=next((x for x in agent_transport.nodes_status() if x["id"]==node_id),None)
+    if not agent or not agent["online"] or not agent["version"].startswith("1.4."):
+        raise AgentBootstrapError("Для настройки безопасности нужен Agent v1.4 или новее")
+    job=storage.get_install_job(node_id)
+    try:
+        t,_=vps_install.ssh_open(job["ip"],job["port"],password,job["ssh_fingerprint"])
+    except paramiko.AuthenticationException:
+        raise AgentBootstrapError("SSH: неверный пароль root") from None
+    except (ValueError,socket.timeout,TimeoutError,OSError,paramiko.SSHException):
+        raise AgentBootstrapError("SSH: подключение недоступно или fingerprint сервера изменился") from None
+    try:
+        vps_install.verify_existing_install(
+            t,vps_install.Endpoint(node["code"],node["domain"],node["country"]))
+        files={"helper.py":(ROOT/"helper.py").read_bytes(),
+               "fail2ban-setup.sh":(ROOT/"fail2ban-setup.sh").read_bytes()}
+        if any(not x or len(x)>100000 for x in files.values()):
+            raise AgentBootstrapError("Файлы безопасности некорректны")
+        stage="/root/.node-manager-security-stage"
+        vps_install.run_command(t,"install -d -m 0700 "+stage,timeout=12)
+        client=paramiko.SFTPClient.from_transport(t)
+        try:
+            for name,raw in files.items():
+                with client.file(stage+"/"+name,"wb") as target:
+                    target.write(raw)
+                client.chmod(stage+"/"+name,0o600)
+        finally:
+            client.close()
+        # All commands and paths are hardcoded; untrusted password is never
+        # interpolated in a shell command or persisted.
+        script=(
+            "set -Eeuo pipefail\n"
+            "test ! -L /usr/local/libexec/node-manager-helper\n"
+            "test -s /usr/local/libexec/node-manager-helper\n"
+            "python3 -m py_compile /root/.node-manager-security-stage/helper.py\n"
+            "bash -n /root/.node-manager-security-stage/fail2ban-setup.sh\n"
+            "install -m 0700 -o root -g root /usr/local/libexec/node-manager-helper /root/.node-manager-security-stage/helper.prev\n"
+            "if ! install -m 0755 /root/.node-manager-security-stage/helper.py /usr/local/libexec/node-manager-helper || "
+            "! install -m 0700 /root/.node-manager-security-stage/fail2ban-setup.sh /usr/local/libexec/node-manager-fail2ban || "
+            "! /usr/local/libexec/node-manager-helper baseline.status </dev/null >/dev/null; then\n"
+            " install -m 0755 /root/.node-manager-security-stage/helper.prev /usr/local/libexec/node-manager-helper\n"
+            " echo SECURITY_HELPER:rolled-back\n"
+            " exit 36\n"
+            "fi\n"
+            "rm -rf -- /root/.node-manager-security-stage\n"
+            "echo SECURITY_HELPER:ready\n"
+        )
+        output=vps_install.run_command(
+            t,"bash -se <<'XPPN_SECURITY_HELPER_V1'\n"+script+"XPPN_SECURITY_HELPER_V1",
+            timeout=35,max_bytes=800)
+        if "SECURITY_HELPER:ready" not in output:
+            raise AgentBootstrapError("Служебные файлы безопасности не подтверждены")
+        return {"node_id":node_id,"helper_ready":True,"credentials_unchanged":True}
+    except AgentBootstrapError:
+        raise
+    except (ValueError,OSError,RuntimeError,TimeoutError,paramiko.SSHException):
+        raise AgentBootstrapError("Не удалось подготовить SSH-защиту. Проверь журнал VPS; Agent не переустанавливался") from None
+    finally:
+        t.close()
