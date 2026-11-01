@@ -197,7 +197,7 @@
               <textarea id="config-content" spellcheck="false" aria-label="Редактор конфигурации" placeholder="Вставь JSON или создай конфигурацию…"></textarea>
               <div class="editor-actions"><span class="muted" id="config-hint">Здесь можно хранить разные версии для разных нод.</span><button class="btn subtle hidden" id="config-delete"><svg><use href="/static/icons.svg#i-x"></use></svg>Удалить</button><button class="btn primary" id="config-save"><svg><use href="/static/icons.svg#i-save"></use></svg>Сохранить</button></div>
               <details class="template-info"><summary>Как работают заменяемые переменные в Xray?</summary>
-                <div class="form-buttons"><button class="btn subtle" type="button" id="config-load-bridge">Загрузить образец Xray Bridge</button></div><div class="variable-sample"><pre id="placeholder-preview"></pre></div>
+                <div class="variable-sample"><pre id="placeholder-preview"></pre></div>
                 <div id="template-variable-list" class="variable-list"></div>
                 <p>Переменные выделены цветом. При подготовке ноды менеджер генерирует значения и показывает diff. Простое текстовое сохранение в библиотеке не изменяет VPN.</p>
               </details>
@@ -208,10 +208,10 @@
       <button class="icon-button" type="button" id="preset-close" aria-label="Закрыть"><svg><use href="/static/icons.svg#i-x"></use></svg></button></div>
                 <section class="panel preset-form-panel"><p class="eyebrow">РЕДАКТОР НАБОРА</p><h2 id="preset-edit-title">Новый пресет</h2>
               <form id="preset-form">
-                <label>Название<input id="preset-name" maxlength="100" placeholder="RU Bridge · стандарт" required></label>
+                <label>Название<input id="preset-name" maxlength="100" placeholder="Обычная нода · стандарт" required></label>
                 <label>Назначение пресета<select id="preset-mode">
                   <option value="direct">Обычная / выходная нода</option>
-                  <option value="bridge">Входной мост</option>
+                  
                   <option value="custom">Только библиотека (без установки)</option>
                 </select></label>
                 <label>Описание<textarea id="preset-description" rows="3" maxlength="600" placeholder="Какие ноды используют этот набор"></textarea></label>
@@ -233,7 +233,7 @@
         <label>Пресет установки<select id="vps-preset" name="preset_id" required></select></label>
         <p class="muted small" id="vps-preset-description">Выбранный пресет определяет Xray и серверные файлы новой VPS.</p>
         <div class="two-fields"><label>Страна<select name="country"><option value="RU">Россия</option><option value="DE" selected>Германия</option><option value="NL">Нидерланды</option><option value="PL">Польша</option><option value="LV">Латвия</option><option value="US">США</option></select></label>
-          <label>Назначение<select name="role"><option value="regular">Обычная нода</option><option value="exit">Выходной сервер для моста</option><option value="entry">Входной мост</option></select></label></div>
+          <label>Тип сервера<select name="role"><option value="regular">Обычная нода</option></select></label></div>
         <div class="two-fields"><label>Публичный IPv4 VPS<input name="ip" required placeholder="203.0.113.25"></label>
           <label>SSH-порт<input name="port" type="number" min="1" max="65535" value="22" required></label></div>
         <label>Домен VPS<input name="domain" required placeholder="de1.gowayot.com"></label>
