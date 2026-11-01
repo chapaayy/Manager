@@ -412,9 +412,13 @@ function restartMonitoringTimer(){
   monitoringTimer=setInterval(async()=>{
     if(document.hidden)return;
     try{
+      // Fast monitoring must never re-render configuration, security or management tabs.
+      // Only the dedicated Monitoring tab consumes the selected 1–60s interval.
       if(selectedNodeId){
-        await refreshNodeWorkspaceData();
-      }else if(currentPage==="agents"){
+        if(selectedNodeTab==="monitor")await refreshNodeMonitoring();
+        return;
+      }
+      if(currentPage==="agents"){
         await renderAgents();
       }else if(currentPage==="nodes"){
         const data=await api("/agents");

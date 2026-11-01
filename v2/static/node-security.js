@@ -15,21 +15,9 @@ const trafficRate=v=>{
 };
 function securityNetworkBody(n,a,m){
   const online=!!a.online;
-  return '<div class="security-workspace"><div class="node-panel security-network">'+
-    '<div class="node-panel-head"><h2>Сеть и производительность</h2>'+
-    '<button class="btn subtle" data-node-network-refresh>Обновить показатели</button></div>'+
-    '<div class="security-metrics">'+
-    [['Входящая скорость',trafficRate(m.net_rx_mbps),"Всего "+trafficSize(m.net_rx_bytes)],
-     ['Исходящая скорость',trafficRate(m.net_tx_mbps),"Всего "+trafficSize(m.net_tx_bytes)],
-     ['TCP-соединения',m.tcp_established??"—","Установлены сейчас"],
-     ['TCP retransmits',m.tcp_retrans_segs??"—","Накопительно с запуска системы"]
-    ].map(([heading,value,note])=>'<div class="security-metric"><small>'+esc(heading)+'</small>'+
-      '<strong>'+esc(value)+'</strong><span>'+esc(note)+'</span></div>').join("")+
-    '</div><p class="muted small">Интерфейс: '+esc(m.net_interface||"—")+
-    ' · Потери пакетов RX/TX: '+esc(m.net_rx_dropped??"—")+
-    ' / '+esc(m.net_tx_dropped??"—")+
-    '. Счётчики накопительные; скорость рассчитывается между замерами Agent.</p></div>'+
-    '<div class="node-panel security-audit"><div class="node-panel-head"><h2>Защита VPS</h2>'+
+  return '<div class="security-workspace">'+
+    '<div class="node-panel security-audit"><div class="node-panel-head"><div><h2>Сеть и защита</h2>'+
+    '<p class="muted small">BBR/FQ, Fail2Ban, firewall API и ротация логов. Живая нагрузка и трафик перенесены во вкладку «Мониторинг».</p></div>'+
     '<button class="btn subtle" data-node-task="baseline.status" '+(!online?'disabled':'')+
     '>Проверить состояние</button></div>'+
     '<div id="node-task-output">'+(nodeSecuritySnapshot?securityStatusReport(nodeSecuritySnapshot):

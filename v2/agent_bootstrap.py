@@ -19,6 +19,12 @@ class AgentBootstrapError(ValueError):
     """A deliberately sanitized actionable bootstrap failure."""
 
 
+def _version_at_least(value: str, minimum: tuple[int,int,int]) -> bool:
+    match=re.fullmatch(r"(\d+)\.(\d+)\.(\d+)",str(value or "").strip())
+    if not match:return False
+    return tuple(int(part) for part in match.groups())>=minimum
+
+
 STAGE_DESCRIPTION = {
     "preflight": "проверка установочных файлов",
     "dependencies": "проверка или установка зависимостей sudo",
@@ -296,7 +302,7 @@ def enable_ssh_security(node_id: str,password: str,confirmed: bool) -> dict:
     if node["status"]!="ready":
         raise AgentBootstrapError("Нода должна быть установлена")
     agent=next((x for x in agent_transport.nodes_status() if x["id"]==node_id),None)
-    if not agent or not agent["online"] or not agent["version"].startswith("1.4."):
+    if not agent or not agent["online"] or not _version_at_least(agent["version"],(1,4,0)):
         raise AgentBootstrapError("Для настройки безопасности нужен Agent v1.4 или новее")
     job=storage.get_install_job(node_id)
     try:

@@ -7,9 +7,10 @@
   <meta name="theme-color" content="#09090b">
   <title>XPPN Manager 2.3 — рабочая область</title>
   <link rel="stylesheet" href="/static/style.css?v=2.7.0">
-  <script src="/static/app.js?v=2.8.0" defer></script>
-  <script src="/static/node-security.js?v=1.0.0" defer></script>
-  <script src="/static/node-detail.js?v=1.4.0" defer></script>
+  <script src="/static/app.js?v=2.9.0" defer></script>
+  <script src="/static/node-security.js?v=1.1.0" defer></script>
+  <script src="/static/node-monitoring.js?v=1.0.0" defer></script>
+  <script src="/static/node-detail.js?v=1.5.0" defer></script>
   <script src="/static/vps.js?v=2.8.0" defer></script>
 </head>
 <body>
@@ -136,7 +137,7 @@
 
             </section>
                         <section class="panel settings-card">
-              <div class="settings-head"><span class="feature-icon"><svg><use href="/static/icons.svg#i-activity"></use></svg></span><div><h2>Мониторинг</h2><p>Частота обновления всех Agent heartbeat и экранов мониторинга</p></div></div>
+              <div class="settings-head"><span class="feature-icon"><svg><use href="/static/icons.svg#i-activity"></use></svg></span><div><h2>Мониторинг</h2><p>Частота heartbeat и живой вкладки «Мониторинг» внутри ноды</p></div></div>
               <form id="monitoring-form">
                 <label>Интервал<select id="monitoring-interval">
                   <option value="1">1 секунда · очень быстро</option>
@@ -145,12 +146,12 @@
                   <option value="10">10 секунд</option><option value="15">15 секунд</option>
                   <option value="30">30 секунд</option><option value="60">60 секунд</option>
                 </select></label>
-                <p class="muted small">Задания логов и конфигов используют отдельный long-poll и приходят сразу — этот интервал на их скорость не влияет.</p>
+                <p class="muted small">Этот интервал обновляет только живую телеметрию. «Управление», конфигурации, логи и безопасность не перерисовываются по таймеру. Задания Agent используют отдельный long-poll.</p>
                 <div class="form-buttons"><button type="submit" class="btn primary">Сохранить частоту</button></div>
               </form>
               <p id="monitoring-status" class="form-feedback"></p>
             </section>
-<aside class="panel info-panel"><svg class="info-icon"><use href="/static/icons.svg#i-shield-check"></use></svg><h3>Безопасный предпросмотр</h3><p>Действующие VPN-конфиги и ключи не изменяются при редактировании библиотеки или создании плана моста. Применение будет подключено отдельно после проверки совместимости и отката.</p><p>Глубокая проверка сетевой доступности из регионов потребует независимых измерительных узлов и не подменяется проверкой с одного VPS.</p></aside>
+<aside class="panel info-panel"><svg class="info-icon"><use href="/static/icons.svg#i-shield-check"></use></svg><h3>Безопасный предпросмотр</h3><p>Действующие VPN-конфиги и ключи не изменяются при редактировании библиотеки или просмотре конфигураций. Применение будет подключено отдельно после проверки совместимости и отката.</p><p>Глубокая проверка сетевой доступности из регионов потребует независимых измерительных узлов и не подменяется проверкой с одного VPS.</p></aside>
           </div>
         </section>
         <section id="page-updates" class="page hidden">
@@ -239,7 +240,7 @@
         <label>Домен VPS<input name="domain" required placeholder="de1.gowayot.com"></label>
         <div class="two-fields"><label>SSH-пароль root<input type="password" name="password" autocomplete="new-password" required></label>
           <label>Исходящий IPv4 Remnawave (доступ к порту 2222)<input name="panel_ip" required placeholder="Публичный IP управляющей панели"></label></div>
-        <p class="muted small">Установка только на пустой Ubuntu/Debian. DNS домена должен указывать на указанный IPv4. Порт 2222 разрешается только IP панели. Пароль SSH не сохраняется в базе.</p><p class="inline-info">Первый установщик ещё не проверен на настоящем VPS. Используй только пустую тестовую машину. При сбое возможна частичная установка без автоматического отката.</p>
+        <p class="muted small">Установка только на пустой Ubuntu/Debian. DNS домена должен указывать на указанный IPv4. Порт 2222 разрешается только IP панели. После успешной проверки пароль SSH сохраняется на Manager в зашифрованном виде и не возвращается в браузер.</p><p class="inline-info">Первый установщик ещё не проверен на настоящем VPS. Используй только пустую тестовую машину. При сбое возможна частичная установка без автоматического отката.</p>
         <button id="vps-probe-button" type="submit" class="btn primary">Проверить SSH, DNS и порты</button>
       </form>
     </div>

@@ -60,7 +60,7 @@ def test_download_is_only_accessible_to_authenticated_node(manager,tmp_path,monk
     release=client.get("/api/agent/v1/update/manifest",headers={
         "X-Node-Id":node["id"],"Authorization":"Bearer "+token})
     assert release.status_code==200
-    assert release.json()["version"]=="1.5.0"
+    assert release.json()["version"]=="1.6.0"
     assert release.json()["binaries"]["amd64"]["size"]==15000
     assert client.get("/api/agent/v1/update/manifest").status_code==401
     assert client.get("/api/agent/v1/update/binary/../../etc/passwd",
