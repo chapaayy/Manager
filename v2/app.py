@@ -587,6 +587,51 @@ def repair_agent_helper(node_id: str, body: AgentBootstrapData, _=Depends(write_
             "Не удалось исправить служебные права агента на VPS") from None
 
 
+
+class SSHProtectionHelperData(BaseModel):
+    password: str = Field(min_length=1,max_length=512)
+    confirmed: bool = False
+
+
+class SSHProtectionInstallData(BaseModel):
+    admin_ip: str = Field(min_length=7,max_length=45)
+    confirmed: bool = False
+
+
+class SSHProtectionUnbanData(BaseModel):
+    ip: str = Field(min_length=7,max_length=45)
+    confirmed: bool = False
+
+
+@app.post("/api/agents/{node_id}/ssh-protection/helper")
+def ssh_protection_helper(node_id: str, body: SSHProtectionHelperData,
+                          _=Depends(write_access)):
+    try:
+        return agent_bootstrap.enable_ssh_security(node_id,body.password,body.confirmed)
+    except (LookupError,agent_bootstrap.AgentBootstrapError,ValueError) as exc:
+        raise HTTPException(422,str(exc)) from None
+
+
+@app.post("/api/agents/{node_id}/ssh-protection/install")
+def ssh_protection_install(node_id: str, body: SSHProtectionInstallData,
+                           _=Depends(write_access)):
+    try:
+        return agent_transport.enqueue(
+            node_id,"security.fail2ban.install",body.model_dump(),ttl=900,internal=True)
+    except (LookupError,agent_transport.AgentError) as exc:
+        raise HTTPException(422,str(exc)) from None
+
+
+@app.post("/api/agents/{node_id}/ssh-protection/unban")
+def ssh_protection_unban(node_id: str, body: SSHProtectionUnbanData,
+                         _=Depends(write_access)):
+    try:
+        return agent_transport.enqueue(
+            node_id,"security.fail2ban.unban",body.model_dump(),ttl=300,internal=True)
+    except (LookupError,agent_transport.AgentError) as exc:
+        raise HTTPException(422,str(exc)) from None
+
+
 @app.post("/api/agents/{node_id}/tasks")
 def agent_enqueue(node_id: str, body: AgentTaskData, _=Depends(write_access)):
     if body.action=="agent.update":
