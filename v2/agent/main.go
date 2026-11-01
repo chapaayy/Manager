@@ -20,11 +20,12 @@ import (
     "os/exec"
     "strconv"
     "strings"
+    "sync/atomic"
     "syscall"
     "time"
 )
 
-const Version = "1.4.0"
+const Version = "1.5.0"
 const MaxBody = 160000
 const Helper = "/usr/local/libexec/node-manager-helper"
 
@@ -35,6 +36,9 @@ type Task struct {
 }
 type Pull struct {
     Job *Task `json:"job"`
+}
+type HeartbeatReply struct {
+    Next float64 `json:"next_heartbeat_seconds"`
 }
 type Response struct {
     ID string `json:"id"`
@@ -289,6 +293,28 @@ func (a *Agent) performUpdate(job *Task) Response {
         Result:map[string]interface{}{"scheduled":true,"version":next}}
 }
 
+func heartbeatLoop(a *Agent){
+    var interval atomic.Int64
+    interval.Store(5)
+    for {
+        ctx,cancel:=context.WithTimeout(context.Background(),12*time.Second)
+        var reply HeartbeatReply
+        err:=a.send(ctx,"POST","/heartbeat",map[string]interface{}{
+            "version":Version,"metrics":systemStatus()},&reply)
+        cancel()
+        if err!=nil{
+            log.Printf("heartbeat failed: %v",err)
+        }else{
+            acknowledgeUpdate()
+            switch reply.Next {
+            case 1,2,5,10,15,30,60:
+                interval.Store(int64(reply.Next))
+            }
+        }
+        time.Sleep(time.Duration(interval.Load())*time.Second)
+    }
+}
+
 func main(){
     manager:=os.Getenv("MANAGER_URL")
     token:=os.Getenv("AGENT_TOKEN")
@@ -302,28 +328,19 @@ func main(){
     agent:=Agent{URL:strings.TrimRight(manager,"/")+"/api/agent/v1",
         ID:id,Token:token,Client:&http.Client{Timeout:50*time.Second,
         CheckRedirect:func(_ *http.Request,_ []*http.Request)error{return http.ErrUseLastResponse}}}
-    // No token or certificate content is ever logged.
     log.Printf("node manager agent %s started",Version)
-    lastHeartbeat:=time.Time{}
+    go heartbeatLoop(&agent)
     for {
-        if time.Since(lastHeartbeat)>=15*time.Second{
-            ctx,cancel:=context.WithTimeout(context.Background(),15*time.Second)
-            err:=agent.send(ctx,"POST","/heartbeat",map[string]interface{}{
-                "version":Version,"metrics":systemStatus()},nil)
-            cancel()
-            if err!=nil {log.Printf("heartbeat failed: %v",err)} else {acknowledgeUpdate()}
-            lastHeartbeat=time.Now()
-        }
-        ctx,cancel:=context.WithTimeout(context.Background(),30*time.Second)
+        ctx,cancel:=context.WithTimeout(context.Background(),40*time.Second)
         var pulled Pull
         err:=agent.send(ctx,"GET","/pull",nil,&pulled)
         cancel()
         if err!=nil{
             log.Printf("pull failed: %v",err)
-            time.Sleep(10*time.Second)
+            time.Sleep(2*time.Second)
             continue
         }
-        if pulled.Job==nil{time.Sleep(5*time.Second);continue}
+        if pulled.Job==nil{continue}
         result:=agent.execute(pulled.Job)
         ctx,cancel=context.WithTimeout(context.Background(),50*time.Second)
         err=agent.send(ctx,"POST","/report",result,nil)
@@ -334,3 +351,4 @@ func main(){
         }
     }
 }
+

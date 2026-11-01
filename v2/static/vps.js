@@ -4,35 +4,15 @@
 let vpsPayload=null,vpsInspection=null,vpsTimer=null;
 function renderVpsPresets(){
   const select=document.getElementById("vps-preset");
-  const options=state.presets.filter(p=>["direct","bridge"].includes(p.mode) &&
+  const options=state.presets.filter(p=>p.mode==="direct" &&
       ["xray","nginx","nginx_compose","node_compose"].every(kind=>
           p.items.some(item=>item.kind===kind)));
-  select.innerHTML=options.map(p=>'<option value="'+esc(p.id)+'">'+
-    esc(p.mode==="direct"?"Обычная / выходная · ":"Мост · ")+esc(p.name)+'</option>').join("");
-  const preferred=options.find(p=>p.mode==="direct");
-  if(preferred)select.value=preferred.id;
-  updateVpsPresetSelection();
+  select.innerHTML=options.map(p=>'<option value="'+esc(p.id)+'">'+esc(p.name)+'</option>').join("");
+  if(options[0])select.value=options[0].id;
+  document.getElementById("vps-preset-description").textContent=
+    "Пресет определяет Xray, Nginx и Docker Compose этой ноды. Топология и мосты не создаются.";
 }
-function updateVpsPresetSelection(){
-  const selected=state.presets.find(p=>p.id===document.getElementById("vps-preset").value);
-  const role=document.getElementById("vps-form").elements.namedItem("role");
-  if(!selected){
-    role.disabled=true;
-    document.getElementById("vps-preset-description").textContent="Нет полного установочного пресета. Проверь вкладку «Пресеты».";
-    return;
-  }
-  role.disabled=false;
-  const bridge=selected.mode==="bridge";
-  [...role.options].forEach(opt=>{
-    opt.disabled=bridge?opt.value!=="entry":opt.value==="entry";
-  });
-  if(bridge)role.value="entry";
-  else if(role.value==="entry")role.value="regular";
-  document.getElementById("vps-preset-description").textContent=bridge?
-    "Входной мост: inbound 443/8443. До подключения реальных выходных нод весь VPN-трафик блокируется.":
-    "Обычная или выходная нода: VLESS TLS 443, прямой выход. Конфиги берутся из выбранного пресета.";
-}
-
+function updateVpsPresetSelection(){renderVpsPresets()}
 function openVpsWizard(){
   vpsPayload=null;vpsInspection=null;
   if(vpsTimer){clearInterval(vpsTimer);vpsTimer=null}

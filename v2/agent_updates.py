@@ -32,7 +32,7 @@ def current(node_id:str)->dict:
     return {"node_id":node_id,"node_code":node["code"],
             "current_version":current_version,"latest_version":rel["version"],
             "architecture":arch or "unknown","auto_update":bool(row["auto_update"]),
-            "online":bool(row["last_seen"] and int(time.time())-row["last_seen"]<45),
+            "online":bool(row["last_seen"] and int(time.time())-row["last_seen"]<agent_transport.online_window()),
             "upgrade_needed":upgrade_needed,"supports_self_update":modern,
             "artifact_ready":bool(target) or not modern and bool(rel["binaries"]),
             "one_time_ssh_migration_required":not modern and upgrade_needed}

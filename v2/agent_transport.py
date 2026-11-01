@@ -10,6 +10,8 @@ import json
 import re
 import secrets
 import time
+import threading
+import asyncio
 import uuid
 from datetime import datetime, timezone
 
@@ -21,6 +23,29 @@ ALLOWED = {"system.status", "docker.status", "docker.restart", "docker.logs", "l
            "security.fail2ban.install", "security.fail2ban.unban"}
 MAX_RESULT = 48000
 LEASE_SECONDS = 120
+
+_WAIT_LOCK=threading.Lock()
+_ASYNC_WAITERS={}
+
+
+def _async_waiter(node_id: str):
+    loop=asyncio.get_running_loop()
+    with _WAIT_LOCK:
+        saved=_ASYNC_WAITERS.get(node_id)
+        if saved is None or saved[0] is not loop:
+            saved=(loop,asyncio.Event())
+            _ASYNC_WAITERS[node_id]=saved
+        return saved[1]
+
+
+def _notify(node_id: str):
+    with _WAIT_LOCK:
+        saved=_ASYNC_WAITERS.get(node_id)
+    if not saved:return
+    loop,event=saved
+    try:loop.call_soon_threadsafe(event.set)
+    except RuntimeError:pass
+
 
 
 class AgentError(ValueError):
@@ -119,7 +144,7 @@ def heartbeat(node_id: str, data: dict) -> dict:
     except Exception:
         # Auto-updates must never interfere with the node's normal heartbeat.
         pass
-    return {"ok":True,"next_poll_seconds":5}
+    return {"ok":True,"next_heartbeat_seconds":storage.monitoring_interval()}
 
 
 def enqueue(node_id: str, action: str, payload: dict | None = None,
@@ -158,6 +183,7 @@ def enqueue(node_id: str, action: str, payload: dict | None = None,
              VALUES(?,?,?,?,?,?,?)""",
              (jid,node_id,action,json.dumps(payload,separators=(",",":")),now,now,now+ttl))
         storage.event(db,"agent.task",node_id,"Queued "+action)
+    _notify(node_id)
     return {"id":jid,"node_id":node_id,"action":action,"status":"queued"}
 
 
@@ -175,11 +201,30 @@ def poll(node_id: str) -> dict:
                           WHERE node_id=? AND status='queued' ORDER BY created_at,id LIMIT 1""",
                        (node_id,)).fetchone()
         if not row:
-            return {"job":None,"next_poll_seconds":5}
+            return {"job":None}
         db.execute("UPDATE manager_agent_jobs SET status='leased',updated_at=? WHERE id=?",
                    (now,row["id"]))
     return {"job":{"id":row["id"],"action":row["action"],
-                   "payload":json.loads(row["payload_json"])},"next_poll_seconds":1}
+                   "payload":json.loads(row["payload_json"])}}
+
+
+
+async def long_poll(node_id: str, timeout: float=25.0) -> dict:
+    timeout=max(1.0,min(float(timeout),30.0))
+    event=_async_waiter(node_id)
+    deadline=time.monotonic()+timeout
+    while True:
+        result=poll(node_id)
+        if result.get("job") is not None:return result
+        remaining=deadline-time.monotonic()
+        if remaining<=0:return {"job":None}
+        event.clear()
+        result=poll(node_id)
+        if result.get("job") is not None:return result
+        try:
+            await asyncio.wait_for(event.wait(),timeout=remaining)
+        except asyncio.TimeoutError:
+            return {"job":None}
 
 
 def report(node_id: str, body: dict) -> dict:
@@ -248,6 +293,11 @@ def report(node_id: str, body: dict) -> dict:
     return {"ok":True}
 
 
+def online_window() -> float:
+    # Slow monitoring intervals must not make a healthy Agent flap offline.
+    return max(45.0, storage.monitoring_interval()*2.5)
+
+
 def nodes_status() -> list[dict]:
     now=int(time.time())
     with storage.connect() as db:
@@ -258,7 +308,7 @@ def nodes_status() -> list[dict]:
     return [{"id":r["id"],"code":r["code"],"domain":r["domain"],
             "installed":r["enabled"] is not None,
             "revoked":bool(r["enabled"] is not None and not r["enabled"]),
-            "online":bool(r["enabled"] and r["last_seen"] and now-r["last_seen"]<45),
+            "online":bool(r["enabled"] and r["last_seen"] and now-r["last_seen"]<online_window()),
             "version":r["version"] or "", "last_seen":r["last_seen"] or 0,
             "metrics":json.loads(r["last_status_json"] or "{}"),
             "auto_update":bool(r["auto_update"])}

@@ -92,7 +92,7 @@ function prepareNodeSecurity(){
   if(!n)return;
   openModal("Подготовить SSH-защиту · "+n.code,"ОДНОКРАТНОЕ ОБНОВЛЕНИЕ HELPER",
     '<p class="muted small">Через SSH с проверкой fingerprint передадим только служебные файлы Fail2Ban и обновим helper с резервной копией. VPN и Agent не перезапускаются.</p>'+
-    '<form><label>Пароль root SSH<input type="password" name="password" autocomplete="new-password" required></label>'+
+    '<form><label>Пароль root SSH <span class="muted">· необязательно, если сохранён</span><input type="password" name="password" autocomplete="new-password" placeholder="Использовать сохранённый пароль"></label>'+
     '<label class="check-row"><input type="checkbox" name="confirmed" required> Подтверждаю обновление helper</label>'+
     '<div class="form-buttons"><button type="submit" class="btn primary">Подготовить</button></div></form>',
     async fd=>{

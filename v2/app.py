@@ -178,7 +178,7 @@ class NodeData(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     country: str
     domain: str
-    role: str = Field(pattern=r"^(regular|entry|exit)$")
+    role: str = Field(default="regular",pattern=r"^regular$")
 
 
 class VpsProbeData(BaseModel):
@@ -189,7 +189,7 @@ class VpsProbeData(BaseModel):
 
 
 class VpsResumeData(BaseModel):
-    password: str = Field(min_length=1, max_length=512)
+    password: str = Field(default="", max_length=512)
     confirm_existing: bool = False
 
 
@@ -201,7 +201,7 @@ class VpsInstallData(VpsProbeData):
     code: str = Field(min_length=2,max_length=20)
     name: str = Field(min_length=3,max_length=80)
     country: str = Field(pattern=r"^[A-Za-z]{2}$")
-    role: str = Field(pattern=r"^(regular|exit|entry)$")
+    role: str = Field(default="regular",pattern=r"^regular$")
     preset_id: str | None = Field(default=None,max_length=64)
     fingerprint: str
     confirm_clean: bool = False
@@ -300,9 +300,57 @@ def dashboard(_=Depends(read_access)):
     return {
         "panel": storage.get_panel(),
         "nodes": storage.list_nodes(),
-        "bridges": storage.list_bridges(),
+        "bridges": [],
         "phase": "preview-only",
     }
+
+
+class MonitoringSettingsData(BaseModel):
+    interval: float
+
+
+class NodeSSHCredentialData(BaseModel):
+    password: str = Field(min_length=1,max_length=512)
+
+
+@app.get("/api/settings/monitoring")
+def monitoring_settings(_=Depends(read_access)):
+    return {"interval":storage.monitoring_interval()}
+
+
+@app.put("/api/settings/monitoring")
+def update_monitoring_settings(body: MonitoringSettingsData,_=Depends(write_access)):
+    try:
+        return storage.set_monitoring_interval(body.interval)
+    except ValueError as exc:
+        raise HTTPException(422,str(exc)) from None
+
+
+@app.get("/api/nodes/{node_id}/ssh-credentials")
+def get_node_ssh_credentials(node_id:str,_=Depends(read_access)):
+    try:return storage.node_ssh_credentials(node_id)
+    except LookupError as exc:raise HTTPException(404,str(exc)) from None
+
+
+@app.put("/api/nodes/{node_id}/ssh-credentials")
+def put_node_ssh_credentials(node_id:str,body:NodeSSHCredentialData,_=Depends(write_access)):
+    try:
+        storage.save_node_ssh_password(node_id,body.password)
+        return storage.node_ssh_credentials(node_id)
+    except (LookupError,ValueError) as exc:
+        raise HTTPException(422,str(exc)) from None
+
+
+@app.delete("/api/nodes/{node_id}/ssh-credentials")
+def delete_node_ssh_credentials(node_id:str,_=Depends(write_access)):
+    try:return storage.clear_node_ssh_password(node_id)
+    except LookupError as exc:raise HTTPException(404,str(exc)) from None
+
+
+def _node_password(node_id:str,supplied:str="")->str:
+    if supplied:return supplied
+    try:return storage.node_ssh_credentials(node_id,include_secret=True).get("password","")
+    except LookupError:return ""
 
 
 @app.put("/api/panel")
@@ -345,7 +393,7 @@ def update_panel_profile(body: PanelProfile, _=Depends(write_access)):
 
 class VpsPreviewData(BaseModel):
     preset_id: str | None = Field(default=None,max_length=64)
-    role: str = Field(default="regular",pattern=r"^(regular|exit|entry)$")
+    role: str = Field(default="regular",pattern=r"^regular$")
     code: str = Field(min_length=2,max_length=20)
     domain: str = Field(min_length=4,max_length=253)
     country: str = Field(pattern=r"^[A-Za-z]{2}$")
@@ -409,7 +457,7 @@ def vps_job_status(node_id: str, _=Depends(read_access)):
 @app.post("/api/vps/jobs/{node_id}/resume")
 def resume_vps(node_id: str, body: VpsResumeData, _=Depends(write_access)):
     try:
-        return vps_install.start_resume(node_id, body.password, body.confirm_existing)
+        return vps_install.start_resume(node_id, _node_password(node_id,body.password), body.confirm_existing)
     except (ValueError, TemplateError, remnawave.PanelError, LookupError) as e:
         _fail(e)
     except Exception:
@@ -470,7 +518,7 @@ class AgentTaskData(BaseModel):
 
 
 class AgentBootstrapData(BaseModel):
-    password: str = Field(min_length=1,max_length=512)
+    password: str = Field(default="",max_length=512)
     confirm_ssh_migration: bool = False
 
 
@@ -503,8 +551,8 @@ def agent_heartbeat(body: AgentHeartbeatData, node_id=Depends(agent_required)):
 
 
 @app.get("/api/agent/v1/pull")
-def agent_pull(node_id=Depends(agent_required)):
-    return agent_transport.poll(node_id)
+async def agent_pull(node_id=Depends(agent_required)):
+    return await agent_transport.long_poll(node_id,25)
 
 
 @app.post("/api/agent/v1/report")
@@ -543,7 +591,7 @@ def agent_set_auto(node_id: str, body: AgentAutoUpdateData,
 def agent_start_update(node_id: str, body: AgentUpdateData,
                        _=Depends(write_access)):
     try:
-        return agent_updates.manual(node_id,confirmed=body.confirmed,password=body.password)
+        return agent_updates.manual(node_id,confirmed=body.confirmed,password=_node_password(node_id,body.password))
     except (LookupError,agent_updates.UpdateError,agent_bootstrap.AgentBootstrapError) as exc:
         raise HTTPException(422,str(exc)) from None
 
@@ -567,7 +615,7 @@ def agent_binary(arch: str, node_id=Depends(agent_required)):
 @app.post("/api/agents/{node_id}/bootstrap")
 def bootstrap_agent(node_id: str,body: AgentBootstrapData,_=Depends(write_access)):
     try:
-        return agent_bootstrap.install_existing(node_id,body.password,body.confirm_ssh_migration)
+        return agent_bootstrap.install_existing(node_id,_node_password(node_id,body.password),body.confirm_ssh_migration)
     except (LookupError,ValueError) as e:
         raise HTTPException(422,str(e)) from None
     except Exception:
@@ -579,7 +627,7 @@ def repair_agent_helper(node_id: str, body: AgentBootstrapData, _=Depends(write_
     """One-time recovery for the first agent install's broken sudo sandbox."""
     try:
         return agent_bootstrap.repair_existing(
-            node_id,body.password,body.confirm_ssh_migration)
+            node_id,_node_password(node_id,body.password),body.confirm_ssh_migration)
     except (LookupError,agent_bootstrap.AgentBootstrapError,ValueError) as e:
         raise HTTPException(422,str(e)) from None
     except Exception:
@@ -589,7 +637,7 @@ def repair_agent_helper(node_id: str, body: AgentBootstrapData, _=Depends(write_
 
 
 class SSHProtectionHelperData(BaseModel):
-    password: str = Field(min_length=1,max_length=512)
+    password: str = Field(default="",max_length=512)
     confirmed: bool = False
 
 
@@ -607,7 +655,7 @@ class SSHProtectionUnbanData(BaseModel):
 def ssh_protection_helper(node_id: str, body: SSHProtectionHelperData,
                           _=Depends(write_access)):
     try:
-        return agent_bootstrap.enable_ssh_security(node_id,body.password,body.confirmed)
+        return agent_bootstrap.enable_ssh_security(node_id,_node_password(node_id,body.password),body.confirmed)
     except (LookupError,agent_bootstrap.AgentBootstrapError,ValueError) as exc:
         raise HTTPException(422,str(exc)) from None
 
@@ -789,80 +837,46 @@ def delete_node_draft(node_id: str, _=Depends(write_access)):
 
 @app.post("/api/bridges")
 def create_bridge(body: BridgeData, _=Depends(write_access)):
-    try:
-        return storage.create_bridge(body.entry_id, body.name.strip())
-    except (ValueError, LookupError, sqlite3.IntegrityError) as e:
-        _fail(e)
+    raise HTTPException(410,"Система мостов временно отключена. Используй конфигурации нод отдельно.")
 
 
 @app.get("/api/bridges/{bridge_id}")
 def bridge_detail(bridge_id: str, _=Depends(read_access)):
-    try:
-        result = storage.get_bridge(bridge_id)
-        snapshot = storage.get_snapshot(bridge_id)
-        result["has_snapshot"] = snapshot is not None
-        result["snapshot_preview"] = safe_preview(snapshot) if snapshot else None
-        return result
-    except LookupError as e:
-        _fail(e)
+    raise HTTPException(410,"Система мостов временно отключена. Используй конфигурации нод отдельно.")
 
 
 @app.post("/api/bridges/{bridge_id}/import")
 def import_existing(bridge_id: str, body: SnapshotData, _=Depends(write_access)):
-    if not body.confirm_read_only:
-        raise HTTPException(422, "Подтверди импорт копии действующего конфига")
-    if len(json.dumps(body.config, ensure_ascii=False).encode()) > 250_000:
-        raise HTTPException(413, "Конфиг слишком большой")
-    try:
-        return storage.save_snapshot(bridge_id, body.config, expected_revision=body.revision)
-    except (TemplateError, LookupError, ValueError) as e:
-        _fail(e)
+    raise HTTPException(410,"Система мостов временно отключена. Используй конфигурации нод отдельно.")
 
 
 @app.post("/api/bridges/{bridge_id}/plans")
 def preview_exit(bridge_id: str, body: ExitPlanData, _=Depends(write_access)):
-    try:
-        outgoing_id = body.outgoing_uuid or str(uuid.uuid4())
-        return service.prepare_bridge_exit(
-            bridge_id, body.exit_id, outgoing_id, body.inbound_port, body.config_template_id)
-    except (TemplateError, LookupError, ValueError, sqlite3.IntegrityError) as e:
-        _fail(e)
+    raise HTTPException(410,"Система мостов временно отключена. Используй конфигурации нод отдельно.")
 
 
 @app.get("/api/plans/{plan_id}")
 def get_plan(plan_id: str, _=Depends(read_access)):
-    try:
-        return service.plan_public(plan_id)
-    except LookupError as e:
-        _fail(e)
+    raise HTTPException(410,"Система мостов временно отключена. Используй конфигурации нод отдельно.")
 
 
 @app.post("/api/plans/{plan_id}/approve")
 def approve(plan_id: str, _=Depends(write_access)):
-    try:
-        return storage.approve_plan(plan_id)
-    except (LookupError, ValueError) as e:
-        _fail(e)
+    raise HTTPException(410,"Система мостов временно отключена. Используй конфигурации нод отдельно.")
 
 
 @app.get("/api/template/default")
 def default_bridge_template(_=Depends(read_access)):
-    path = Path(__file__).resolve().parent / "data" / "xray_bridge_template.json"
-    return {"name":"XPPN · Bridge VLESS TLS RAW","kind":"xray",
-            "content":path.read_text(encoding="utf-8")}
+    raise HTTPException(410,"Система мостов временно отключена. Используй конфигурации нод отдельно.")
 
 
 @app.get("/api/template/variables")
 def template_variables(_=Depends(read_access)):
     return {
-        "note": "Variables are structured and typed; never blindly replace arbitrary JSON strings.",
-        "variables": [
-            {"key": "source.code", "description": "Код входной ноды"},
-            {"key": "source.domain", "description": "TLS-путь и сертификат входной ноды"},
-            {"key": "exit.code", "description": "Код первого выходного сервера"},
-            {"key": "exit.domain", "description": "Адрес и TLS SNI выхода"},
-            {"key": "bridge.user_id", "description": "Межсерверный UUID — секрет"},
-            {"key": "additional.inbound_port", "description": "Новый порт выделяется автоматически, не заполняется текстовой заменой"},
+        "note":"Доступны только переменные самой ноды. Топология мостов отключена.",
+        "variables":[
+            {"key":"source.code","description":"Код ноды"},
+            {"key":"source.domain","description":"Домен и TLS-пути ноды"}
         ]
     }
 
@@ -876,7 +890,7 @@ class ConfigFileData(BaseModel):
 
 
 class PresetData(BaseModel):
-    mode: str = Field(default="custom",pattern=r"^(custom|direct|bridge)$")
+    mode: str = Field(default="custom",pattern=r"^(custom|direct)$")
     name: str = Field(min_length=1, max_length=100)
     description: str = Field(default="", max_length=600)
     config_ids: list[str] = Field(min_length=1, max_length=4)

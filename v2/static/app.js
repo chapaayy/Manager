@@ -6,12 +6,12 @@ const esc = value => String(value ?? "").replace(/[&<>"']/g, c => ({
 const icon = name => '<svg><use href="/static/icons.svg#i-'+name+'"></use></svg>';
 const types = {xray:"Xray JSON",nginx:"Nginx",nginx_compose:"Nginx Compose",node_compose:"Remnawave Compose"};
 const titles = {nodes:"Ноды",agents:"Агенты VPS","node-certs":"Сертификаты нод",configs:"Конфигурации",presets:"Пресеты",settings:"Настройки",updates:"Обновления"};
-const labels = {regular:"Обычная",entry:"Входная / мост",exit:"Выходная"};
+const labels = {regular:"Обычная",entry:"Обычная",exit:"Обычная"};
 let csrf = "", currentPage = "nodes", currentConfig = null, configRevision = 0,
     configBase = "", configDirty = false, currentPreset = null, currentPlan = null,
     panelProfiles = [], expanded = new Set(), toastTimer = null;
 let state = {panel:{},nodes:[],bridges:[],configs:[],presets:[]};
-let updateDetails = null, updatePolling = null;
+let updateDetails = null, updatePolling = null, monitoringTimer = null, monitoringMs = 5000;
 let showArchivedNodes=false;
 let configCategory="xray";
 
@@ -61,6 +61,8 @@ async function refresh(){
   if(extra[0].status==="fulfilled")nodeOverviewAgents=extra[0].value.agents||[];
   if(extra[1].status==="fulfilled")nodeOverviewCerts=extra[1].value.nodes||[];
   state.panel=dashboard.panel;
+  monitoringMs=Math.max(1000,Number(state.panel.monitor_interval||5)*1000);
+  restartMonitoringTimer();
   state.nodes=dashboard.nodes;
   state.bridges=dashboard.bridges;
   state.configs=configs;
@@ -112,17 +114,21 @@ function showPage(page){
   if(page==="updates")refreshUpdateStatus();
   if(page==="node-certs")renderNodeCertificates();
   if(page==="agents")renderAgents();
+  if(page==="settings")loadMonitoringSettings();
 }
 async function waitAgentTask(nodeId,jobId){
-  for(let i=0;i<30;i++){
+  const started=performance.now(),deadline=Date.now()+60000;
+  while(Date.now()<deadline){
     const result=await api("/agents/"+encodeURIComponent(nodeId)+"/tasks/"+encodeURIComponent(jobId));
     if(["done","failed","expired"].includes(result.status)){
       if(result.status!=="done")throw Error(result.error||"Агент не выполнил задачу");
+      result.result._manager_latency_ms=Math.round(performance.now()-started);
       return result.result;
     }
-    await new Promise(resolve=>setTimeout(resolve,2000));
+    const elapsed=performance.now()-started;
+    await new Promise(resolve=>setTimeout(resolve,elapsed<3000?120:500));
   }
-  throw Error("Агент ещё выполняет задачу. Результат будет доступен в истории заданий.");
+  throw Error("Агент ещё выполняет задачу. Результат будет доступен позже.");
 }
 async function agentTask(nodeId,action,payload={},confirmed=false){
   const job=await api("/agents/"+encodeURIComponent(nodeId)+"/tasks","POST",{action,payload,confirmed});
@@ -164,7 +170,7 @@ function agentRepairModal(id){
   if(!node)return;
   openModal("Исправить helper: "+node.code,"ВОССТАНОВЛЕНИЕ ПЕРВИЧНОЙ УСТАНОВКИ",
     '<p class="muted small">Исправляем системные ограничения первоначально установленного агента, из-за которых Docker, логи и Certbot показывают «agent helper rejected operation». Однократно используется SSH. Токен агента, Xray, Nginx и сертификаты не меняются; перезапустится только служба самого агента.</p>'+
-    '<form><label>SSH-пароль root<input name="password" type="password" required autocomplete="new-password"></label>'+
+    '<form><label>SSH-пароль root <span class="muted">· необязательно, если сохранён</span><input name="password" type="password" autocomplete="new-password" placeholder="Использовать сохранённый пароль"></label>'+
     '<label class="check-row"><input name="confirm" type="checkbox" required> Подтверждаю исправление только службы агента на VPS</label>'+
     '<div class="form-buttons"><button class="btn primary" type="submit">Исправить права агента</button></div></form>',
     async fd=>{
@@ -188,7 +194,7 @@ async function nodeLifecycleModal(id){
     const issue=data.remnawave_error?
       '<p class="form-feedback error">'+esc(data.remnawave_error)+'</p>':'';
     const bridgeInfo=blocked?
-      '<p class="form-feedback error">Нода участвует в мостах или планах. Сначала удали локальные связи; рабочий Xray на VPS изменён не будет.</p>':'';
+      '<p class="form-feedback error">У ноды остались legacy-связи старой системы топологии. Сначала отвяжи их локально; рабочий Xray на VPS изменён не будет.</p>':'';
     const profileInfo=!hasRemote?
       '<p class="muted small">В менеджере не сохранены UUID объектов Remnawave. Доступно удаление локальной записи; проверь Remnawave вручную.</p>':
       !data.profile_uuid?'':(!data.profile_present?
@@ -275,7 +281,7 @@ async function nodeLifecycleModal(id){
     if(detach)detach.onclick=async()=>{
       if(form.elements.code.value!==data.code)
         return message("Сначала введи точный код ноды для отвязки",true);
-      if(!confirm("Удалить локальные связи и планы "+data.code+
+      if(!confirm("Удалить legacy-связи "+data.code+
         "? Это НЕ изменяет рабочие Xray-конфигурации и VPS."))return;
       try{
         await api(base+"/detach-dependencies","POST",{code:data.code});
@@ -291,8 +297,8 @@ function agentBootstrapModal(id){
   const node=state.nodes.find(n=>n.id===id);
   if(!node)return;
   openModal("Установить агент: "+node.code,"ОДИН РАЗ ЧЕРЕЗ SSH",
-    '<p class="muted small">Этот шаг установит Go-агент, выделенного системного пользователя и ограниченный helper на уже работающий VPS. Пароль root не сохраняется. Дальше весь менеджмент только через агента.</p>'+
-    '<form><label>SSH-пароль root<input name="password" type="password" required autocomplete="new-password"></label>'+
+    '<p class="muted small">Этот шаг установит Go-агент, выделенного системного пользователя и ограниченный helper на уже работающий VPS. Сначала используется сохранённый SSH-пароль этой ноды; при необходимости его можно указать вручную. Дальше управление идёт через Agent.</p>'+
+    '<form><label>SSH-пароль root <span class="muted">· необязательно, если сохранён</span><input name="password" type="password" autocomplete="new-password" placeholder="Использовать сохранённый пароль"></label>'+
     '<label class="check-row"><input name="confirm" type="checkbox" required> Подтверждаю установку агента на VPS</label>'+
     '<div class="form-buttons"><button class="btn primary" type="submit">Установить</button></div></form>',
     async fd=>{
@@ -383,64 +389,47 @@ async function renderNodeCertificates(){
 
 function renderNodes(){
   $("metric-nodes").textContent=String(state.nodes.length);
-  $("metric-bridges").textContent=String(state.bridges.length);
-  $("metric-exits").textContent=String(state.bridges.reduce((n,b)=>n+b.exits.length,0));
-  const bridges = state.bridges;
-  const target=$("bridge-list");
-  if(!bridges.length){
-    target.innerHTML='<div class="empty-state"><span class="feature-icon">'+icon("git-branch")+
-      '</span><h3>Мостов пока нет</h3><p>Добавь входной VPS и создай мост. Внутри него будут появляться все выходные серверы и планы изменений.</p>'+
-      '<button class="btn subtle" data-action="bridge-new">'+icon("plus")+' Создать первый мост</button></div>';
-  }else{
-    target.innerHTML=bridges.map(b=>{
-      const open=expanded.has(b.id);
-      const main=b.entry;
-      const children=b.exits.map(e=>
-        '<button type="button" class="bridge-child" data-node-open="'+esc(e.id)+'">'+icon("server")+
-        '<span class="child-body"><strong>'+esc(e.code)+' · '+esc(e.name)+'</strong><small>'+
-          esc(e.domain)+' · TCP/'+esc(e.inbound_port)+'</small>'+nodeListBadges(e.id)+'</span>'+
-        '<span class="tiny-chip success">Открыть ноду</span></button>'
-      ).join("");
-      const pending=b.plans.map(p=>
-        '<button class="bridge-child" data-action="open-plan" data-plan="'+esc(p.id)+'" type="button">'+
-        icon("file-code")+'<div class="child-body"><strong>'+esc(p.exit_code)+
-        ' · черновик</strong><small>Не применён на VPS · TCP/'+esc(p.inbound_port)+'</small></div>'+
-        '<span class="tiny-chip warning">'+esc(p.status)+'</span></button>'
-      ).join("");
-      return '<article class="bridge-card '+(open?'open':'')+'">'+
-        '<button class="bridge-head" data-action="toggle-bridge" data-bridge="'+esc(b.id)+'" aria-expanded="'+open+'">'+
-        '<span class="feature-icon">'+icon("git-branch")+'</span>'+
-        '<span class="bridge-title"><strong>'+esc(main.code)+' · '+esc(b.name)+
-        '</strong><small>'+esc(main.domain)+' · '+b.exits.length+' связанных нод</small></span>'+
-        '<span class="tiny-chip">'+(b.has_snapshot?"Xray сохранён":"Bridge")+'</span>'+
-        '<span class="bridge-chevron">'+icon("chevron-down")+'</span></button>'+
-        '<div class="bridge-node-shortcut"><button type="button" class="btn subtle" data-node-open="'+esc(main.id)+'">Открыть '+esc(main.code)+'</button></div>'+
-        (open?'<div class="bridge-children">'+(children||'<p class="muted small">Пока нет подключённых выходов.</p>')+pending+
-          '<div class="bridge-footer">'+
-          '<button class="btn subtle" data-action="bridge-exit" data-bridge="'+esc(b.id)+'">'+icon("plus")+' Добавить выход</button>'+
-          '<button class="btn subtle" data-action="bridge-import" data-bridge="'+esc(b.id)+'">'+icon("file-code")+' Импорт Xray</button>'+
-          '</div></div>':'')+'</article>';
-    }).join("");
-  }
-  const grouped=new Set(state.bridges.flatMap(b=>[b.entry_id,...b.exits.map(e=>e.id)]));
-  const others=state.nodes.filter(n=>!grouped.has(n.id) && (showArchivedNodes||!n.archived));
+  $("metric-ready-nodes").textContent=String(state.nodes.filter(n=>n.status==="ready").length);
+  $("metric-online-agents").textContent=String(nodeOverviewAgents.filter(a=>a.online).length);
+  const others=state.nodes.filter(n=>showArchivedNodes||!n.archived);
   $("other-nodes").innerHTML=others.length?others.map(n=>
     '<div class="node-card"><span class="feature-icon">'+icon("server")+'</span><div><strong>'+
-    esc(n.code)+' · '+esc(n.name)+'</strong><p>'+esc(n.domain)+' · '+esc(labels[n.role])+
+    esc(n.code)+' · '+esc(n.name)+'</strong><p>'+esc(n.domain)+
     '</p>'+nodeListBadges(n.id)+'</div><span class="tiny-chip '+(n.status==="registered"||n.status==="ready"?"success":"warning")+'">'+
     esc(n.archived?"Архив":n.lifecycle_phase?"Удаление: "+n.lifecycle_phase:n.status==="planned"?"Черновик":n.status)+'</span>'+
     '<button type="button" class="btn primary" data-node-open="'+esc(n.id)+'">Открыть ноду</button>'+
-    (n.status==="planned"?
-       '<button type="button" class="btn subtle" data-delete-draft="'+esc(n.id)+'">Удалить черновик</button>':"")+
-    (n.status==="planned" && (n.role==="regular"||n.role==="exit")?
-       '<button type="button" class="btn subtle" data-draft-install="'+esc(n.id)+'">Установить VPS</button>':
-       n.status!=="planned"?
-       '<button type="button" class="btn subtle" data-install-node="'+esc(n.id)+'">Статус</button>':"")+
+    (n.status==="planned"?'<button type="button" class="btn subtle" data-delete-draft="'+esc(n.id)+'">Удалить черновик</button>':"")+
+    (n.status==="planned"?'<button type="button" class="btn subtle" data-draft-install="'+esc(n.id)+'">Установить VPS</button>':
+       '<button type="button" class="btn subtle" data-install-node="'+esc(n.id)+'">Статус</button>')+
     (["failed","interrupted"].includes(n.status)?
        '<button type="button" class="btn primary" data-retry-vps="'+esc(n.id)+'">Продолжить</button>'+
        '<button type="button" class="btn subtle" data-forget-vps="'+esc(n.id)+'">Удалить…</button>':"")+
     '</div>'
-  ).join(""):'<div class="empty-state"><h3>Незадействованных серверов нет</h3><p>Новые VPS появятся здесь, пока ты не включишь их в мост.</p></div>';
+  ).join(""):'<div class="empty-state"><h3>Нод пока нет</h3><p>Добавь VPS — она появится здесь без дополнительных ролей и топологии.</p></div>';
+}
+function restartMonitoringTimer(){
+  if(monitoringTimer){clearInterval(monitoringTimer);monitoringTimer=null}
+  monitoringTimer=setInterval(async()=>{
+    if(document.hidden)return;
+    try{
+      if(selectedNodeId){
+        await refreshNodeWorkspaceData();
+      }else if(currentPage==="agents"){
+        await renderAgents();
+      }else if(currentPage==="nodes"){
+        const data=await api("/agents");
+        nodeOverviewAgents=data.agents||[];
+        renderNodes();
+      }
+    }catch{}
+  },monitoringMs);
+}
+async function loadMonitoringSettings(){
+  try{
+    const data=await api("/settings/monitoring");
+    $("monitoring-interval").value=String(data.interval);
+    $("monitoring-status").textContent="Текущая частота: "+data.interval+" сек.";
+  }catch(e){$("monitoring-status").textContent=e.message}
 }
 function openModal(title,kicker,content,submit){
   $("modal-title").textContent=title;$("modal-kicker").textContent=kicker;
@@ -786,6 +775,16 @@ function bindEvents(){
     try{localStorage.setItem("xppn-v2-collapsed",collapsed?"1":"0")}catch{}
   };
   $("refresh").onclick=()=>refresh().then(()=>message("Данные обновлены")).catch(e=>message(e.message,true));
+  $("monitoring-form").onsubmit=async e=>{
+    e.preventDefault();
+    const interval=Number($("monitoring-interval").value);
+    try{
+      const result=await api("/settings/monitoring","PUT",{interval});
+      monitoringMs=result.monitor_interval*1000;restartMonitoringTimer();
+      $("monitoring-status").textContent="Сохранено: "+result.monitor_interval+" сек.";
+      message("Частота мониторинга обновлена");
+    }catch(err){message(err.message,true)}
+  };
   $("update-check").onclick=checkUpdates;
   $("update-start").onclick=startUpdate;
   updatePolling=setInterval(()=>{if(currentPage==="updates")refreshUpdateStatus()},4500);
@@ -831,19 +830,8 @@ function bindEvents(){
       await renderNodeCertificates();
     }catch(err){message(err.message,true)}
   });
-  $("new-bridge").onclick=bridgeModal;
-  $("bridge-list").addEventListener("click",e=>{
-    const button=e.target.closest("[data-action]");
-    if(!button)return;
-    const action=button.dataset.action,id=button.dataset.bridge;
-    if(action==="toggle-bridge"){
-      expanded.has(id)?expanded.delete(id):expanded.add(id);
-      renderNodes();
-    }else if(action==="bridge-new")bridgeModal();
-    else if(action==="bridge-exit")bridgeExitModal(id);
-    else if(action==="bridge-import")bridgeImportModal(id).catch(err=>message(err.message,true));
-    else if(action==="open-plan")openPlanId(button.dataset.plan);
-  });
+  /* Bridge topology is intentionally disabled while the model is redesigned. */
+  /* no bridge UI bindings */
   $("modal-close").onclick=()=>$("modal").close();
   $("plan-close").onclick=()=>$("plan-dialog").close();
   $("plan-dismiss").onclick=()=>$("plan-dialog").close();
@@ -856,18 +844,6 @@ function bindEvents(){
     }catch(e){message(e.message,true)}
   };
   $("new-config").onclick=()=>resetConfig();
-  $("config-load-bridge").onclick=async()=>{
-    if(!discardConfig())return;
-    try{
-      const sample=await api("/template/default");
-      resetConfig(true);
-      $("config-name").value=sample.name;
-      $("config-kind").value="xray";
-      $("config-content").value=sample.content;
-      markConfigDirty();
-      message("Загружен образец. Переменные выделены ниже, файл пока не сохранён.");
-    }catch(e){message(e.message,true)}
-  };
   document.querySelectorAll("[data-config-category]").forEach(btn=>btn.addEventListener("click",()=>{
     configCategory=btn.dataset.configCategory;
     document.querySelectorAll("[data-config-category]").forEach(tab=>{
