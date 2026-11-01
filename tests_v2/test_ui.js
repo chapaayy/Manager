@@ -17,26 +17,30 @@ const unique=new Set(ids);
 assert.equal(unique.size,ids.length,"Every HTML id must be unique");
 for(const id of [
   "login-screen","login-username","login-password","panel-caddy-key","panel-caddy-details","shell","sidebar","toggle-sidebar","page-nodes","page-configs",
-  "page-presets","page-settings","page-updates","update-check","update-start","update-status","bridge-list","other-nodes","modal","plan-dialog",
+  "page-presets","page-settings","page-updates","update-check","update-start","update-status","other-nodes","modal","plan-dialog","monitoring-form","monitoring-interval",
   "config-files","config-content","config-save","preset-form","panel-form",
   "plan-diff","plan-json","plan-approve","vps-dialog","vps-form","vps-probe-button","vps-install",
 ]){
   assert(unique.has(id),"Required UI element: "+id);
 }
 assert.match(html,/\/static\/icons\.svg/);
-assert.match(html,/\/static\/app\.js\?v=2\.6\.0/);
+assert.match(html,/\/static\/app\.js\?v=2\.8\.0/);
 assert.match(css,/\.sidebar\.collapsed/);
 assert.match(css,/\.workspace\{flex:1;min-width:0;width:0/);
 assert.match(css,/prefers-reduced-motion/);
 assert.match(vps,/async function installVps/,"SSH VPS wizard must launch install");
 assert(!html.includes('id="panel-profile-select"'),"Remove obsolete global profile setting");
-assert.match(js,/bridgeExitModal/,"Bridge expansion is functional");
+assert.doesNotMatch(html,/id="bridge-list"/,"Bridge topology is removed from active UI");
+assert.doesNotMatch(html,/id="new-bridge"/,"No create bridge action");
+assert.doesNotMatch(html,/value="entry"|value="exit"/,"VPS role selector is regular-only");
 assert.match(js,/highlightTokens/,"Editor highlights template parameters");
 assert.match(html,/data-config-category="xray"/,"Xray tab shown");
 assert.match(html,/data-config-category="system"/,"Server configuration tab shown");
 assert.match(js,/configCategory==="xray"/,"Tab actually filters configuration files");
 assert.match(html,/id="preset-mode"/,"Preset deployment mode editable");
 assert.match(vps,/renderVpsPresets/,"VPS wizard lists installation presets");
+assert.match(js,/restartMonitoringTimer/,"Monitoring interval controls automatic refresh");
+assert.match(nodeDetail,/loadNodeSSHCredentials/,"Node workspace shows saved SSH credentials");
 assert.match(vps,/preset_id:data.preset_id/,"Preview uses chosen preset");
 
 assert.match(js,/X-CSRF-Token/,"Mutating calls need CSRF");
