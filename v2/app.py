@@ -14,7 +14,6 @@ import os
 import secrets
 import sqlite3
 import time
-import uuid
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
@@ -23,8 +22,8 @@ from fastapi.staticfiles import StaticFiles
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from pydantic import BaseModel, Field
 
-from . import agent_bootstrap, agent_release, agent_updates, agent_transport, bundled, library, node_cert_sync, node_lifecycle, node_removal, remnawave, service, storage, vps_install, web_updates
-from .template_engine import Endpoint, TemplateError, safe_preview, variables_map
+from . import agent_bootstrap, agent_release, agent_updates, agent_transport, bundled, library, node_cert_sync, node_lifecycle, node_removal, remnawave, storage, vps_install, web_updates
+from .template_engine import Endpoint, TemplateError, variables_map
 
 STATIC = Path(__file__).resolve().parent / "static"
 app = FastAPI(title="XPPN 2.0 — isolated preview", docs_url=None,
@@ -207,25 +206,6 @@ class VpsInstallData(VpsProbeData):
     confirm_clean: bool = False
     panel_ip: str = ""
     existing_node_id: str | None = Field(default=None,max_length=64)
-
-
-class BridgeData(BaseModel):
-    name: str = Field(min_length=1, max_length=80)
-    entry_id: str
-
-
-class SnapshotData(BaseModel):
-    config: dict
-    revision: int = Field(ge=0)
-    confirm_read_only: bool = False
-
-
-class ExitPlanData(BaseModel):
-    exit_id: str
-    # Omitted UUID is generated and securely staged by the manager.
-    outgoing_uuid: str | None = None
-    inbound_port: int | None = Field(default=None, ge=8444, le=8999)
-    config_template_id: str | None = None
 
 
 @app.get("/")
@@ -861,78 +841,6 @@ def delete_node_draft(node_id: str, _=Depends(write_access)):
         _fail(e)
     except sqlite3.IntegrityError:
         raise HTTPException(409,"Черновик используется другой записью. Удаление отменено.") from None
-
-
-@app.post("/api/bridges")
-def create_bridge(body: BridgeData, _=Depends(write_access)):
-    raise HTTPException(410,"Система мостов временно отключена. Используй отдельные конфигурации нод.")
-    try:
-        return storage.create_bridge(body.entry_id, body.name.strip())
-    except (ValueError, LookupError, sqlite3.IntegrityError) as e:
-        _fail(e)
-
-
-@app.get("/api/bridges/{bridge_id}")
-def bridge_detail(bridge_id: str, _=Depends(read_access)):
-    raise HTTPException(410,"Система мостов временно отключена. Используй отдельные конфигурации нод.")
-    try:
-        result = storage.get_bridge(bridge_id)
-        snapshot = storage.get_snapshot(bridge_id)
-        result["has_snapshot"] = snapshot is not None
-        result["snapshot_preview"] = safe_preview(snapshot) if snapshot else None
-        return result
-    except LookupError as e:
-        _fail(e)
-
-
-@app.post("/api/bridges/{bridge_id}/import")
-def import_existing(bridge_id: str, body: SnapshotData, _=Depends(write_access)):
-    raise HTTPException(410,"Система мостов временно отключена. Используй отдельные конфигурации нод.")
-    if not body.confirm_read_only:
-        raise HTTPException(422, "Подтверди импорт копии действующего конфига")
-    if len(json.dumps(body.config, ensure_ascii=False).encode()) > 250_000:
-        raise HTTPException(413, "Конфиг слишком большой")
-    try:
-        return storage.save_snapshot(bridge_id, body.config, expected_revision=body.revision)
-    except (TemplateError, LookupError, ValueError) as e:
-        _fail(e)
-
-
-@app.post("/api/bridges/{bridge_id}/plans")
-def preview_exit(bridge_id: str, body: ExitPlanData, _=Depends(write_access)):
-    raise HTTPException(410,"Система мостов временно отключена. Используй отдельные конфигурации нод.")
-    try:
-        outgoing_id = body.outgoing_uuid or str(uuid.uuid4())
-        return service.prepare_bridge_exit(
-            bridge_id, body.exit_id, outgoing_id, body.inbound_port, body.config_template_id)
-    except (TemplateError, LookupError, ValueError, sqlite3.IntegrityError) as e:
-        _fail(e)
-
-
-@app.get("/api/plans/{plan_id}")
-def get_plan(plan_id: str, _=Depends(read_access)):
-    raise HTTPException(410,"Система мостов временно отключена. Используй отдельные конфигурации нод.")
-    try:
-        return service.plan_public(plan_id)
-    except LookupError as e:
-        _fail(e)
-
-
-@app.post("/api/plans/{plan_id}/approve")
-def approve(plan_id: str, _=Depends(write_access)):
-    raise HTTPException(410,"Система мостов временно отключена. Используй отдельные конфигурации нод.")
-    try:
-        return storage.approve_plan(plan_id)
-    except (LookupError, ValueError) as e:
-        _fail(e)
-
-
-@app.get("/api/template/default")
-def default_bridge_template(_=Depends(read_access)):
-    raise HTTPException(410,"Система мостов временно отключена. Используй отдельные конфигурации нод.")
-    path = Path(__file__).resolve().parent / "data" / "xray_bridge_template.json"
-    return {"name":"XPPN · Bridge VLESS TLS RAW","kind":"xray",
-            "content":path.read_text(encoding="utf-8")}
 
 
 @app.get("/api/template/variables")
