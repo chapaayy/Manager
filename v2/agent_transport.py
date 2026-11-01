@@ -126,17 +126,21 @@ def heartbeat(node_id: str, data: dict) -> dict:
         raise AgentError("Слишком большой heartbeat")
     now=int(time.time())
     with storage.transaction() as db:
+        previous=db.execute(
+            "SELECT last_seen,auto_update,last_update_check FROM manager_agents WHERE node_id=?",
+            (node_id,)).fetchone()
         db.execute("UPDATE manager_agents SET last_seen=?,version=?,last_status_json=? WHERE node_id=?",
                    (now,version,json.dumps(metrics,separators=(",",":")),node_id))
-    # First TLS verification is queued immediately on the first ready heartbeat.
-    from . import node_cert_sync
-    node_cert_sync.queue_initial_check(node_id)
-    try:
-        from . import agent_updates
-        agent_updates.auto_schedule(node_id,version,metrics)
-    except Exception:
-        # Auto-updates must never interfere with the node's normal heartbeat.
-        pass
+    # Only the first authenticated heartbeat needs the initial TLS queue check.
+    if previous and not previous["last_seen"]:
+        from . import node_cert_sync
+        node_cert_sync.queue_initial_check(node_id)
+    if previous and previous["auto_update"] and now-int(previous["last_update_check"] or 0)>=3600:
+        try:
+            from . import agent_updates
+            agent_updates.auto_schedule(node_id,version,metrics)
+        except Exception:
+            pass
     return {"ok":True,"next_heartbeat_ms":storage.get_monitor_interval_ms()}
 
 
