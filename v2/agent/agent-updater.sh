@@ -11,7 +11,8 @@ install_dir=/usr/local/bin
 state=/var/lib/node-manager
 candidate="$state/update.bin"
 target="$install_dir/node-manager-agent"
-backup="$state/previous-agent"
+install -d -m 0700 -o root -g root /var/backups/node-manager
+backup="/var/backups/node-manager/previous-agent"
 ack="$state/update-ok"
 pending="$state/update-pending"
 [[ -f "$candidate" && ! -L "$candidate" && -f "$target" && ! -L "$target" ]] || exit 13
