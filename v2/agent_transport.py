@@ -4,6 +4,8 @@ Agent identity: a random 256-bit bearer secret bound to a single node, stored
 as a SHA-256 digest. Transport relies on the existing HTTPS reverse proxy;
 keys are never returned to the admin UI after initial SSH bootstrap.
 """
+import asyncio
+import threading
 import hashlib
 import hmac
 import json
@@ -21,6 +23,22 @@ ALLOWED = {"system.status", "docker.status", "docker.restart", "docker.logs", "l
            "security.fail2ban.install", "security.fail2ban.unban"}
 MAX_RESULT = 48000
 LEASE_SECONDS = 120
+
+_WAITERS_LOCK=threading.Lock()
+_WAITERS: dict[str,tuple[asyncio.AbstractEventLoop,asyncio.Event]]={}
+
+
+def _notify(node_id: str) -> None:
+    with _WAITERS_LOCK:
+        waiter=_WAITERS.get(node_id)
+    if waiter:
+        loop,event=waiter
+        try:
+            loop.call_soon_threadsafe(event.set)
+        except RuntimeError:
+            pass
+
+
 
 
 class AgentError(ValueError):
@@ -119,7 +137,7 @@ def heartbeat(node_id: str, data: dict) -> dict:
     except Exception:
         # Auto-updates must never interfere with the node's normal heartbeat.
         pass
-    return {"ok":True,"next_poll_seconds":5}
+    return {"ok":True,"next_heartbeat_ms":storage.get_monitor_interval_ms()}
 
 
 def enqueue(node_id: str, action: str, payload: dict | None = None,
@@ -158,6 +176,7 @@ def enqueue(node_id: str, action: str, payload: dict | None = None,
              VALUES(?,?,?,?,?,?,?)""",
              (jid,node_id,action,json.dumps(payload,separators=(",",":")),now,now,now+ttl))
         storage.event(db,"agent.task",node_id,"Queued "+action)
+    _notify(node_id)
     return {"id":jid,"node_id":node_id,"action":action,"status":"queued"}
 
 
@@ -180,6 +199,31 @@ def poll(node_id: str) -> dict:
                    (now,row["id"]))
     return {"job":{"id":row["id"],"action":row["action"],
                    "payload":json.loads(row["payload_json"])},"next_poll_seconds":1}
+
+
+async def poll_wait(node_id: str, timeout: float = 25.0) -> dict:
+    first=poll(node_id)
+    if first["job"] is not None:
+        return first
+    loop=asyncio.get_running_loop()
+    event=asyncio.Event()
+    with _WAITERS_LOCK:
+        _WAITERS[node_id]=(loop,event)
+    try:
+        # Register then re-check so an enqueue cannot be lost in the gap.
+        second=poll(node_id)
+        if second["job"] is not None:
+            return second
+        try:
+            await asyncio.wait_for(event.wait(),timeout=timeout)
+        except TimeoutError:
+            return {"job":None,"next_poll_seconds":0}
+        return poll(node_id)
+    finally:
+        with _WAITERS_LOCK:
+            current=_WAITERS.get(node_id)
+            if current and current[1] is event:
+                _WAITERS.pop(node_id,None)
 
 
 def report(node_id: str, body: dict) -> dict:
