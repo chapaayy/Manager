@@ -218,7 +218,7 @@ def _inspect(args, timeout=5):
     try:
         completed=subprocess.run(args,capture_output=True,check=False,timeout=timeout)
         if completed.returncode: return None
-        return completed.stdout.decode("utf-8","replace").strip()[:1200]
+        return completed.stdout.decode("utf-8","replace").strip()[:12000]
     except (OSError,subprocess.TimeoutExpired):
         return None
 
