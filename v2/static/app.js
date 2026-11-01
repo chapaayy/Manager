@@ -161,20 +161,24 @@ async function renderAgents(){
     }).join("")||'<p class="muted">Серверов пока нет.</p>';
   }catch(e){target.textContent=e.message;target.className="form-feedback error";}
 }
-function agentRepairModal(id){
-  const node=state.nodes.find(n=>n.id===id);
-  if(!node)return;
-  openModal("Исправить helper: "+node.code,"ВОССТАНОВЛЕНИЕ ПЕРВИЧНОЙ УСТАНОВКИ",
-    '<p class="muted small">Исправляем системные ограничения первоначально установленного агента, из-за которых Docker, логи и Certbot показывают «agent helper rejected operation». Однократно используется SSH. Токен агента, Xray, Nginx и сертификаты не меняются; перезапустится только служба самого агента.</p>'+
-    '<form><label>SSH-пароль root<input name="password" type="password" required autocomplete="new-password"></label>'+
-    '<label class="check-row"><input name="confirm" type="checkbox" required> Подтверждаю исправление только службы агента на VPS</label>'+
-    '<div class="form-buttons"><button class="btn primary" type="submit">Исправить права агента</button></div></form>',
-    async fd=>{
-      await api("/agents/"+encodeURIComponent(id)+"/repair-helper","POST",{
-        password:fd.get("password"),confirm_ssh_migration:fd.get("confirm")==="on"});
-      message("Права helper исправлены. Проверь кнопки Docker и Службы.");
-      await renderAgents();
-    });
+async function agentRepairModal(id){
+  const node=state.nodes.find(n=>n.id===id);if(!node)return;
+  try{
+    const access=await api("/nodes/"+encodeURIComponent(id)+"/ssh-access");
+    if(access.has_password){
+      if(!confirm("Исправить helper на "+node.code+" через сохранённый SSH-доступ?"))return;
+      await api("/agents/"+encodeURIComponent(id)+"/repair-helper","POST",{password:"",confirm_ssh_migration:true});
+      message("Права helper исправлены. Проверь Docker и Службы.");return renderAgents();
+    }
+    openModal("Исправить helper: "+node.code,"SSH-ДОСТУП",
+      '<p class="muted small">Пароль ещё не сохранён. Введи его один раз — Manager сохранит его зашифрованно и дальше не будет спрашивать.</p>'+
+      '<form><label>SSH-пароль root<input name="password" type="password" required autocomplete="new-password"></label>'+
+      '<label class="check-row"><input name="confirm" type="checkbox" required> Подтверждаю исправление только helper</label>'+
+      '<div class="form-buttons"><button class="btn primary" type="submit">Сохранить и исправить</button></div></form>',
+      async fd=>{await api("/nodes/"+encodeURIComponent(id)+"/ssh-access","PUT",{password:fd.get("password")});
+        await api("/agents/"+encodeURIComponent(id)+"/repair-helper","POST",{password:"",confirm_ssh_migration:fd.get("confirm")==="on"});
+        message("SSH-доступ сохранён, helper исправлен.");await renderAgents();});
+  }catch(e){message(e.message,true)}
 }
 async function nodeLifecycleModal(id){
   try{
@@ -190,7 +194,7 @@ async function nodeLifecycleModal(id){
     const issue=data.remnawave_error?
       '<p class="form-feedback error">'+esc(data.remnawave_error)+'</p>':'';
     const bridgeInfo=blocked?
-      '<p class="form-feedback error">Нода участвует в мостах или планах. Сначала удали локальные связи; рабочий Xray на VPS изменён не будет.</p>':'';
+      '<p class="form-feedback error">У ноды остались устаревшие локальные связи старой топологии. Их можно удалить отдельно; VPS и Xray не изменятся.</p>':'';
     const profileInfo=!hasRemote?
       '<p class="muted small">В менеджере не сохранены UUID объектов Remnawave. Доступно удаление локальной записи; проверь Remnawave вручную.</p>':
       !data.profile_uuid?'':(!data.profile_present?
@@ -223,11 +227,11 @@ async function nodeLifecycleModal(id){
       '<div class="form-buttons"><button type="submit" class="btn primary" '+(blocked?'disabled':'')+
       '>Удалить выбранное</button></div></form>'+
       '<div class="form-buttons">'+
-      (blocked?'<button type="button" class="btn subtle" id="detach-before-remove">Удалить локальные связи с мостами</button>':'')+
+      (blocked?'<button type="button" class="btn subtle" id="detach-before-remove">Удалить устаревшие локальные связи</button>':'')+
       '<button type="button" class="btn subtle" id="toggle-node-archive">'+
       (data.archived?'Вернуть из архива':'В архив')+'</button></div>',
       async fd=>{
-        if(blocked)throw Error("Сначала удали локальные связи с мостами");
+        if(blocked)throw Error("Сначала удали устаревшие локальные связи");
         if(fd.get("code")!==data.code)throw Error("Неверный код подтверждения");
         const removeRemote=fd.has("remove_remote");
         const deleteProfile=removeRemote&&fd.has("delete_profile");
@@ -289,20 +293,24 @@ async function nodeLifecycleModal(id){
   }catch(e){message(e.message,true)}
 }
 
-function agentBootstrapModal(id){
-  const node=state.nodes.find(n=>n.id===id);
-  if(!node)return;
-  openModal("Установить агент: "+node.code,"ОДИН РАЗ ЧЕРЕЗ SSH",
-    '<p class="muted small">Этот шаг установит Go-агент, выделенного системного пользователя и ограниченный helper на уже работающий VPS. Пароль root не сохраняется. Дальше весь менеджмент только через агента.</p>'+
-    '<form><label>SSH-пароль root<input name="password" type="password" required autocomplete="new-password"></label>'+
-    '<label class="check-row"><input name="confirm" type="checkbox" required> Подтверждаю установку агента на VPS</label>'+
-    '<div class="form-buttons"><button class="btn primary" type="submit">Установить</button></div></form>',
-    async fd=>{
-      await api("/agents/"+encodeURIComponent(id)+"/bootstrap","POST",{
-        password:fd.get("password"),confirm_ssh_migration:fd.get("confirm")==="on"});
-      message("Агент установлен. Ожидаем подключения к менеджеру.");
-      await renderAgents();
-    });
+async function agentBootstrapModal(id){
+  const node=state.nodes.find(n=>n.id===id);if(!node)return;
+  try{
+    const access=await api("/nodes/"+encodeURIComponent(id)+"/ssh-access");
+    if(access.has_password){
+      if(!confirm("Установить или восстановить Agent на "+node.code+" через сохранённый SSH-доступ?"))return;
+      await api("/agents/"+encodeURIComponent(id)+"/bootstrap","POST",{password:"",confirm_ssh_migration:true});
+      message("Агент установлен. Ожидаем подключения.");return renderAgents();
+    }
+    openModal("Установить агент: "+node.code,"ОДИН РАЗ ЧЕРЕЗ SSH",
+      '<p class="muted small">Пароль будет сохранён зашифрованно в Manager. После установки обычное управление идёт через Agent.</p>'+
+      '<form><label>SSH-пароль root<input name="password" type="password" required autocomplete="new-password"></label>'+
+      '<label class="check-row"><input name="confirm" type="checkbox" required> Подтверждаю установку агента</label>'+
+      '<div class="form-buttons"><button class="btn primary" type="submit">Сохранить и установить</button></div></form>',
+      async fd=>{await api("/nodes/"+encodeURIComponent(id)+"/ssh-access","PUT",{password:fd.get("password")});
+        await api("/agents/"+encodeURIComponent(id)+"/bootstrap","POST",{password:"",confirm_ssh_migration:fd.get("confirm")==="on"});
+        message("SSH-доступ сохранён. Агент установлен.");await renderAgents();});
+  }catch(e){message(e.message,true)}
 }
 async function agentActionModal(id,action){
   const node=state.nodes.find(n=>n.id===id);
