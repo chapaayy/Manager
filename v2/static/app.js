@@ -526,7 +526,7 @@ function renderPresets(){
   renderPresetSelects(selected);
   $("preset-cards").innerHTML=state.presets.length?state.presets.map(p=>
     '<article class="preset-card"><h3>'+esc(p.name)+'</h3>'+
-    '<span class="preset-mode">'+esc(p.mode==="direct"?"Обычная / выходная VPS":p.mode==="bridge"?"Входной мост":"Библиотека")+'</span>'+
+    '<span class="preset-mode">'+esc(p.mode==="direct"?"Установка обычной ноды":"Библиотека")+'</span>'+
     '<p>'+esc(p.description||"Пользовательский набор")+'</p>'+
     p.items.map(i=>'<div class="preset-file-chip">'+esc(types[i.kind])+'<strong>'+
     esc(i.config_name)+'</strong></div>').join("")+
@@ -560,6 +560,41 @@ async function removePreset(id){
     if(currentPreset===id)resetPreset();await refresh();message("Пресет удалён.");
   }catch(e){message(e.message,true)}
 }
+function renderMonitoringSettings(){
+  const select=$("monitoring-interval");
+  if(!select)return;
+  select.value=String(state.settings?.monitor_interval_ms===1000?1000:5000);
+  $("monitoring-status").textContent=select.value==="1000"?
+    "Очень быстрый режим · heartbeat и показатели примерно раз в секунду.":
+    "Обычный режим · heartbeat и показатели примерно раз в 5 секунд.";
+}
+async function saveMonitoring(){
+  const interval=Number($("monitoring-interval").value);
+  try{
+    const result=await api("/settings/monitoring","PUT",{interval_ms:interval});
+    state.settings.monitor_interval_ms=result.interval_ms;
+    renderMonitoringSettings();applyMonitoringInterval();
+    message("Частота мониторинга сохранена");
+  }catch(e){message(e.message,true)}
+}
+async function monitoringTick(){
+  if(monitoringBusy||document.hidden)return;
+  monitoringBusy=true;
+  try{
+    const data=await api("/agents");
+    nodeOverviewAgents=data.agents||[];
+    if(currentPage==="nodes"){
+      renderNodes();
+      if(selectedNodeId&&["overview","network"].includes(selectedNodeTab))renderNodeWorkspace();
+    }
+  }catch{}finally{monitoringBusy=false}
+}
+function applyMonitoringInterval(){
+  if(monitoringTimer)clearInterval(monitoringTimer);
+  const ms=state.settings?.monitor_interval_ms===1000?1000:5000;
+  monitoringTimer=setInterval(monitoringTick,ms);
+}
+
 function renderPanel(){
   $("panel-url").value=state.panel.url||"";
   $("panel-ip").value=state.panel.outbound_ip||"";
