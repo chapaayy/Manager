@@ -35,6 +35,12 @@ def test_monitor_interval_defaults_to_five_and_allows_one_second(db):
     assert storage.set_monitoring_interval(60)["monitor_interval"]==60
 
 
+def test_online_window_tracks_slow_monitoring_without_affecting_fast_default(db):
+    assert agent_transport.online_window()==45
+    storage.set_monitoring_interval(60)
+    assert agent_transport.online_window()==150
+
+
 def test_ssh_password_encrypted_and_never_returned_by_install_job(db):
     node=make_node()
     storage.save_node_ssh_password(node["id"],"super-secret-password")
