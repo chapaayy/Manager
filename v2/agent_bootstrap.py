@@ -255,6 +255,10 @@ def upgrade_existing(node_id:str,password:str,confirmed:bool)->dict:
                    "agent-helper.py":(ROOT/"helper.py").read_bytes(),
                    "agent-updater.sh":(ROOT/"agent-updater.sh").read_bytes(),
                    "upgrade.sh":(ROOT/"upgrade-agent.sh").read_bytes()}
+            import hashlib
+            from . import agent_release
+            files["agent-version"]=(agent_release.release()["version"]+" "+
+                                    hashlib.sha256(files["agent-binary"]).hexdigest()+"\n").encode("ascii")
         except OSError:
             raise AgentBootstrapError("В Manager отсутствуют файлы новой версии агента") from None
         if any(not item or len(item)>14000000 for item in files.values()):
