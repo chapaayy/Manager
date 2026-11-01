@@ -498,6 +498,7 @@ def get_install_job(node_id: str) -> dict:
         raise LookupError("Установка не найдена")
     result=dict(row)
     result.pop("preset_snapshot_enc",None)
+    result.pop("ssh_password_enc",None)
     return result
 
 
