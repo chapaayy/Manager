@@ -249,7 +249,7 @@ def test_vps_preview_is_direct_only(client):
     assert storage.list_nodes()==[]
 
 
-def test_monitoring_settings_and_saved_ssh_are_bounded_and_secret_safe(client):
+def test_monitoring_settings_and_saved_ssh_are_bounded_and_secret_safe(client,monkeypatch):
     assert client.get("/api/settings/monitoring").json()["interval_ms"]==5000
     assert client.put("/api/settings/monitoring",json={"interval_ms":1000}).json()["interval_ms"]==1000
     assert storage.get_monitor_interval_ms()==1000
@@ -260,6 +260,9 @@ def test_monitoring_settings_and_saved_ssh_are_bounded_and_secret_safe(client):
     access=client.get("/api/nodes/"+node["id"]+"/ssh-access").json()
     assert access["ip"]=="8.8.8.8" and access["port"]==2222 and not access["has_password"]
     secret="root-password-that-must-never-return"
+    from v2 import agent_bootstrap
+    monkeypatch.setattr(agent_bootstrap,"validate_and_store_ssh",
+                        lambda node_id,password:storage.save_ssh_password(node_id,password))
     saved=client.put("/api/nodes/"+node["id"]+"/ssh-access",json={"password":secret})
     assert saved.status_code==200 and saved.json()["has_password"]
     assert secret not in saved.text
