@@ -5,6 +5,10 @@ package main
 import (
     "bytes"
     "context"
+    "crypto/sha256"
+    "encoding/hex"
+    "runtime"
+    "path/filepath"
     "encoding/json"
     "errors"
     "fmt"
@@ -20,7 +24,7 @@ import (
     "time"
 )
 
-const Version = "1.2.0"
+const Version = "1.3.0"
 const MaxBody = 160000
 const Helper = "/usr/local/libexec/node-manager-helper"
 
@@ -162,11 +166,14 @@ func systemStatus() map[string]interface{} {
         status["disk_total_bytes"]=fs.Blocks*uint64(fs.Bsize)
         status["disk_available_bytes"]=fs.Bavail*uint64(fs.Bsize)
     }
+    status["architecture"]=runtime.GOARCH
     addNetworkCounters(status)
     return status
 }
 
-func execute(job *Task) Response {
+func (a *Agent) execute(job *Task) Response {
+    if job.Action=="agent.update" {return a.performUpdate(job)}
+
     resp:=Response{ID:job.ID,OK:false,Result:map[string]interface{}{}}
     if job.Action=="system.status" {
         resp.OK=true
@@ -214,6 +221,73 @@ func (b *boundedWriter) Write(p []byte)(int,error){
     return n,err
 }
 
+// A successful authenticated heartbeat is the only condition that confirms
+// an updated agent. The independent root updater rolls back if it never occurs.
+func acknowledgeUpdate(){
+    pending,err:=os.ReadFile("/var/lib/node-manager/update-pending")
+    if err!=nil{return}
+    values:=strings.Fields(string(pending))
+    if len(values)!=2||values[0]!=Version{return}
+    raw,err:=os.ReadFile("/usr/local/bin/node-manager-agent")
+    if err!=nil{return}
+    sum:=sha256.Sum256(raw)
+    if hex.EncodeToString(sum[:])!=values[1]{return}
+    _=os.WriteFile("/var/lib/node-manager/update-ok",[]byte(Version+" "+values[1]),0600)
+}
+
+func (a *Agent) performUpdate(job *Task) Response {
+    fail:=func(msg string)Response{return Response{ID:job.ID,OK:false,
+        Result:map[string]interface{}{},Error:msg}}
+    payload:=job.Payload
+    if payload==nil{return fail("missing update parameters")}
+    next,_:=payload["version"].(string)
+    digest,_:=payload["sha256"].(string)
+    sizeRaw,ok:=payload["size"].(float64)
+    if !ok ||sizeRaw<10000||sizeRaw>14000000{return fail("invalid agent artifact size")}
+    size:=int64(sizeRaw)
+    if !strings.HasPrefix(next,"1.")||len(next)>18||len(digest)!=64||next==Version{
+        return fail("invalid or redundant update")
+    }
+    if runtime.GOARCH!="amd64"&&runtime.GOARCH!="arm64"{
+        return fail("unsupported agent architecture")
+    }
+    url:=a.URL+"/update/binary/"+runtime.GOARCH
+    ctx,cancel:=context.WithTimeout(context.Background(),45*time.Second)
+    defer cancel()
+    req,err:=http.NewRequestWithContext(ctx,"GET",url,nil)
+    if err!=nil{return fail("invalid artifact URL")}
+    req.Header.Set("Authorization","Bearer "+a.Token)
+    req.Header.Set("X-Node-Id",a.ID)
+    response,err:=a.Client.Do(req)
+    if err!=nil{return fail("agent binary unavailable")}
+    defer response.Body.Close()
+    if response.StatusCode!=200{return fail("artifact request rejected")}
+    binary,err:=io.ReadAll(io.LimitReader(response.Body,size+1))
+    if err!=nil||int64(len(binary))!=size{return fail("download length mismatch")}
+    sum:=sha256.Sum256(binary)
+    if hex.EncodeToString(sum[:])!=digest{return fail("download SHA-256 mismatch")}
+    dir:="/var/lib/node-manager"
+    tmp,err:=os.CreateTemp(dir,".agent-update-*")
+    if err!=nil{return fail("update staging unavailable")}
+    tmpName:=tmp.Name()
+    defer os.Remove(tmpName)
+    if _,err=tmp.Write(binary);err!=nil{tmp.Close();return fail("agent staging failed")}
+    if err=tmp.Sync();err!=nil{tmp.Close();return fail("agent staging sync failed")}
+    tmp.Close()
+    if err=os.Chmod(tmpName,0600);err!=nil{return fail("agent staging permissions failed")}
+    if err=os.Rename(tmpName,filepath.Join(dir,"update.bin"));err!=nil{
+        return fail("agent staging rename failed")
+    }
+    raw,_:=json.Marshal(map[string]interface{}{"version":next,"sha256":digest})
+    sudoCtx,sudoCancel:=context.WithTimeout(context.Background(),18*time.Second)
+    defer sudoCancel()
+    cmd:=exec.CommandContext(sudoCtx,"sudo","-n",Helper,"agent.update")
+    cmd.Stdin=bytes.NewReader(raw)
+    if err=cmd.Run();err!=nil{return fail("systemd updater rejected verified artifact")}
+    return Response{ID:job.ID,OK:true,
+        Result:map[string]interface{}{"scheduled":true,"version":next}}
+}
+
 func main(){
     manager:=os.Getenv("MANAGER_URL")
     token:=os.Getenv("AGENT_TOKEN")
@@ -225,7 +299,8 @@ func main(){
         log.Fatal("invalid manager agent configuration; HTTPS URL, node ID and token required")
     }
     agent:=Agent{URL:strings.TrimRight(manager,"/")+"/api/agent/v1",
-        ID:id,Token:token,Client:&http.Client{Timeout:50*time.Second}}
+        ID:id,Token:token,Client:&http.Client{Timeout:50*time.Second,
+        CheckRedirect:func(_ *http.Request,_ []*http.Request)error{return http.ErrUseLastResponse}}}
     // No token or certificate content is ever logged.
     log.Printf("node manager agent %s started",Version)
     lastHeartbeat:=time.Time{}
@@ -235,7 +310,7 @@ func main(){
             err:=agent.send(ctx,"POST","/heartbeat",map[string]interface{}{
                 "version":Version,"metrics":systemStatus()},nil)
             cancel()
-            if err!=nil {log.Printf("heartbeat failed: %v",err)}
+            if err!=nil {log.Printf("heartbeat failed: %v",err)} else {acknowledgeUpdate()}
             lastHeartbeat=time.Now()
         }
         ctx,cancel:=context.WithTimeout(context.Background(),30*time.Second)
@@ -248,7 +323,7 @@ func main(){
             continue
         }
         if pulled.Job==nil{time.Sleep(5*time.Second);continue}
-        result:=execute(pulled.Job)
+        result:=agent.execute(pulled.Job)
         ctx,cancel=context.WithTimeout(context.Background(),50*time.Second)
         err=agent.send(ctx,"POST","/report",result,nil)
         cancel()
