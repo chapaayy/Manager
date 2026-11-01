@@ -167,7 +167,7 @@ function agentRepairModal(id){
   if(!node)return;
   openModal("Исправить helper: "+node.code,"ВОССТАНОВЛЕНИЕ ПЕРВИЧНОЙ УСТАНОВКИ",
     '<p class="muted small">Исправляем системные ограничения первоначально установленного агента, из-за которых Docker, логи и Certbot показывают «agent helper rejected operation». Однократно используется SSH. Токен агента, Xray, Nginx и сертификаты не меняются; перезапустится только служба самого агента.</p>'+
-    '<form><label>SSH-пароль root<input name="password" type="password" required autocomplete="new-password"></label>'+
+    '<form><label>SSH-пароль root <span class="muted">· необязательно, если сохранён</span><input name="password" type="password" autocomplete="new-password" placeholder="Использовать сохранённый пароль"></label>'+
     '<label class="check-row"><input name="confirm" type="checkbox" required> Подтверждаю исправление только службы агента на VPS</label>'+
     '<div class="form-buttons"><button class="btn primary" type="submit">Исправить права агента</button></div></form>',
     async fd=>{
@@ -191,7 +191,7 @@ async function nodeLifecycleModal(id){
     const issue=data.remnawave_error?
       '<p class="form-feedback error">'+esc(data.remnawave_error)+'</p>':'';
     const bridgeInfo=blocked?
-      '<p class="form-feedback error">Нода участвует в мостах или планах. Сначала удали локальные связи; рабочий Xray на VPS изменён не будет.</p>':'';
+      '<p class="form-feedback error">У ноды остались legacy-связи старой системы топологии. Сначала отвяжи их локально; рабочий Xray на VPS изменён не будет.</p>':'';
     const profileInfo=!hasRemote?
       '<p class="muted small">В менеджере не сохранены UUID объектов Remnawave. Доступно удаление локальной записи; проверь Remnawave вручную.</p>':
       !data.profile_uuid?'':(!data.profile_present?
@@ -278,7 +278,7 @@ async function nodeLifecycleModal(id){
     if(detach)detach.onclick=async()=>{
       if(form.elements.code.value!==data.code)
         return message("Сначала введи точный код ноды для отвязки",true);
-      if(!confirm("Удалить локальные связи и планы "+data.code+
+      if(!confirm("Удалить legacy-связи "+data.code+
         "? Это НЕ изменяет рабочие Xray-конфигурации и VPS."))return;
       try{
         await api(base+"/detach-dependencies","POST",{code:data.code});
@@ -294,7 +294,7 @@ function agentBootstrapModal(id){
   const node=state.nodes.find(n=>n.id===id);
   if(!node)return;
   openModal("Установить агент: "+node.code,"ОДИН РАЗ ЧЕРЕЗ SSH",
-    '<p class="muted small">Этот шаг установит Go-агент, выделенного системного пользователя и ограниченный helper на уже работающий VPS. Пароль root не сохраняется. Дальше весь менеджмент только через агента.</p>'+
+    '<p class="muted small">Этот шаг установит Go-агент, выделенного системного пользователя и ограниченный helper на уже работающий VPS. Сначала используется сохранённый SSH-пароль этой ноды; при необходимости его можно указать вручную. Дальше управление идёт через Agent.</p>'+
     '<form><label>SSH-пароль root<input name="password" type="password" required autocomplete="new-password"></label>'+
     '<label class="check-row"><input name="confirm" type="checkbox" required> Подтверждаю установку агента на VPS</label>'+
     '<div class="form-buttons"><button class="btn primary" type="submit">Установить</button></div></form>',
