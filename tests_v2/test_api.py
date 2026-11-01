@@ -72,13 +72,13 @@ def test_bridge_control_plane_is_retired_and_dashboard_is_nodes_only(client):
     body=dashboard.json()
     assert "bridges" not in body
     assert body["phase"]=="nodes-only"
-    assert client.post("/api/bridges",json={"name":"old","entry_id":"x"}).status_code==410
-    assert client.get("/api/bridges/legacy-id").status_code==410
+    assert client.post("/api/bridges",json={"name":"old","entry_id":"x"}).status_code==404
+    assert client.get("/api/bridges/legacy-id").status_code==404
     assert client.post("/api/bridges/legacy-id/import",json={
-        "config":{},"revision":0,"confirm_read_only":True}).status_code==410
+        "config":{},"revision":0,"confirm_read_only":True}).status_code==404
     assert client.post("/api/bridges/legacy-id/plans",json={
         "exit_id":"x"}).status_code==410
-    assert client.get("/api/template/default").status_code==410
+    assert client.get("/api/template/default").status_code==404
     variables=client.get("/api/template/variables").json()["variables"]
     assert {x["key"] for x in variables}=={"source.code","source.domain"}
     # Entry/exit roles cannot be created by the active API anymore.
