@@ -326,7 +326,7 @@ def enable_ssh_security(node_id: str,password: str,confirmed: bool) -> dict:
     if node["status"]!="ready":
         raise AgentBootstrapError("Нода должна быть установлена")
     agent=next((x for x in agent_transport.nodes_status() if x["id"]==node_id),None)
-    if not agent or not agent["online"] or not agent["version"].startswith("1.4."):
+    if not agent or not agent["online"] or not re.fullmatch(r"1\\.(?:[4-9]|[1-9][0-9])\\.[0-9]{1,3}",agent["version"] or ""):
         raise AgentBootstrapError("Для настройки безопасности нужен Agent v1.4 или новее")
     job=storage.get_install_job(node_id)
     try:
