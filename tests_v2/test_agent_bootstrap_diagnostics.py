@@ -81,3 +81,23 @@ def test_unreachable_remote_log_does_not_leak_exception(monkeypatch):
     monkeypatch.setattr(vps_install,"run_command",
                         lambda *_a,**_k:(_ for _ in ()).throw(OSError("dangerous secret")))
     assert "dangerous secret" not in agent_bootstrap._remote_bootstrap_failure(object())
+
+
+def test_saved_ssh_password_is_verified_before_replacing_previous_secret(existing_node,monkeypatch):
+    storage.save_ssh_password(existing_node["id"],"known-good")
+    def wrong(*_args,**_kwargs):
+        raise paramiko.AuthenticationException("bad")
+    monkeypatch.setattr(vps_install,"ssh_open",wrong)
+    with pytest.raises(agent_bootstrap.AgentBootstrapError,match="неверный пароль"):
+        agent_bootstrap.validate_and_store_ssh(existing_node["id"],"typo-password")
+    assert storage.get_saved_ssh_password(existing_node["id"])=="known-good"
+
+    class Transport:
+        def __init__(self):self.closed=False
+        def close(self):self.closed=True
+    transport=Transport()
+    monkeypatch.setattr(vps_install,"ssh_open",lambda *_a,**_k:(transport,"ok"))
+    result=agent_bootstrap.validate_and_store_ssh(existing_node["id"],"new-good")
+    assert transport.closed
+    assert result["has_saved_ssh_password"] is True
+    assert storage.get_saved_ssh_password(existing_node["id"])=="new-good"
