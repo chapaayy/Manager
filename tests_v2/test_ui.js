@@ -17,26 +17,33 @@ const unique=new Set(ids);
 assert.equal(unique.size,ids.length,"Every HTML id must be unique");
 for(const id of [
   "login-screen","login-username","login-password","panel-caddy-key","panel-caddy-details","shell","sidebar","toggle-sidebar","page-nodes","page-configs",
-  "page-presets","page-settings","page-updates","update-check","update-start","update-status","bridge-list","other-nodes","modal","plan-dialog",
-  "config-files","config-content","config-save","preset-form","panel-form",
-  "plan-diff","plan-json","plan-approve","vps-dialog","vps-form","vps-probe-button","vps-install",
+  "page-presets","page-settings","page-updates","update-check","update-start","update-status","other-nodes","modal",
+  "config-files","config-content","config-save","preset-form","panel-form","monitoring-form","monitoring-interval","monitoring-status",
+  "metric-nodes","metric-ready","metric-archived","vps-dialog","vps-form","vps-probe-button","vps-install",
 ]){
   assert(unique.has(id),"Required UI element: "+id);
 }
 assert.match(html,/\/static\/icons\.svg/);
-assert.match(html,/\/static\/app\.js\?v=2\.6\.0/);
+assert.match(html,/\/static\/app\.js\?v=2\.7\.0/);
 assert.match(css,/\.sidebar\.collapsed/);
 assert.match(css,/\.workspace\{flex:1;min-width:0;width:0/);
 assert.match(css,/prefers-reduced-motion/);
 assert.match(vps,/async function installVps/,"SSH VPS wizard must launch install");
 assert(!html.includes('id="panel-profile-select"'),"Remove obsolete global profile setting");
-assert.match(js,/bridgeExitModal/,"Bridge expansion is functional");
+assert.doesNotMatch(html,/id="bridge-list"|id="new-bridge"|id="plan-dialog"/,"Bridge topology is removed from active UI");
+assert.doesNotMatch(js,/function bridgeExitModal|function bridgeModal/,"Bridge topology JavaScript removed");
+assert.match(js,/function renderMonitoringSettings/,"Monitoring settings are functional");
+assert.match(js,/function monitoringTick/,"Live monitoring loop exists");
+assert.match(js,/setTimeout\(resolve,i<25\?200:500\)/,"Agent task result polling is sub-second");
+assert.match(html,/1 секунда · очень быстро/,"One-second monitoring mode offered");
+assert.match(html,/5 секунд · обычно/,"Five-second monitoring mode offered");
 assert.match(js,/highlightTokens/,"Editor highlights template parameters");
 assert.match(html,/data-config-category="xray"/,"Xray tab shown");
 assert.match(html,/data-config-category="system"/,"Server configuration tab shown");
 assert.match(js,/configCategory==="xray"/,"Tab actually filters configuration files");
 assert.match(html,/id="preset-mode"/,"Preset deployment mode editable");
-assert.match(vps,/renderVpsPresets/,"VPS wizard lists installation presets");
+assert.match(vps,/renderVpsPresets/,"VPS wizard lists direct-node installation bundles");
+assert.doesNotMatch(vps,/mode==="bridge"|value="entry"|value="exit"/,"VPS wizard has no bridge roles");
 assert.match(vps,/preset_id:data.preset_id/,"Preview uses chosen preset");
 
 assert.match(js,/X-CSRF-Token/,"Mutating calls need CSRF");
@@ -52,6 +59,9 @@ assert.doesNotMatch(html,/data-page="agents"/,"No Agents sidebar item");
 assert.doesNotMatch(html,/data-page="node-certs"/,"No TLS sidebar item");
 assert.match(html,/id="node-detail"/,"Node detail in Nodes page");
 assert.match(nodeDetail,/function openNodeWorkspace/,"Unified node workspace");
+assert.match(nodeDetail,/function loadNodeSSHAccess/,"Saved SSH access is visible per node");
+assert.match(nodeDetail,/function loadNodeConfigChoices/,"Independent per-node config choices exist");
+assert.match(nodeDetail,/data-node-config-choice-save/,"Config choices have explicit save action");
 assert.match(html,/node-security[.]js[?]v=1[.]0[.]0/,"Security dashboard asset loaded");
 assert.match(nodeSecurity,/function securityNetworkBody/,"Network page uses compact security layout");
 assert.match(nodeSecurity,/function installNodeSSHProtection/,"Confirmed SSH-only install wizard exists");
@@ -68,6 +78,7 @@ assert.match(js,/Удалить запись из XPPN Manager/,"Manager removal
 assert.match(js,/toggle-node-archive/,"Archive remains available");
 assert.match(vps,/await nodeLifecycleModal\(id\)/,"Failed install removal uses the same wizard");
 assert.match(html,/nodes-show-archived/,"Archived nodes can be shown");
+assert.doesNotMatch(html,/Ноды и мосты|Создать мост|Подключённых выходов|Топология/,"Active bridge labels removed");
 
 assert.match(js,/migrateNodeTLSModal/,"UI supports per-node TLS path migration");
 assert.match(js,/data-tls-migrate/,"TLS migration is visible only as an explicit action");

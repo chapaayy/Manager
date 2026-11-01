@@ -44,17 +44,19 @@ def test_legacy_no_arch_can_request_one_time_ssh_update(node,monkeypatch):
     st=agent_updates.current(node["id"])
     assert st["upgrade_needed"] and st["artifact_ready"]
     assert st["one_time_ssh_migration_required"]
-    with pytest.raises(agent_updates.UpdateError,match="SSH"):
+    from v2 import agent_bootstrap
+    with pytest.raises(agent_bootstrap.AgentBootstrapError,match="не сохранён"):
         agent_updates.manual(node["id"],confirmed=True)
     assert not agent_updates.current(node["id"])["auto_update"]
-    from v2 import agent_bootstrap
     called=[]
     monkeypatch.setattr(agent_bootstrap,"upgrade_existing",lambda uid,password,approved:
                         called.append((uid,password,approved)) or
                         {"node_id":uid,"upgraded":True,"credentials_unchanged":True})
-    out=agent_updates.manual(node["id"],confirmed=True,password="one-time-password")
+    storage.save_ssh_password(node["id"],"saved-root-password")
+    out=agent_updates.manual(node["id"],confirmed=True)
     assert out["mode"]=="one-time-ssh" and out["credentials_unchanged"]
-    assert called==[(node["id"],"one-time-password",True)]
+    # Bootstrap itself resolves the encrypted stored password when the API sends empty.
+    assert called==[(node["id"],"",True)]
 
 
 def test_opt_in_auto_update_enqueues_once_with_allowlisted_digest(node,monkeypatch):

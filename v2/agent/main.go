@@ -20,11 +20,12 @@ import (
     "os/exec"
     "strconv"
     "strings"
+    "sync/atomic"
     "syscall"
     "time"
 )
 
-const Version = "1.4.0"
+const Version = "1.5.0"
 const MaxBody = 160000
 const Helper = "/usr/local/libexec/node-manager-helper"
 
@@ -35,6 +36,9 @@ type Task struct {
 }
 type Pull struct {
     Job *Task `json:"job"`
+}
+type HeartbeatReply struct {
+    NextHeartbeatMS int64 `json:"next_heartbeat_ms"`
 }
 type Response struct {
     ID string `json:"id"`
@@ -104,7 +108,7 @@ func addNetworkCounters(status map[string]interface{}) {
                     now:=time.Now()
                     if rxErr==nil && txErr==nil {
                         elapsed:=now.Sub(lastNetSample.when).Seconds()
-                        if lastNetSample.iface==iface && elapsed>1 && rx>=lastNetSample.rx && tx>=lastNetSample.tx {
+                        if lastNetSample.iface==iface && elapsed>0.20 && rx>=lastNetSample.rx && tx>=lastNetSample.tx {
                             status["net_rx_mbps"]=float64(rx-lastNetSample.rx)*8/elapsed/1000000
                             status["net_tx_mbps"]=float64(tx-lastNetSample.tx)*8/elapsed/1000000
                         }
@@ -289,44 +293,44 @@ func (a *Agent) performUpdate(job *Task) Response {
         Result:map[string]interface{}{"scheduled":true,"version":next}}
 }
 
-func main(){
-    manager:=os.Getenv("MANAGER_URL")
-    token:=os.Getenv("AGENT_TOKEN")
-    id:=os.Getenv("NODE_ID")
-    endpoint,err:=url.Parse(manager)
-    if err!=nil||endpoint.Scheme!="https"||endpoint.Hostname()==""||endpoint.User!=nil||
-        endpoint.RawQuery!=""||endpoint.Fragment!=""||endpoint.Path!=""||
-        len(token)<40||len(id)<32{
-        log.Fatal("invalid manager agent configuration; HTTPS URL, node ID and token required")
-    }
-    agent:=Agent{URL:strings.TrimRight(manager,"/")+"/api/agent/v1",
-        ID:id,Token:token,Client:&http.Client{Timeout:50*time.Second,
-        CheckRedirect:func(_ *http.Request,_ []*http.Request)error{return http.ErrUseLastResponse}}}
-    // No token or certificate content is ever logged.
-    log.Printf("node manager agent %s started",Version)
-    lastHeartbeat:=time.Time{}
+func clampHeartbeat(ms int64) int64 {
+    if ms<=1000{return 1000}
+    if ms<=5000{return 5000}
+    return 5000
+}
+
+func (a *Agent) heartbeatLoop(interval *int64) {
     for {
-        if time.Since(lastHeartbeat)>=15*time.Second{
-            ctx,cancel:=context.WithTimeout(context.Background(),15*time.Second)
-            err:=agent.send(ctx,"POST","/heartbeat",map[string]interface{}{
-                "version":Version,"metrics":systemStatus()},nil)
-            cancel()
-            if err!=nil {log.Printf("heartbeat failed: %v",err)} else {acknowledgeUpdate()}
-            lastHeartbeat=time.Now()
+        ctx,cancel:=context.WithTimeout(context.Background(),12*time.Second)
+        var reply HeartbeatReply
+        err:=a.send(ctx,"POST","/heartbeat",map[string]interface{}{
+            "version":Version,"metrics":systemStatus()},&reply)
+        cancel()
+        if err!=nil {
+            log.Printf("heartbeat failed: %v",err)
+        } else {
+            acknowledgeUpdate()
+            atomic.StoreInt64(interval,clampHeartbeat(reply.NextHeartbeatMS))
         }
-        ctx,cancel:=context.WithTimeout(context.Background(),30*time.Second)
+        time.Sleep(time.Duration(atomic.LoadInt64(interval))*time.Millisecond)
+    }
+}
+
+func (a *Agent) taskLoop() {
+    for {
+        ctx,cancel:=context.WithTimeout(context.Background(),35*time.Second)
         var pulled Pull
-        err:=agent.send(ctx,"GET","/pull",nil,&pulled)
+        err:=a.send(ctx,"GET","/pull",nil,&pulled)
         cancel()
         if err!=nil{
             log.Printf("pull failed: %v",err)
-            time.Sleep(10*time.Second)
+            time.Sleep(time.Second)
             continue
         }
-        if pulled.Job==nil{time.Sleep(5*time.Second);continue}
-        result:=agent.execute(pulled.Job)
+        if pulled.Job==nil{continue}
+        result:=a.execute(pulled.Job)
         ctx,cancel=context.WithTimeout(context.Background(),50*time.Second)
-        err=agent.send(ctx,"POST","/report",result,nil)
+        err=a.send(ctx,"POST","/report",result,nil)
         cancel()
         if err!=nil{
             // Do NOT log task results, which could contain secrets.
@@ -334,3 +338,22 @@ func main(){
         }
     }
 }
+
+func main(){
+    manager:=os.Getenv("MANAGER_URL")
+    id:=os.Getenv("NODE_ID")
+    token:=os.Getenv("AGENT_TOKEN")
+    parsed,err:=url.Parse(manager)
+    if err!=nil||parsed.Scheme!="https"||parsed.Host==""||parsed.User!=nil||parsed.RawQuery!=""||parsed.Fragment!=""||
+        !strings.HasPrefix(id,"")||len(id)!=36||len(token)<32 {
+        log.Fatal("invalid manager agent configuration; HTTPS URL, node ID and token required")
+    }
+    agent:=Agent{URL:strings.TrimRight(manager,"/")+"/api/agent/v1",
+        ID:id,Token:token,Client:&http.Client{Timeout:50*time.Second,
+        CheckRedirect:func(_ *http.Request,_ []*http.Request)error{return http.ErrUseLastResponse}}}
+    log.Printf("node manager agent %s started",Version)
+    var interval int64=5000
+    go agent.heartbeatLoop(&interval)
+    agent.taskLoop()
+}
+

@@ -1,36 +1,21 @@
 "use strict";
 // VPS wizard is intentionally separate from configuration/preset editors.
-// Password is held only in memory during preflight and install request.
+// Password is sent only to Manager and stored encrypted server-side for future explicit SSH maintenance.
 let vpsPayload=null,vpsInspection=null,vpsTimer=null;
 function renderVpsPresets(){
   const select=document.getElementById("vps-preset");
-  const options=state.presets.filter(p=>["direct","bridge"].includes(p.mode) &&
+  const options=state.presets.filter(p=>p.mode==="direct" &&
       ["xray","nginx","nginx_compose","node_compose"].every(kind=>
           p.items.some(item=>item.kind===kind)));
-  select.innerHTML=options.map(p=>'<option value="'+esc(p.id)+'">'+
-    esc(p.mode==="direct"?"Обычная / выходная · ":"Мост · ")+esc(p.name)+'</option>').join("");
-  const preferred=options.find(p=>p.mode==="direct");
-  if(preferred)select.value=preferred.id;
+  select.innerHTML=options.map(p=>'<option value="'+esc(p.id)+'">'+esc(p.name)+'</option>').join("");
+  if(options.length)select.value=options[0].id;
   updateVpsPresetSelection();
 }
 function updateVpsPresetSelection(){
   const selected=state.presets.find(p=>p.id===document.getElementById("vps-preset").value);
-  const role=document.getElementById("vps-form").elements.namedItem("role");
-  if(!selected){
-    role.disabled=true;
-    document.getElementById("vps-preset-description").textContent="Нет полного установочного пресета. Проверь вкладку «Пресеты».";
-    return;
-  }
-  role.disabled=false;
-  const bridge=selected.mode==="bridge";
-  [...role.options].forEach(opt=>{
-    opt.disabled=bridge?opt.value!=="entry":opt.value==="entry";
-  });
-  if(bridge)role.value="entry";
-  else if(role.value==="entry")role.value="regular";
-  document.getElementById("vps-preset-description").textContent=bridge?
-    "Входной мост: inbound 443/8443. До подключения реальных выходных нод весь VPN-трафик блокируется.":
-    "Обычная или выходная нода: VLESS TLS 443, прямой выход. Конфиги берутся из выбранного пресета.";
+  document.getElementById("vps-preset-description").textContent=selected?
+    "Набор конфигураций для обычной ноды.":
+    "Нет полного набора для установки обычной ноды. Проверь вкладку «Пресеты».";
 }
 
 function openVpsWizard(){
@@ -57,11 +42,12 @@ async function probeVps(event){
     data.port=Number(data.port||22);
     data.code=data.code.trim().toUpperCase();
     data.country=data.country.toUpperCase();
+    data.role="regular";
     data.domain=data.domain.trim().toLowerCase();
     data.ip=data.ip.trim();
     const preview=await api("/vps/preview","POST",{
       code:data.code,domain:data.domain,country:data.country,
-      role:data.role,preset_id:data.preset_id
+      role:"regular",preset_id:data.preset_id
     });
     vpsInspection=await api("/vps/probe","POST",{
       ip:data.ip,port:data.port,domain:data.domain,password:data.password
@@ -78,8 +64,7 @@ async function probeVps(event){
       '<p>SSH fingerprint: <code>'+esc(info.fingerprint)+'</code></p>'+
       (info.warnings.length?'<p class="wizard-errors">'+info.warnings.map(esc).join("; ")+'</p>':
         '<p>Порты 80/443/2222 свободны, DNS совпадает с VPS.</p>')+
-      '<p class="muted small">Пресет: '+esc(preview.preset_name||"Стандартный")+
-      ' · '+esc(preview.preset_mode||"direct")+'. '+esc(preview.note)+'</p>'+
+      '<p class="muted small">Набор конфигураций: '+esc(preview.preset_name||"Стандартный")+'. '+esc(preview.note)+'</p>'+
       '<p class="muted small">Будут установлены Docker, Nginx, TLS и Remnawave Node, создан отдельный Xray Config Profile.</p>'+
       '<details class="template-info"><summary>Посмотреть замены и файлы перед установкой</summary>'+
       preview.variables.map(x=>'<div class="wizard-mapping"><code>'+esc(x.key)+'</code><span>→</span><strong>'+esc(x.value)+'</strong></div>').join("")+
@@ -147,8 +132,9 @@ async function showVpsJob(id,focusRetry=false){
       (info.remote_uuid?'<p>Remnawave UUID: '+esc(info.remote_uuid)+'</p>':'')+
       (terminal?'<p class="inline-info">Удаление записи не удаляет Docker, конфиги или сертификаты с VPS. Для продолжения мы сверим SSH fingerprint и уже запущенные сервисы.</p>':'')+
       (canRecover?
-        '<form id="failed-vps-resume"><label>SSH-пароль root для продолжения'+
-        '<input name="password" type="password" autocomplete="new-password" required maxlength="512" placeholder="Пароль не сохраняется"></label>'+
+        '<form id="failed-vps-resume">'+
+        (info.has_saved_ssh_password?'<p class="muted small">SSH-доступ сохранён в Manager. Пароль повторно вводить не нужно.</p>':
+        '<label>SSH-пароль root для продолжения<input name="password" type="password" autocomplete="new-password" required maxlength="512" placeholder="Будет сохранён зашифрованно"></label>')+
         '<label class="check-row"><input name="confirm_existing" type="checkbox" required value="yes"> Продолжить с настройки Remnawave без переустановки VPS</label>'+
         '<div class="form-buttons"><button type="submit" class="btn primary">Продолжить подключение</button></div>'+
         '</form>':'')+
@@ -157,7 +143,7 @@ async function showVpsJob(id,focusRetry=false){
     openModal("Установка "+(node?node.code:"VPS"),"СОСТОЯНИЕ СЕРВЕРА",details,
       canRecover?async fd=>{
         const result=await api("/vps/jobs/"+encodeURIComponent(id)+"/resume","POST",{
-          password:fd.get("password"),confirm_existing:fd.get("confirm_existing")==="yes"
+          password:fd.get("password")||"",confirm_existing:fd.get("confirm_existing")==="yes"
         });
         const field=document.querySelector("#failed-vps-resume input[name=password]");
         if(field)field.value="";

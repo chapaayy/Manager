@@ -2,7 +2,7 @@
 // Single node workspace inside the Nodes section. All data comes from Manager,
 // not from the Remnawave host filesystem.
 let selectedNodeId=null, selectedNodeTab="overview", nodeOverviewAgents=[], nodeOverviewCerts=[];
-let nodeTaskRequest=0, nodeTaskBusy=false;
+let nodeTaskRequest=0, nodeTaskBusy=false, nodeSSHAccess=null, nodeConfigChoices={};
 const nodeTabs={overview:"Обзор",docker:"Docker и службы",logs:"Логи",tls:"Сертификат",network:"Сеть и защита",configs:"Конфигурации",manage:"Управление"};
 const nodeTime=t=>t?new Date(t*1000).toLocaleString("ru-RU"):"Ещё нет";
 const nodeSize=n=>typeof n==="number"&&Number.isFinite(n)?(n/1073741824).toFixed(1)+" ГБ":"—";
@@ -32,7 +32,7 @@ function openNodeWorkspace(id,tab="overview"){
   if(!state.nodes.some(n=>n.id===id))return message("Нода не найдена",true);
   selectedNodeId=id;
   selectedNodeTab=tab;
-  nodeSecuritySnapshot=null;
+  nodeSecuritySnapshot=null;nodeSSHAccess=null;nodeConfigChoices={};
   nodeTaskRequest++;
   $("nodes-home").classList.add("hidden");
   $("node-detail").classList.remove("hidden");
@@ -41,7 +41,7 @@ function openNodeWorkspace(id,tab="overview"){
   window.scrollTo({top:0,behavior:"auto"});
 }
 function closeNodeWorkspace(){
-  selectedNodeId=null;nodeSecuritySnapshot=null;nodeTaskRequest++;
+  selectedNodeId=null;nodeSecuritySnapshot=null;nodeSSHAccess=null;nodeConfigChoices={};nodeTaskRequest++;
   $("node-detail").classList.add("hidden");
   $("nodes-home").classList.remove("hidden");
   renderNodes();
@@ -120,13 +120,25 @@ function nodeWorkspaceBody(n,a,c){
       '<div id="node-task-output"></div>'+
       '<button class="btn subtle" data-tls-migrate="'+esc(n.id)+'" '+(!online?'disabled':'')+'>Проверить совместимость TLS-профиля</button></div>';
   case "network":return securityNetworkBody(n,a,m);
-  case "configs":
-    return '<div class="node-panel"><div class="node-panel-head"><h2>Конфигурации VPS</h2>'+
+  case "configs":{
+    const configLabels={xray:"Xray",nginx:"Nginx",nginx_compose:"Nginx Compose",node_compose:"Remnawave Compose"};
+    const selectors=Object.entries(configLabels).map(([kind,label])=>{
+      const current=nodeConfigChoices[kind]?.config_id||"";
+      const options=state.configs.filter(c=>c.kind===kind).map(c=>
+        '<option value="'+esc(c.id)+'" '+(current===c.id?'selected':'')+'>'+esc(c.name)+' · v'+esc(c.revision)+'</option>').join("");
+      return '<label>'+esc(label)+'<select data-node-config-choice="'+kind+'"><option value="">Не выбран</option>'+options+'</select></label>';
+    }).join("");
+    return '<div class="node-panel"><div class="node-panel-head"><h2>Выбор конфигураций</h2>'+
+      '<button class="btn primary" data-node-config-choice-save>Сохранить выбор</button></div>'+
+      '<p class="muted small">Это отдельная привязка файлов библиотеки к ноде. Сохранение выбора само по себе ничего не применяет на VPS или в Remnawave.</p>'+
+      '<div class="preset-selects">'+selectors+'</div></div>'+
+      '<div class="node-panel"><div class="node-panel-head"><h2>Фактические файлы на VPS</h2>'+
       '<div class="node-config-choices"><button class="btn subtle" data-node-config="nginx">Nginx</button>'+
       '<button class="btn subtle" data-node-config="node-compose">Remnawave Compose</button>'+
       '<button class="btn subtle" data-node-config="nginx-compose">Nginx Compose</button></div></div>'+
-      '<p class="muted small">Nginx можно безопасно применить после проверки версии. Остальные конфиги здесь только для просмотра.</p>'+
+      '<p class="muted small">Чтение идёт напрямую через Agent. Nginx можно применить после проверки версии; Compose пока только просмотр.</p>'+
       '<div id="node-task-output"></div></div>';
+  }
   case "manage":
     return '<div class="node-panel"><h2>Управление нодой</h2>'+
       '<p class="muted small">Изменения на VPS выполняются только через агент. Удаление из Remnawave и Manager никогда не очищает VPS.</p>'+
@@ -136,6 +148,7 @@ function nodeWorkspaceBody(n,a,c){
       '<button class="btn subtle" data-node-agent-install>Установить / восстановить агент</button>'+
       '<button class="btn subtle" data-node-archive>В архив / вернуть</button>'+
       '<button class="btn subtle" data-node-remove>Удалить ноду…</button></div>'+
+      '<div class="node-panel" id="node-ssh-access"><h2>SSH-доступ</h2><p class="muted small">Загружаем сохранённый доступ…</p></div>'+
       '<div class="node-panel" id="node-agent-updater"><h2>Обновления агента</h2>'+
       '<p class="muted small">Загружаем версии агента…</p></div></div>';
   }
@@ -199,9 +212,30 @@ async function refreshNodeWorkspaceData(){
   nodeOverviewCerts=certs.nodes||[];
   if(selectedNodeId){
     renderNodeWorkspace();
-    if(selectedNodeTab==="manage")await loadNodeAgentUpdates();
+    if(selectedNodeTab==="manage"){await loadNodeSSHAccess();await loadNodeAgentUpdates();}
   }
 }
+async function loadNodeConfigChoices(){
+  const id=selectedNodeId;if(!id)return;
+  try{
+    const result=await api("/nodes/"+encodeURIComponent(id)+"/config-choices");
+    if(id!==selectedNodeId)return;
+    nodeConfigChoices=result.choices||{};
+    if(selectedNodeTab==="configs")renderNodeWorkspace();
+  }catch(e){message(e.message,true)}
+}
+async function saveNodeConfigChoices(){
+  const id=selectedNodeId;if(!id)return;
+  const choices={};
+  document.querySelectorAll("[data-node-config-choice]").forEach(x=>choices[x.dataset.nodeConfigChoice]=x.value);
+  try{
+    const result=await api("/nodes/"+encodeURIComponent(id)+"/config-choices","PUT",{choices});
+    nodeConfigChoices=result.choices||{};
+    message("Выбор конфигураций сохранён. На VPS ничего не применялось.");
+    renderNodeWorkspace();
+  }catch(e){message(e.message,true)}
+}
+
 async function showNodeConfig(name){
   if(nodeTaskBusy)return;
   const id=selectedNodeId,seq=++nodeTaskRequest;
@@ -233,6 +267,46 @@ async function showNodeConfig(name){
   }catch(e){if(id===selectedNodeId)output.innerHTML='<p class="form-feedback error">'+esc(e.message)+'</p>'}
   finally{nodeTaskBusy=false}
 }
+async function loadNodeSSHAccess(){
+  const id=selectedNodeId,box=$("node-ssh-access");
+  if(!id||!box)return null;
+  try{
+    const info=await api("/nodes/"+encodeURIComponent(id)+"/ssh-access");
+    if(selectedNodeId!==id||!document.getElementById("node-ssh-access"))return info;
+    nodeSSHAccess=info;
+    box.innerHTML='<div class="node-panel-head"><h2>SSH-доступ</h2>'+
+      '<span class="node-state '+(info.has_password?"is-good":"is-bad")+'">'+
+      (info.has_password?"Пароль сохранён":"Пароль не сохранён")+'</span></div>'+
+      '<div class="node-kv"><span>IPv4 VPS</span><strong>'+esc(info.ip)+'</strong>'+
+      '<span>SSH-порт</span><strong>'+esc(info.port)+'</strong>'+
+      '<span>Fingerprint</span><strong><code>'+esc(info.ssh_fingerprint)+'</code></strong></div>'+
+      '<p class="muted small">Пароль хранится только в зашифрованном виде на сервере Manager и никогда не возвращается браузеру.</p>'+
+      '<div class="form-buttons"><button class="btn subtle" data-ssh-save>'+
+      (info.has_password?"Изменить пароль":"Сохранить пароль")+'</button>'+
+      (info.has_password?'<button class="btn subtle" data-ssh-clear>Удалить сохранённый пароль</button>':'')+'</div>';
+    return info;
+  }catch(e){box.innerHTML='<h2>SSH-доступ</h2><p class="form-feedback error">'+esc(e.message)+'</p>';return null}
+}
+function saveNodeSSHPassword(){
+  const id=selectedNodeId,n=currentNode();if(!id||!n)return;
+  openModal("SSH-доступ · "+n.code,"ЗАШИФРОВАННОЕ ХРАНЕНИЕ",
+    '<p class="muted small">Пароль будет сохранён на Manager в зашифрованном виде. В браузер при следующих операциях он не возвращается.</p>'+
+    '<form><label>Пароль root SSH<input type="password" name="password" required autocomplete="new-password"></label>'+
+    '<div class="form-buttons"><button class="btn primary" type="submit">Сохранить пароль</button></div></form>',
+    async fd=>{await api("/nodes/"+encodeURIComponent(id)+"/ssh-access","PUT",{password:fd.get("password")});
+      message("SSH-пароль сохранён зашифрованно");await loadNodeSSHAccess();});
+}
+async function clearNodeSSHPassword(){
+  const id=selectedNodeId;if(!id||!confirm("Удалить сохранённый SSH-пароль этой ноды из Manager?"))return;
+  try{await api("/nodes/"+encodeURIComponent(id)+"/ssh-access","DELETE");message("Сохранённый SSH-пароль удалён");await loadNodeSSHAccess()}
+  catch(e){message(e.message,true)}
+}
+async function nodeHasSavedSSH(){
+  if(nodeSSHAccess&&nodeSSHAccess.node_id===selectedNodeId)return nodeSSHAccess.has_password;
+  const info=await api("/nodes/"+encodeURIComponent(selectedNodeId)+"/ssh-access");
+  nodeSSHAccess=info;return !!info.has_password;
+}
+
 async function loadNodeAgentUpdates(){
   const id=selectedNodeId,box=$("node-agent-updater");
   if(!id||!box)return;
@@ -276,14 +350,20 @@ async function updateNodeAgentNow(){
     const state=await api("/agents/"+encodeURIComponent(id)+"/update-status");
     if(!state.upgrade_needed)return message("Агент уже последней версии");
     if(state.one_time_ssh_migration_required){
+      if(await nodeHasSavedSSH()){
+        if(!confirm("Обновить только Agent на "+n.code+" через сохранённый SSH-доступ?"))return;
+        await api("/agents/"+encodeURIComponent(id)+"/update","POST",{confirmed:true,password:""});
+        message("Агент перезапущен. Ожидаем heartbeat новой версии.");
+        return refreshNodeWorkspaceData();
+      }
       openModal("Обновить агент "+n.code,"ОДНОКРАТНО ЧЕРЕЗ SSH",
-        '<p class="muted small">Первый переход старого агента на обновления через HTTPS. Токен и файл agent.env сохраняются; VPN и Docker не меняются.</p>'+
+        '<p class="muted small">SSH-пароль ещё не сохранён. Введи его один раз — Manager сохранит его зашифрованно.</p>'+
         '<form><label>Пароль root SSH<input name="password" type="password" required autocomplete="new-password"></label>'+
         '<label class="check-row"><input type="checkbox" name="confirm" required> Подтверждаю обновление только агента</label>'+
         '<div class="form-buttons"><button class="btn primary" type="submit">Обновить агент</button></div></form>',
         async fd=>{
-          await api("/agents/"+encodeURIComponent(id)+"/update","POST",{
-            confirmed:fd.get("confirm")==="on",password:fd.get("password")});
+          await api("/nodes/"+encodeURIComponent(id)+"/ssh-access","PUT",{password:fd.get("password")});
+          await api("/agents/"+encodeURIComponent(id)+"/update","POST",{confirmed:fd.get("confirm")==="on",password:""});
           message("Агент перезапущен. Ожидаем heartbeat новой версии.");
           await refreshNodeWorkspaceData();
         });
@@ -301,11 +381,14 @@ function bindNodeWorkspace(){
   $("node-detail").addEventListener("click",async e=>{
     const control=e.target.closest("button");if(!control)return;
     if(control.hasAttribute("data-node-back"))return closeNodeWorkspace();
+    if(control.hasAttribute("data-ssh-save"))return saveNodeSSHPassword();
+    if(control.hasAttribute("data-ssh-clear"))return clearNodeSSHPassword();
     if(control.hasAttribute("data-agent-update-now"))return updateNodeAgentNow();
     if(control.hasAttribute("data-agent-update-refresh"))return loadNodeAgentUpdates();
     if(control.dataset.nodeTab){
       selectedNodeTab=control.dataset.nodeTab;nodeTaskRequest++;renderNodeWorkspace();
-      if(selectedNodeTab==="manage")return loadNodeAgentUpdates();
+      if(selectedNodeTab==="manage"){loadNodeSSHAccess();return loadNodeAgentUpdates()}
+      if(selectedNodeTab==="configs")return loadNodeConfigChoices();
       if(selectedNodeTab==="network"){
         const agent=currentAgent();
         if(agent.online&&/^1\.(?:[2-9]|[1-9][0-9])\./.test(agent.version||""))
@@ -323,6 +406,7 @@ function bindNodeWorkspace(){
       return executeNodeTask(source.startsWith("docker:")?"docker.logs":"logs.read",
         source.startsWith("docker:")?{name:source.split(":")[1],tail}:{source:source.split(":")[1],tail});
     }
+    if(control.hasAttribute("data-node-config-choice-save"))return saveNodeConfigChoices();
     if(control.dataset.nodeConfig)return showNodeConfig(control.dataset.nodeConfig);
     if(control.hasAttribute("data-node-copy")){
       const value=$("node-task-output")?.querySelector("pre")?.textContent||"";

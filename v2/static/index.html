@@ -7,10 +7,10 @@
   <meta name="theme-color" content="#09090b">
   <title>XPPN Manager 2.3 — рабочая область</title>
   <link rel="stylesheet" href="/static/style.css?v=2.7.0">
-  <script src="/static/app.js?v=2.6.0" defer></script>
+  <script src="/static/app.js?v=2.7.0" defer></script>
   <script src="/static/node-security.js?v=1.0.0" defer></script>
-  <script src="/static/node-detail.js?v=1.3.0" defer></script>
-  <script src="/static/vps.js?v=2.6.0" defer></script>
+  <script src="/static/node-detail.js?v=1.4.0" defer></script>
+  <script src="/static/vps.js?v=2.7.0" defer></script>
 </head>
 <body>
   <div id="login-screen" class="auth-overlay">
@@ -18,7 +18,7 @@
       <div class="logo-mark"><svg><use href="/static/icons.svg#i-shield-check"></use></svg></div>
       <p class="eyebrow">XPPN / VERSION 2.2</p>
       <h1>Твоя инфраструктура.<br>Без лишнего.</h1>
-      <p class="muted">Одна Remnawave, единое управление нодами и мостами.</p>
+      <p class="muted">Одна Remnawave, единое управление всеми нодами.</p>
       <label for="login-username">Логин</label>
       <input id="login-username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" required minlength="3" maxlength="40" value="admin">
       <label for="login-password">Пароль</label>
@@ -60,17 +60,15 @@
         <section id="page-nodes" class="page">
           <div id="nodes-home">
           <div class="page-heading">
-            <div><p class="eyebrow">ИНФРАСТРУКТУРА</p><h1>Ноды и мосты</h1><p class="subheading">Все серверы и связи в одном месте. Раскрой мост, чтобы увидеть подключённые направления.</p></div>
-            <div class="heading-actions"><button class="btn subtle" id="new-bridge" type="button"><svg><use href="/static/icons.svg#i-git-branch"></use></svg>Создать мост</button><button class="btn primary" id="new-node" type="button"><svg><use href="/static/icons.svg#i-plus"></use></svg>Добавить VPS</button></div>
+            <div><p class="eyebrow">ИНФРАСТРУКТУРА</p><h1>Ноды</h1><p class="subheading">Все VPS отдельно. Конфигурации выбираются и редактируются независимо для каждой ноды.</p></div>
+            <div class="heading-actions"><button class="btn primary" id="new-node" type="button"><svg><use href="/static/icons.svg#i-plus"></use></svg>Добавить VPS</button></div>
           </div>
           <div class="metrics">
             <div class="metric"><span>Всего серверов</span><strong id="metric-nodes">—</strong></div>
-            <div class="metric"><span>Мостов</span><strong id="metric-bridges">—</strong></div>
-            <div class="metric"><span>Подключённых выходов</span><strong id="metric-exits">—</strong></div>
+            <div class="metric"><span>Рабочих</span><strong id="metric-ready">—</strong></div>
+            <div class="metric"><span>В архиве</span><strong id="metric-archived">—</strong></div>
           </div>
-          <div class="section-title"><h2>Топология</h2><span class="muted">Нажми на мост, чтобы раскрыть связанные ноды</span></div>
-          <div id="bridge-list" class="bridge-list"><div class="skeleton h160"></div></div>
-          <div class="section-title standalone-heading"><h2>Другие серверы</h2><label class="muted"><input id="nodes-show-archived" type="checkbox"> Показать архив</label></div>
+          <div class="section-title standalone-heading"><h2>Серверы</h2><label class="muted"><input id="nodes-show-archived" type="checkbox"> Показать архив</label></div>
           <div id="other-nodes" class="node-grid"></div>
           <p class="inline-info"><svg><use href="/static/icons.svg#i-circle-alert"></use></svg>Выбери ноду, чтобы открыть все её настройки, TLS, логи и управление в одном месте.</p>
           </div>
@@ -121,6 +119,20 @@
 
         <section id="page-settings" class="page hidden">
           <div class="page-heading"><div><p class="eyebrow">ЕДИНАЯ ПАНЕЛЬ</p><h1>Настройки</h1><p class="subheading">Одна Remnawave для всей инфраструктуры. Многопроектной системы здесь нет.</p></div></div>
+          <div class="settings-layout monitoring-settings-layout">
+            <section class="panel settings-card">
+              <div class="settings-head"><span class="feature-icon"><svg><use href="/static/icons.svg#i-activity"></use></svg></span><div><h2>Мониторинг</h2><p>Один интервал для heartbeat агентов и живых показателей интерфейса</p></div></div>
+              <form id="monitoring-form">
+                <label>Частота обновления<select id="monitoring-interval">
+                  <option value="1000">1 секунда · очень быстро</option>
+                  <option value="5000">5 секунд · обычно</option>
+                </select></label>
+                <p class="muted small">1 секунда подходит для диагностики в реальном времени. Задания, логи и конфиги доставляются отдельным long-poll и не зависят от этого интервала.</p>
+                <div class="form-buttons"><button type="submit" class="btn primary">Сохранить частоту</button></div>
+              </form>
+              <p id="monitoring-status" class="form-feedback"></p>
+            </section>
+          </div>
           <div class="settings-layout">
             <section class="panel settings-card">
               <div class="settings-head"><span class="feature-icon"><svg><use href="/static/icons.svg#i-network"></use></svg></span><div><h2>Remnawave</h2><p>Адрес API и токен настраиваются один раз</p></div></div>
@@ -137,7 +149,7 @@
               <p id="panel-status" class="form-feedback"></p>
 
             </section>
-            <aside class="panel info-panel"><svg class="info-icon"><use href="/static/icons.svg#i-shield-check"></use></svg><h3>Безопасный предпросмотр</h3><p>Действующие VPN-конфиги и ключи не изменяются при редактировании библиотеки или создании плана моста. Применение будет подключено отдельно после проверки совместимости и отката.</p><p>Глубокая проверка сетевой доступности из регионов потребует независимых измерительных узлов и не подменяется проверкой с одного VPS.</p></aside>
+            <aside class="panel info-panel"><svg class="info-icon"><use href="/static/icons.svg#i-shield-check"></use></svg><h3>Безопасный предпросмотр</h3><p>Действующие VPN-конфиги и ключи не изменяются при редактировании библиотеки. Конфигурации хранятся отдельно и применяются только явным действием на выбранной ноде.</p><p>Глубокая проверка сетевой доступности из регионов потребует независимых измерительных узлов и не подменяется проверкой с одного VPS.</p></aside>
           </div>
         </section>
         <section id="page-updates" class="page hidden">
@@ -179,12 +191,12 @@
       <button class="icon-button" type="button" id="config-close" aria-label="Закрыть"><svg><use href="/static/icons.svg#i-x"></use></svg></button></div>
                 <section class="panel code-workspace">
               <div class="editor-header"><div><p class="eyebrow">РЕДАКТОР ФАЙЛА</p><h2 id="config-editor-title">Новый файл</h2></div><span class="tiny-chip" id="config-version">Не сохранён</span></div>
-              <div class="two-fields"><label>Название<input id="config-name" maxlength="100" placeholder="Bridge RU → DE"></label><label>Тип файла<select id="config-kind"><option value="xray">Xray JSON</option><option value="nginx">Nginx</option><option value="nginx_compose">Nginx Compose</option><option value="node_compose">Remnawave Compose</option></select></label></div>
+              <div class="two-fields"><label>Название<input id="config-name" maxlength="100" placeholder="DE1 · Xray VLESS TLS"></label><label>Тип файла<select id="config-kind"><option value="xray">Xray JSON</option><option value="nginx">Nginx</option><option value="nginx_compose">Nginx Compose</option><option value="node_compose">Remnawave Compose</option></select></label></div>
               <div class="code-toolbar"><span>ИСХОДНЫЙ КОНФИГ</span><span>UTF-8 · без автоматического применения</span></div>
               <textarea id="config-content" spellcheck="false" aria-label="Редактор конфигурации" placeholder="Вставь JSON или создай конфигурацию…"></textarea>
               <div class="editor-actions"><span class="muted" id="config-hint">Здесь можно хранить разные версии для разных нод.</span><button class="btn subtle hidden" id="config-delete"><svg><use href="/static/icons.svg#i-x"></use></svg>Удалить</button><button class="btn primary" id="config-save"><svg><use href="/static/icons.svg#i-save"></use></svg>Сохранить</button></div>
               <details class="template-info"><summary>Как работают заменяемые переменные в Xray?</summary>
-                <div class="form-buttons"><button class="btn subtle" type="button" id="config-load-bridge">Загрузить образец Xray Bridge</button></div><div class="variable-sample"><pre id="placeholder-preview"></pre></div>
+                <div class="variable-sample"><pre id="placeholder-preview"></pre></div>
                 <div id="template-variable-list" class="variable-list"></div>
                 <p>Переменные выделены цветом. При подготовке ноды менеджер генерирует значения и показывает diff. Простое текстовое сохранение в библиотеке не изменяет VPN.</p>
               </details>
@@ -195,11 +207,10 @@
       <button class="icon-button" type="button" id="preset-close" aria-label="Закрыть"><svg><use href="/static/icons.svg#i-x"></use></svg></button></div>
                 <section class="panel preset-form-panel"><p class="eyebrow">РЕДАКТОР НАБОРА</p><h2 id="preset-edit-title">Новый пресет</h2>
               <form id="preset-form">
-                <label>Название<input id="preset-name" maxlength="100" placeholder="RU Bridge · стандарт" required></label>
+                <label>Название<input id="preset-name" maxlength="100" placeholder="Обычная нода · стандарт" required></label>
                 <label>Назначение пресета<select id="preset-mode">
-                  <option value="direct">Обычная / выходная нода</option>
-                  <option value="bridge">Входной мост</option>
-                  <option value="custom">Только библиотека (без установки)</option>
+                  <option value="direct">Установка обычной ноды</option>
+                  <option value="custom">Только библиотека</option>
                 </select></label>
                 <label>Описание<textarea id="preset-description" rows="3" maxlength="600" placeholder="Какие ноды используют этот набор"></textarea></label>
                 <p class="eyebrow">ФАЙЛЫ В НАБОРЕ</p>
@@ -219,14 +230,14 @@
           <label>Код ноды<input name="code" required maxlength="20" placeholder="DE1"></label></div>
         <label>Пресет установки<select id="vps-preset" name="preset_id" required></select></label>
         <p class="muted small" id="vps-preset-description">Выбранный пресет определяет Xray и серверные файлы новой VPS.</p>
-        <div class="two-fields"><label>Страна<select name="country"><option value="RU">Россия</option><option value="DE" selected>Германия</option><option value="NL">Нидерланды</option><option value="PL">Польша</option><option value="LV">Латвия</option><option value="US">США</option></select></label>
-          <label>Назначение<select name="role"><option value="regular">Обычная нода</option><option value="exit">Выходной сервер для моста</option><option value="entry">Входной мост</option></select></label></div>
+        <label>Страна<select name="country"><option value="RU">Россия</option><option value="DE" selected>Германия</option><option value="NL">Нидерланды</option><option value="PL">Польша</option><option value="LV">Латвия</option><option value="US">США</option></select></label>
+        <input type="hidden" name="role" value="regular">
         <div class="two-fields"><label>Публичный IPv4 VPS<input name="ip" required placeholder="203.0.113.25"></label>
           <label>SSH-порт<input name="port" type="number" min="1" max="65535" value="22" required></label></div>
         <label>Домен VPS<input name="domain" required placeholder="de1.gowayot.com"></label>
         <div class="two-fields"><label>SSH-пароль root<input type="password" name="password" autocomplete="new-password" required></label>
           <label>Исходящий IPv4 Remnawave (доступ к порту 2222)<input name="panel_ip" required placeholder="Публичный IP управляющей панели"></label></div>
-        <p class="muted small">Установка только на пустой Ubuntu/Debian. DNS домена должен указывать на указанный IPv4. Порт 2222 разрешается только IP панели. Пароль SSH не сохраняется в базе.</p><p class="inline-info">Первый установщик ещё не проверен на настоящем VPS. Используй только пустую тестовую машину. При сбое возможна частичная установка без автоматического отката.</p>
+        <p class="muted small">Установка только на пустой Ubuntu/Debian. DNS домена должен указывать на указанный IPv4. Порт 2222 разрешается только IP панели. Пароль SSH сохраняется на сервере Manager в зашифрованном виде и никогда не возвращается браузеру.</p><p class="inline-info">Первый установщик ещё не проверен на настоящем VPS. Используй только пустую тестовую машину. При сбое возможна частичная установка без автоматического отката.</p>
         <button id="vps-probe-button" type="submit" class="btn primary">Проверить SSH, DNS и порты</button>
       </form>
     </div>
@@ -247,12 +258,6 @@
   <dialog id="modal" class="modal">
     <div class="modal-header"><div><p class="eyebrow" id="modal-kicker">ДЕЙСТВИЕ</p><h2 id="modal-title">Настройка</h2></div><button class="icon-button" id="modal-close" type="button" aria-label="Закрыть"><svg><use href="/static/icons.svg#i-x"></use></svg></button></div>
     <div id="modal-content"></div>
-  </dialog>
-  <dialog id="plan-dialog" class="modal wide-dialog">
-    <div class="modal-header"><div><p class="eyebrow">XRAY / ПРЕДПРОСМОТР</p><h2>Что изменится в мосте</h2></div><button class="icon-button" id="plan-close" type="button" aria-label="Закрыть"><svg><use href="/static/icons.svg#i-x"></use></svg></button></div>
-    <p class="inline-info">Это черновик. Ни Xray, ни Remnawave, ни VPS не изменились.</p>
-    <div class="plan-grid"><div><h3>Изменения JSON</h3><pre id="plan-diff" class="diff-view"></pre></div><div><h3>Конфигурация после изменений (секреты скрыты)</h3><pre id="plan-json" class="json-view"></pre></div></div>
-    <div class="modal-footer"><button class="btn subtle" id="plan-dismiss">Закрыть</button><button class="btn primary" id="plan-approve">Утвердить черновик (без применения)</button></div>
   </dialog>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 </body>

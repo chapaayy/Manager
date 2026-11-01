@@ -1,4 +1,5 @@
 """Tests for the outbound node agent queue and bounded auth protocol."""
+import asyncio
 import time
 import uuid
 
@@ -140,3 +141,28 @@ def test_tls_unexpected_exception_keeps_details_private(node,monkeypatch):
 def test_exporting_private_tls_key_is_disabled(node):
     with pytest.raises(agent_transport.AgentError,match="Неподдерживаемая"):
         agent_transport.enqueue(node["id"],"cert.export")
+
+
+def test_long_poll_wakes_immediately_when_manager_queues_task(node):
+    agent_transport.issue_token(node["id"])
+    async def scenario():
+        waiter=asyncio.create_task(agent_transport.poll_wait(node["id"],timeout=1.0))
+        await asyncio.sleep(0.03)
+        started=time.monotonic()
+        job=agent_transport.enqueue(node["id"],"config.read",{"name":"nginx"})
+        result=await asyncio.wait_for(waiter,timeout=0.5)
+        return job,result,time.monotonic()-started
+    job,result,elapsed=asyncio.run(scenario())
+    assert result["job"]["id"]==job["id"]
+    assert result["job"]["action"]=="config.read"
+    # Regression guard: previous Agent poll loop could wait up to five seconds.
+    assert elapsed<0.5
+
+
+def test_heartbeat_returns_global_one_or_five_second_monitoring_interval(node):
+    agent_transport.issue_token(node["id"])
+    assert agent_transport.heartbeat(node["id"],{"version":"1.5.0","metrics":{}})["next_heartbeat_ms"]==5000
+    storage.set_monitor_interval_ms(1000)
+    assert agent_transport.heartbeat(node["id"],{"version":"1.5.0","metrics":{}})["next_heartbeat_ms"]==1000
+    with pytest.raises(ValueError):
+        storage.set_monitor_interval_ms(250)

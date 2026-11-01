@@ -1,8 +1,7 @@
-"""XPPN v2 API security and one-panel bridge planning. No network or VPS required."""
+"""XPPN v2 API security for direct nodes. No network or VPS required."""
 import json
 import os
 import sqlite3
-import uuid
 from pathlib import Path
 
 import pytest
@@ -10,7 +9,6 @@ from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 from v2.app import app
 from v2 import storage, remnawave
-from v2.template_engine import Endpoint,Exit,render_bridge
 
 
 @pytest.fixture()
@@ -39,7 +37,7 @@ def test_v2_isolated_single_panel_and_authentication(client):
     with storage.connect() as c:
         names={row["name"] for row in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     assert "panel" in names
-    assert "nodes" in names and "bridges" in names
+    assert "nodes" in names and "bridges" in names  # legacy tables retained, not active API
     assert "projects" not in names and "deployment_profiles" not in names
     assert client.get("/api/projects").status_code==404
     assert client.get("/api/health").json()["deployment"] is False
@@ -68,78 +66,43 @@ def test_one_panel_token_is_encrypted_and_never_returned(client):
     assert storage.get_panel()["url"]=="https://panel.gowayot.com"
 
 
-def test_bridge_import_is_read_only_and_new_exit_diff_keeps_active_json(client):
-    ru=add_node(client,"RUS1","entry","rus1.gowayot.com","RU")
-    de=add_node(client,"DE1","exit","de1.gowayot.com","DE")
-    nl=add_node(client,"NL1","exit","nl1.gowayot.com","NL")
-    create=client.post("/api/bridges",json={"name":"RU Bridge","entry_id":ru["id"]})
-    assert create.status_code==200,create.text
-    bridge=create.json()
-    olduuid=str(uuid.uuid4())
-    current=render_bridge(Endpoint("RUS1","rus1.gowayot.com","RU"),[
-        Exit(Endpoint("DE1","de1.gowayot.com","DE"),olduuid)])
-    current["log"]["loglevel"]="warning"
-    import_result=client.post("/api/bridges/"+bridge["id"]+"/import",json={
-        "config":current,"revision":0,"confirm_read_only":True})
-    assert import_result.status_code==200,import_result.text
-    summary=client.get("/api/dashboard").json()
-    assert summary["bridges"][0]["has_snapshot"]
-    assert olduuid not in json.dumps(summary)
-    new_uuid=str(uuid.uuid4())
-    plan_response=client.post("/api/bridges/"+bridge["id"]+"/plans",json={
-        "exit_id":nl["id"],"outgoing_uuid":new_uuid})
-    assert plan_response.status_code==200,plan_response.text
-    plan=plan_response.json()
-    assert plan["status"]=="draft"
-    assert plan["inbound_port"]==8444
-    assert "TO_NL1_VLESS_TLS_OUT" in plan["diff"]
-    assert olduuid not in json.dumps(plan)
-    assert new_uuid not in json.dumps(plan)
-    assert plan["config"]["routing"]["rules"][:8] == current["routing"]["rules"]
-    assert plan["requires_live_apply"]
-    assert storage.get_snapshot(bridge["id"])==current
-    assert not storage.get_bridge(bridge["id"])["exits"]
-    approved=client.post("/api/plans/"+plan["id"]+"/approve")
-    assert approved.status_code==200
-    assert approved.json()["status"]=="approved"
-    assert not storage.get_bridge(bridge["id"])["exits"]
-    # A second concurrent plan would be based on stale source.
-    second=client.post("/api/bridges/"+bridge["id"]+"/plans",json={"exit_id":de["id"]})
-    assert second.status_code==422
-    assert new_uuid not in json.dumps(client.get("/api/plans/"+plan["id"]).json())
-
-
-def test_import_requires_confirmation_and_revision(client):
-    ru=add_node(client,"RU1","entry","ru1.example.com","RU")
-    bridge=client.post("/api/bridges",json={"name":"RU1","entry_id":ru["id"]}).json()
-    config=render_bridge(Endpoint("RU1","ru1.example.com","RU"),[
-        Exit(Endpoint("DE1","de1.example.com","DE"),str(uuid.uuid4()))])
-    r=client.post("/api/bridges/"+bridge["id"]+"/import",json={
-        "config":config,"revision":0,"confirm_read_only":False})
-    assert r.status_code==422
-    assert storage.get_snapshot(bridge["id"]) is None
-    r=client.post("/api/bridges/"+bridge["id"]+"/import",json={
-        "config":config,"revision":0,"confirm_read_only":True})
-    assert r.status_code==200
-    stale=client.post("/api/bridges/"+bridge["id"]+"/import",json={
-        "config":config,"revision":0,"confirm_read_only":True})
-    assert stale.status_code==422
+def test_bridge_control_plane_is_retired_and_dashboard_is_nodes_only(client):
+    dashboard=client.get("/api/dashboard")
+    assert dashboard.status_code==200
+    body=dashboard.json()
+    assert "bridges" not in body
+    assert body["phase"]=="nodes-only"
+    assert client.post("/api/bridges",json={"name":"old","entry_id":"x"}).status_code==404
+    assert client.get("/api/bridges/legacy-id").status_code==404
+    assert client.post("/api/bridges/legacy-id/import",json={
+        "config":{},"revision":0,"confirm_read_only":True}).status_code==404
+    assert client.post("/api/bridges/legacy-id/plans",json={
+        "exit_id":"x"}).status_code==404
+    assert client.get("/api/template/default").status_code==404
+    variables=client.get("/api/template/variables").json()["variables"]
+    assert {x["key"] for x in variables}=={"source.code","source.domain"}
+    # Entry/exit roles cannot be created by the active API anymore.
+    for role in ("entry","exit"):
+        denied=client.post("/api/nodes",json={
+            "code":"OLD"+role[0].upper(),"name":"legacy","country":"RU",
+            "domain":"old-"+role+".example.com","role":role})
+        assert denied.status_code==422
 
 
 def test_saved_library_config_encrypted_and_preset_files_are_shared(client):
     content='{"inbounds":[{"tag":"{{source.code}}"}],"outbounds":[]}'
     file=client.post("/api/configs",json={
-        "name":"Xray Bridge Source","kind":"xray","content":content}).json()
+        "name":"Xray Node Source","kind":"xray","content":content}).json()
     assert file["revision"]==1
     with storage.connect() as c:
         raw=c.execute("SELECT content_enc FROM library_configs WHERE id=?",(file["id"],)).fetchone()[0]
     assert content not in raw
     preset=client.post("/api/presets",json={
-        "name":"Bridge DE","description":"Russia to Germany","config_ids":[file["id"]]})
+        "name":"Node custom","description":"Reusable node file","config_ids":[file["id"]]})
     assert preset.status_code==200,preset.text
     assert preset.json()["items"][0]["kind"]=="xray"
     updated=client.put("/api/configs/"+file["id"],json={
-        "name":"Xray Bridge Source v2","kind":"xray",
+        "name":"Xray Node Source v2","kind":"xray",
         "content":content.replace("source.code","source.domain"),"revision":1})
     assert updated.status_code==200
     assert updated.json()["revision"]==2
@@ -193,10 +156,12 @@ def test_delete_unused_draft_only_after_confirmation_and_auth(client):
     assert storage.get_node(live["id"])["status"]=="queued"
 
 
-def test_unused_draft_deletion_refuses_bridge_references(client):
-    entry=add_node(client,"RUS11","entry","rus11.gowayot.com","RU")
-    bridge=client.post("/api/bridges",json={"name":"Test bridge","entry_id":entry["id"]})
-    assert bridge.status_code==200,bridge.text
+def test_unused_draft_deletion_still_protects_legacy_topology_rows(client):
+    # Legacy DB data is retained during the nodes-only migration, so deletion
+    # remains conservative even though no active API can create bridges.
+    entry=storage.create_node(code="RUS11",name="legacy",domain="rus11.gowayot.com",
+                              country="RU",role="entry")
+    storage.create_bridge(entry["id"],"Legacy bridge")
     denied=client.delete("/api/nodes/"+entry["id"])
     assert denied.status_code==422
     assert entry["id"] in [n["id"] for n in storage.list_nodes()]
@@ -268,20 +233,55 @@ def test_manager_only_removal_api_rejects_old_vps_wipe(client, monkeypatch):
     assert all(n["id"] != node["id"] for n in storage.list_nodes())
 
 
-def test_vps_preview_uses_selected_direct_or_bridge_library_preset(client):
+def test_vps_preview_is_direct_only(client):
     presets=client.get("/api/presets").json()
     direct=next(p for p in presets if p["mode"]=="direct")
-    bridge=next(p for p in presets if p["mode"]=="bridge")
+    assert not any(p["mode"]=="bridge" for p in presets)
     base={"code":"RUS10","domain":"rus10.gowayot.com","country":"RU"}
-    for preset,role,inbounds in ((direct,"regular",1),(bridge,"entry",2)):
-        response=client.post("/api/vps/preview",json={
-            **base,"preset_id":preset["id"],"role":role})
-        assert response.status_code==200,response.text
-        data=response.json()
-        assert data["preset_mode"]==preset["mode"]
-        assert len(data["xray"]["inbounds"])==inbounds
-        assert "SECRET_KEY" not in response.text
-    invalid=client.post("/api/vps/preview",json={
-        **base,"preset_id":bridge["id"],"role":"regular"})
-    assert invalid.status_code==422
+    response=client.post("/api/vps/preview",json={
+        **base,"preset_id":direct["id"],"role":"regular"})
+    assert response.status_code==200,response.text
+    data=response.json()
+    assert data["preset_mode"]=="direct"
+    assert len(data["xray"]["inbounds"])==1
+    assert "SECRET_KEY" not in response.text
+    assert client.post("/api/vps/preview",json={**base,"role":"entry"}).status_code==422
     assert storage.list_nodes()==[]
+
+
+def test_monitoring_settings_and_saved_ssh_are_bounded_and_secret_safe(client,monkeypatch):
+    assert client.get("/api/settings/monitoring").json()["interval_ms"]==5000
+    assert client.put("/api/settings/monitoring",json={"interval_ms":1000}).json()["interval_ms"]==1000
+    assert storage.get_monitor_interval_ms()==1000
+    assert client.put("/api/settings/monitoring",json={"interval_ms":2000}).status_code==422
+
+    node=add_node(client,"SSH1","regular","ssh1.gowayot.com","DE")
+    storage.create_install_job(node["id"],"8.8.8.8",2222,"SHA256:"+("a"*43))
+    access=client.get("/api/nodes/"+node["id"]+"/ssh-access").json()
+    assert access["ip"]=="8.8.8.8" and access["port"]==2222 and not access["has_password"]
+    secret="root-password-that-must-never-return"
+    from v2 import agent_bootstrap
+    monkeypatch.setattr(agent_bootstrap,"validate_and_store_ssh",
+                        lambda node_id,password:storage.save_ssh_password(node_id,password))
+    saved=client.put("/api/nodes/"+node["id"]+"/ssh-access",json={"password":secret})
+    assert saved.status_code==200 and saved.json()["has_password"]
+    assert secret not in saved.text
+    assert secret not in client.get("/api/nodes/"+node["id"]+"/ssh-access").text
+    assert storage.get_saved_ssh_password(node["id"])==secret
+    assert client.delete("/api/nodes/"+node["id"]+"/ssh-access").json()["has_password"] is False
+    assert storage.get_saved_ssh_password(node["id"])==""
+
+
+def test_independent_node_config_choices_do_not_apply_to_vps(client):
+    node=add_node(client,"CFG1","regular","cfg1.gowayot.com","DE")
+    files=client.get("/api/configs").json()
+    chosen={kind:next(f["id"] for f in files if f["kind"]==kind)
+            for kind in ("xray","nginx")}
+    result=client.put("/api/nodes/"+node["id"]+"/config-choices",json={"choices":chosen})
+    assert result.status_code==200,result.text
+    assert set(result.json()["choices"])=={"xray","nginx"}
+    read=client.get("/api/nodes/"+node["id"]+"/config-choices").json()
+    assert read["choices"]["xray"]["config_id"]==chosen["xray"]
+    # Saving a selection is DB-only: no Agent job is created.
+    with storage.connect() as db:
+        assert db.execute("SELECT count(*) FROM manager_agent_jobs WHERE node_id=?",(node["id"],)).fetchone()[0]==0

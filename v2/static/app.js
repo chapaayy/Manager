@@ -6,12 +6,12 @@ const esc = value => String(value ?? "").replace(/[&<>"']/g, c => ({
 const icon = name => '<svg><use href="/static/icons.svg#i-'+name+'"></use></svg>';
 const types = {xray:"Xray JSON",nginx:"Nginx",nginx_compose:"Nginx Compose",node_compose:"Remnawave Compose"};
 const titles = {nodes:"Ноды",agents:"Агенты VPS","node-certs":"Сертификаты нод",configs:"Конфигурации",presets:"Пресеты",settings:"Настройки",updates:"Обновления"};
-const labels = {regular:"Обычная",entry:"Входная / мост",exit:"Выходная"};
+const labels = {regular:"Нода",entry:"Нода",exit:"Нода"};
 let csrf = "", currentPage = "nodes", currentConfig = null, configRevision = 0,
-    configBase = "", configDirty = false, currentPreset = null, currentPlan = null,
-    panelProfiles = [], expanded = new Set(), toastTimer = null;
-let state = {panel:{},nodes:[],bridges:[],configs:[],presets:[]};
-let updateDetails = null, updatePolling = null;
+    configBase = "", configDirty = false, currentPreset = null,
+    panelProfiles = [], toastTimer = null;
+let state = {panel:{},settings:{monitor_interval_ms:5000},nodes:[],configs:[],presets:[]};
+let updateDetails = null, updatePolling = null, monitoringTimer = null, monitoringBusy = false;
 let showArchivedNodes=false;
 let configCategory="xray";
 
@@ -62,7 +62,7 @@ async function refresh(){
   if(extra[1].status==="fulfilled")nodeOverviewCerts=extra[1].value.nodes||[];
   state.panel=dashboard.panel;
   state.nodes=dashboard.nodes;
-  state.bridges=dashboard.bridges;
+  state.settings=dashboard.settings||{monitor_interval_ms:5000};
   state.configs=configs;
   state.presets=presets;
   renderNodes();
@@ -70,6 +70,8 @@ async function refresh(){
   renderConfigList();
   renderPresets();
   renderPanel();
+  renderMonitoringSettings();
+  applyMonitoringInterval();
 }
 async function signIn(username,password){
   const result=await api("/auth/login","POST",{username,password});
@@ -120,7 +122,7 @@ async function waitAgentTask(nodeId,jobId){
       if(result.status!=="done")throw Error(result.error||"Агент не выполнил задачу");
       return result.result;
     }
-    await new Promise(resolve=>setTimeout(resolve,2000));
+    await new Promise(resolve=>setTimeout(resolve,i<25?200:500));
   }
   throw Error("Агент ещё выполняет задачу. Результат будет доступен в истории заданий.");
 }
@@ -159,20 +161,24 @@ async function renderAgents(){
     }).join("")||'<p class="muted">Серверов пока нет.</p>';
   }catch(e){target.textContent=e.message;target.className="form-feedback error";}
 }
-function agentRepairModal(id){
-  const node=state.nodes.find(n=>n.id===id);
-  if(!node)return;
-  openModal("Исправить helper: "+node.code,"ВОССТАНОВЛЕНИЕ ПЕРВИЧНОЙ УСТАНОВКИ",
-    '<p class="muted small">Исправляем системные ограничения первоначально установленного агента, из-за которых Docker, логи и Certbot показывают «agent helper rejected operation». Однократно используется SSH. Токен агента, Xray, Nginx и сертификаты не меняются; перезапустится только служба самого агента.</p>'+
-    '<form><label>SSH-пароль root<input name="password" type="password" required autocomplete="new-password"></label>'+
-    '<label class="check-row"><input name="confirm" type="checkbox" required> Подтверждаю исправление только службы агента на VPS</label>'+
-    '<div class="form-buttons"><button class="btn primary" type="submit">Исправить права агента</button></div></form>',
-    async fd=>{
-      await api("/agents/"+encodeURIComponent(id)+"/repair-helper","POST",{
-        password:fd.get("password"),confirm_ssh_migration:fd.get("confirm")==="on"});
-      message("Права helper исправлены. Проверь кнопки Docker и Службы.");
-      await renderAgents();
-    });
+async function agentRepairModal(id){
+  const node=state.nodes.find(n=>n.id===id);if(!node)return;
+  try{
+    const access=await api("/nodes/"+encodeURIComponent(id)+"/ssh-access");
+    if(access.has_password){
+      if(!confirm("Исправить helper на "+node.code+" через сохранённый SSH-доступ?"))return;
+      await api("/agents/"+encodeURIComponent(id)+"/repair-helper","POST",{password:"",confirm_ssh_migration:true});
+      message("Права helper исправлены. Проверь Docker и Службы.");return renderAgents();
+    }
+    openModal("Исправить helper: "+node.code,"SSH-ДОСТУП",
+      '<p class="muted small">Пароль ещё не сохранён. Введи его один раз — Manager сохранит его зашифрованно и дальше не будет спрашивать.</p>'+
+      '<form><label>SSH-пароль root<input name="password" type="password" required autocomplete="new-password"></label>'+
+      '<label class="check-row"><input name="confirm" type="checkbox" required> Подтверждаю исправление только helper</label>'+
+      '<div class="form-buttons"><button class="btn primary" type="submit">Сохранить и исправить</button></div></form>',
+      async fd=>{await api("/nodes/"+encodeURIComponent(id)+"/ssh-access","PUT",{password:fd.get("password")});
+        await api("/agents/"+encodeURIComponent(id)+"/repair-helper","POST",{password:"",confirm_ssh_migration:fd.get("confirm")==="on"});
+        message("SSH-доступ сохранён, helper исправлен.");await renderAgents();});
+  }catch(e){message(e.message,true)}
 }
 async function nodeLifecycleModal(id){
   try{
@@ -187,8 +193,8 @@ async function nodeLifecycleModal(id){
     const sharedList=shared.map(n=>'<li>'+esc(n.name)+' <span class="muted small">('+esc(n.uuid)+')</span></li>').join("");
     const issue=data.remnawave_error?
       '<p class="form-feedback error">'+esc(data.remnawave_error)+'</p>':'';
-    const bridgeInfo=blocked?
-      '<p class="form-feedback error">Нода участвует в мостах или планах. Сначала удали локальные связи; рабочий Xray на VPS изменён не будет.</p>':'';
+    const legacyDependencyInfo=blocked?
+      '<p class="form-feedback error">У ноды остались устаревшие локальные связи старой топологии. Их можно удалить отдельно; VPS и Xray не изменятся.</p>':'';
     const profileInfo=!hasRemote?
       '<p class="muted small">В менеджере не сохранены UUID объектов Remnawave. Доступно удаление локальной записи; проверь Remnawave вручную.</p>':
       !data.profile_uuid?'':(!data.profile_present?
@@ -213,7 +219,7 @@ async function nodeLifecycleModal(id){
     openModal("Удалить "+data.code,"НОДА / REMNAWAVE",
       '<p class="muted small"><strong>'+esc(data.code)+'</strong> · '+esc(data.domain)+'</p>'+
       '<p class="muted small">С VPS ничего не удаляется: Docker, Nginx, сертификаты и агент остаются на сервере.</p>'+
-      existingPhase+issue+bridgeInfo+profileInfo+sharedInfo+
+      existingPhase+issue+legacyDependencyInfo+profileInfo+sharedInfo+
       '<form><label class="check-row"><input type="checkbox" checked disabled> Удалить запись из XPPN Manager</label>'+
       remoteCheckbox+profileCheckbox+sharedConfirm+
       '<label>Подтверждение: введи код '+esc(data.code)+
@@ -221,11 +227,11 @@ async function nodeLifecycleModal(id){
       '<div class="form-buttons"><button type="submit" class="btn primary" '+(blocked?'disabled':'')+
       '>Удалить выбранное</button></div></form>'+
       '<div class="form-buttons">'+
-      (blocked?'<button type="button" class="btn subtle" id="detach-before-remove">Удалить локальные связи с мостами</button>':'')+
+      (blocked?'<button type="button" class="btn subtle" id="detach-before-remove">Удалить устаревшие локальные связи</button>':'')+
       '<button type="button" class="btn subtle" id="toggle-node-archive">'+
       (data.archived?'Вернуть из архива':'В архив')+'</button></div>',
       async fd=>{
-        if(blocked)throw Error("Сначала удали локальные связи с мостами");
+        if(blocked)throw Error("Сначала удали устаревшие локальные связи");
         if(fd.get("code")!==data.code)throw Error("Неверный код подтверждения");
         const removeRemote=fd.has("remove_remote");
         const deleteProfile=removeRemote&&fd.has("delete_profile");
@@ -287,20 +293,24 @@ async function nodeLifecycleModal(id){
   }catch(e){message(e.message,true)}
 }
 
-function agentBootstrapModal(id){
-  const node=state.nodes.find(n=>n.id===id);
-  if(!node)return;
-  openModal("Установить агент: "+node.code,"ОДИН РАЗ ЧЕРЕЗ SSH",
-    '<p class="muted small">Этот шаг установит Go-агент, выделенного системного пользователя и ограниченный helper на уже работающий VPS. Пароль root не сохраняется. Дальше весь менеджмент только через агента.</p>'+
-    '<form><label>SSH-пароль root<input name="password" type="password" required autocomplete="new-password"></label>'+
-    '<label class="check-row"><input name="confirm" type="checkbox" required> Подтверждаю установку агента на VPS</label>'+
-    '<div class="form-buttons"><button class="btn primary" type="submit">Установить</button></div></form>',
-    async fd=>{
-      await api("/agents/"+encodeURIComponent(id)+"/bootstrap","POST",{
-        password:fd.get("password"),confirm_ssh_migration:fd.get("confirm")==="on"});
-      message("Агент установлен. Ожидаем подключения к менеджеру.");
-      await renderAgents();
-    });
+async function agentBootstrapModal(id){
+  const node=state.nodes.find(n=>n.id===id);if(!node)return;
+  try{
+    const access=await api("/nodes/"+encodeURIComponent(id)+"/ssh-access");
+    if(access.has_password){
+      if(!confirm("Установить или восстановить Agent на "+node.code+" через сохранённый SSH-доступ?"))return;
+      await api("/agents/"+encodeURIComponent(id)+"/bootstrap","POST",{password:"",confirm_ssh_migration:true});
+      message("Агент установлен. Ожидаем подключения.");return renderAgents();
+    }
+    openModal("Установить агент: "+node.code,"ОДИН РАЗ ЧЕРЕЗ SSH",
+      '<p class="muted small">Пароль будет сохранён зашифрованно в Manager. После установки обычное управление идёт через Agent.</p>'+
+      '<form><label>SSH-пароль root<input name="password" type="password" required autocomplete="new-password"></label>'+
+      '<label class="check-row"><input name="confirm" type="checkbox" required> Подтверждаю установку агента</label>'+
+      '<div class="form-buttons"><button class="btn primary" type="submit">Сохранить и установить</button></div></form>',
+      async fd=>{await api("/nodes/"+encodeURIComponent(id)+"/ssh-access","PUT",{password:fd.get("password")});
+        await api("/agents/"+encodeURIComponent(id)+"/bootstrap","POST",{password:"",confirm_ssh_migration:fd.get("confirm")==="on"});
+        message("SSH-доступ сохранён. Агент установлен.");await renderAgents();});
+  }catch(e){message(e.message,true)}
 }
 async function agentActionModal(id,action){
   const node=state.nodes.find(n=>n.id===id);
@@ -383,64 +393,23 @@ async function renderNodeCertificates(){
 
 function renderNodes(){
   $("metric-nodes").textContent=String(state.nodes.length);
-  $("metric-bridges").textContent=String(state.bridges.length);
-  $("metric-exits").textContent=String(state.bridges.reduce((n,b)=>n+b.exits.length,0));
-  const bridges = state.bridges;
-  const target=$("bridge-list");
-  if(!bridges.length){
-    target.innerHTML='<div class="empty-state"><span class="feature-icon">'+icon("git-branch")+
-      '</span><h3>Мостов пока нет</h3><p>Добавь входной VPS и создай мост. Внутри него будут появляться все выходные серверы и планы изменений.</p>'+
-      '<button class="btn subtle" data-action="bridge-new">'+icon("plus")+' Создать первый мост</button></div>';
-  }else{
-    target.innerHTML=bridges.map(b=>{
-      const open=expanded.has(b.id);
-      const main=b.entry;
-      const children=b.exits.map(e=>
-        '<button type="button" class="bridge-child" data-node-open="'+esc(e.id)+'">'+icon("server")+
-        '<span class="child-body"><strong>'+esc(e.code)+' · '+esc(e.name)+'</strong><small>'+
-          esc(e.domain)+' · TCP/'+esc(e.inbound_port)+'</small>'+nodeListBadges(e.id)+'</span>'+
-        '<span class="tiny-chip success">Открыть ноду</span></button>'
-      ).join("");
-      const pending=b.plans.map(p=>
-        '<button class="bridge-child" data-action="open-plan" data-plan="'+esc(p.id)+'" type="button">'+
-        icon("file-code")+'<div class="child-body"><strong>'+esc(p.exit_code)+
-        ' · черновик</strong><small>Не применён на VPS · TCP/'+esc(p.inbound_port)+'</small></div>'+
-        '<span class="tiny-chip warning">'+esc(p.status)+'</span></button>'
-      ).join("");
-      return '<article class="bridge-card '+(open?'open':'')+'">'+
-        '<button class="bridge-head" data-action="toggle-bridge" data-bridge="'+esc(b.id)+'" aria-expanded="'+open+'">'+
-        '<span class="feature-icon">'+icon("git-branch")+'</span>'+
-        '<span class="bridge-title"><strong>'+esc(main.code)+' · '+esc(b.name)+
-        '</strong><small>'+esc(main.domain)+' · '+b.exits.length+' связанных нод</small></span>'+
-        '<span class="tiny-chip">'+(b.has_snapshot?"Xray сохранён":"Bridge")+'</span>'+
-        '<span class="bridge-chevron">'+icon("chevron-down")+'</span></button>'+
-        '<div class="bridge-node-shortcut"><button type="button" class="btn subtle" data-node-open="'+esc(main.id)+'">Открыть '+esc(main.code)+'</button></div>'+
-        (open?'<div class="bridge-children">'+(children||'<p class="muted small">Пока нет подключённых выходов.</p>')+pending+
-          '<div class="bridge-footer">'+
-          '<button class="btn subtle" data-action="bridge-exit" data-bridge="'+esc(b.id)+'">'+icon("plus")+' Добавить выход</button>'+
-          '<button class="btn subtle" data-action="bridge-import" data-bridge="'+esc(b.id)+'">'+icon("file-code")+' Импорт Xray</button>'+
-          '</div></div>':'')+'</article>';
-    }).join("");
-  }
-  const grouped=new Set(state.bridges.flatMap(b=>[b.entry_id,...b.exits.map(e=>e.id)]));
-  const others=state.nodes.filter(n=>!grouped.has(n.id) && (showArchivedNodes||!n.archived));
-  $("other-nodes").innerHTML=others.length?others.map(n=>
+  $("metric-ready").textContent=String(state.nodes.filter(n=>n.status==="ready"&&!n.archived).length);
+  $("metric-archived").textContent=String(state.nodes.filter(n=>n.archived).length);
+  const nodes=state.nodes.filter(n=>showArchivedNodes||!n.archived);
+  $("other-nodes").innerHTML=nodes.length?nodes.map(n=>
     '<div class="node-card"><span class="feature-icon">'+icon("server")+'</span><div><strong>'+
-    esc(n.code)+' · '+esc(n.name)+'</strong><p>'+esc(n.domain)+' · '+esc(labels[n.role])+
+    esc(n.code)+' · '+esc(n.name)+'</strong><p>'+esc(n.domain)+' · '+esc(labels[n.role]||"Нода")+
     '</p>'+nodeListBadges(n.id)+'</div><span class="tiny-chip '+(n.status==="registered"||n.status==="ready"?"success":"warning")+'">'+
     esc(n.archived?"Архив":n.lifecycle_phase?"Удаление: "+n.lifecycle_phase:n.status==="planned"?"Черновик":n.status)+'</span>'+
     '<button type="button" class="btn primary" data-node-open="'+esc(n.id)+'">Открыть ноду</button>'+
-    (n.status==="planned"?
-       '<button type="button" class="btn subtle" data-delete-draft="'+esc(n.id)+'">Удалить черновик</button>':"")+
-    (n.status==="planned" && (n.role==="regular"||n.role==="exit")?
-       '<button type="button" class="btn subtle" data-draft-install="'+esc(n.id)+'">Установить VPS</button>':
-       n.status!=="planned"?
-       '<button type="button" class="btn subtle" data-install-node="'+esc(n.id)+'">Статус</button>':"")+
+    (n.status==="planned"?'<button type="button" class="btn subtle" data-delete-draft="'+esc(n.id)+'">Удалить черновик</button>':"")+
+    (n.status==="planned"?'<button type="button" class="btn subtle" data-draft-install="'+esc(n.id)+'">Установить VPS</button>':
+       n.status!=="planned"?'<button type="button" class="btn subtle" data-install-node="'+esc(n.id)+'">Статус</button>':"")+
     (["failed","interrupted"].includes(n.status)?
        '<button type="button" class="btn primary" data-retry-vps="'+esc(n.id)+'">Продолжить</button>'+
        '<button type="button" class="btn subtle" data-forget-vps="'+esc(n.id)+'">Удалить…</button>':"")+
     '</div>'
-  ).join(""):'<div class="empty-state"><h3>Незадействованных серверов нет</h3><p>Новые VPS появятся здесь, пока ты не включишь их в мост.</p></div>';
+  ).join(""):'<div class="empty-state"><h3>Нод пока нет</h3><p>Добавь VPS — она появится здесь как самостоятельный сервер.</p></div>';
 }
 function openModal(title,kicker,content,submit){
   $("modal-title").textContent=title;$("modal-kicker").textContent=kicker;
@@ -456,77 +425,8 @@ function openModal(title,kicker,content,submit){
     finally{if(b)b.disabled=false}
   });
 }
-function bridgeModal(){
-  const entries=state.nodes.filter(n=>n.role==="entry"&&!state.bridges.some(b=>b.entry_id===n.id));
-  if(!entries.length)return message("Сначала добавь сервер с ролью «Вход моста».",true);
-  openModal("Создать мост","ТОПОЛОГИЯ / НОВЫЙ МОСТ",
-    '<form><label>Название<input name="name" required placeholder="RU-01 · Мост"></label>'+
-    '<label>Входная нода<select name="entry_id">'+entries.map(n=>
-    '<option value="'+esc(n.id)+'">'+esc(n.code)+' · '+esc(n.name)+'</option>').join("")+
-    '</select></label><p class="muted small">Выходы можно добавить после создания. Существующий Xray-конфиг сначала импортируй как копию.</p>'+
-    '<div class="form-buttons"><button class="btn primary" type="submit">Создать мост</button></div></form>',
-    async fd=>{const r=await api("/bridges","POST",Object.fromEntries(fd));expanded.add(r.id);message("Мост создан. Действующие серверы не изменены.")});
-}
-function bridgeExitModal(id){
-  const bridge=state.bridges.find(x=>x.id===id);
-  if(!bridge)return;
-  const exits=state.nodes.filter(n=>n.role==="exit"&&!bridge.exits.some(e=>e.id===n.id));
-  if(!exits.length)return message("Сначала добавь новую выходную ноду, например NL1.",true);
-  openModal("Добавить выходную ноду","BRIDGE / ПЛАН ИЗМЕНЕНИЙ",
-    '<p class="muted small">Создадим дополнительный outbound, выделим свободный inbound-порт и покажем разницу. Существующий маршрут не перезаписывается.</p>'+
-    '<form><label>Выходная нода<select name="exit_id">'+exits.map(n=>
-    '<option value="'+esc(n.id)+'">'+esc(n.code)+' · '+esc(n.domain)+'</option>').join("")+
-    '</select></label>'+
-    (!bridge.has_snapshot?'<label>Шаблон Xray <span class="muted">· для нового моста</span><select name="config_template_id"><option value="">Стандартный образец XPPN</option>'+state.configs.filter(f=>f.kind==="xray").map(f=>'<option value="'+esc(f.id)+'">'+esc(f.name)+'</option>').join("")+'</select></label>':'')+
-    '<label>UUID межсерверного VLESS <span class="muted">· необязательно</span><input name="outgoing_uuid" placeholder="Пусто = создать новый UUID" autocomplete="off"></label>'+
-    (bridge.has_snapshot?'<label>Дополнительный TCP-порт <span class="muted">· автоматически</span><input name="inbound_port" type="number" min="8444" max="8999" placeholder="8444"></label>':'')+
-    '<p class="muted small">UUID должен совпадать с пользователем принимающего outbound на выходном сервере. Автоматическая синхронизация обеих сторон пока не включена.</p>'+
-    '<div class="form-buttons"><button type="submit" class="btn primary">Подготовить изменения</button></div></form>',
-    async fd=>{
-      const data={exit_id:fd.get("exit_id")};
-      if(fd.get("outgoing_uuid"))data.outgoing_uuid=fd.get("outgoing_uuid");
-      if(fd.get("inbound_port"))data.inbound_port=Number(fd.get("inbound_port"));
-      if(fd.get("config_template_id"))data.config_template_id=fd.get("config_template_id");
-      const plan=await api("/bridges/"+encodeURIComponent(id)+"/plans","POST",data);
-      setTimeout(()=>openPlan(plan),80);
-      message("Черновик моста подготовлен без изменений на VPS.");
-    });
-}
-async function bridgeImportModal(id){
-  const b=await api("/bridges/"+encodeURIComponent(id));
-  openModal("Импорт текущего Xray","BRIDGE / ТОЛЬКО ЧТЕНИЕ",
-    '<p class="muted small">Вставь JSON действующего моста. Менеджер сохранит его в зашифрованной базе только как снимок. Это НЕ загрузка конфига на VPS.</p>'+
-    '<form><label>Действующий Xray JSON<textarea name="config" rows="14" required spellcheck="false" placeholder="{ ... }"></textarea></label>'+
-    '<label><input type="checkbox" name="confirm" required> Я понимаю, что на VPS ничего не меняется.</label>'+
-    '<div class="form-buttons"><button class="btn primary" type="submit">Сохранить снимок</button></div></form>',
-    async fd=>{
-      let parsed;
-      try{parsed=JSON.parse(fd.get("config"))}catch{throw new Error("JSON не удалось прочитать")}
-      await api("/bridges/"+encodeURIComponent(id)+"/import","POST",{
-        config:parsed,revision:b.revision,confirm_read_only:fd.has("confirm")
-      });
-      message("Снимок текущего Xray сохранён зашифрованно.");
-    });
-}
-function openPlan(plan){
-  currentPlan=plan;
-  $("plan-diff").innerHTML=String(plan.diff||"").split("\n").map(line=>{
-    const kind=line.startsWith("+")?"added":line.startsWith("-")?"removed":
-      line.startsWith("@")?"hunk":"";
-    return '<span class="'+kind+'">'+esc(line)+'</span>';
-  }).join("\n");
-  $("plan-json").textContent=JSON.stringify(plan.config||{},null,2);
-  $("plan-approve").disabled=plan.status!=="draft";
-  $("plan-approve").textContent=plan.status==="approved"?
-    "Черновик утверждён (не применён)":"Утвердить черновик (без применения)";
-  $("plan-dialog").showModal();
-}
-async function openPlanId(id){
-  try{openPlan(await api("/plans/"+encodeURIComponent(id)))}
-  catch(e){message(e.message,true)}
-}
 function renderVariablePreview(){
-  const fallback='{\\n  "inbounds":[{"tag":"{{source.code}}_{{exit.code}}_VLESS_TLS_IN"}],\\n  "outbounds":[{"address":"{{exit.domain}}","id":"{{bridge.user_id}}"}]\\n}';
+  const fallback='{\\n  "inbounds":[{"tag":"{{source.code}}_VLESS_TLS_IN","streamSettings":{"tlsSettings":{"certificates":[{"keyFile":"/opt/nginx/certs/{{source.domain}}_privkey.key"}]}}}]\\n}';
   const source=$("config-content").value||fallback;
   const clipped=source.length>30000?source.slice(0,30000)+"\\n… предпросмотр ограничен 30 000 символами":source;
   $("placeholder-preview").innerHTML=highlightTokens(clipped);
@@ -634,7 +534,7 @@ function renderPresets(){
   renderPresetSelects(selected);
   $("preset-cards").innerHTML=state.presets.length?state.presets.map(p=>
     '<article class="preset-card"><h3>'+esc(p.name)+'</h3>'+
-    '<span class="preset-mode">'+esc(p.mode==="direct"?"Обычная / выходная VPS":p.mode==="bridge"?"Входной мост":"Библиотека")+'</span>'+
+    '<span class="preset-mode">'+esc(p.mode==="direct"?"Установка обычной ноды":"Библиотека")+'</span>'+
     '<p>'+esc(p.description||"Пользовательский набор")+'</p>'+
     p.items.map(i=>'<div class="preset-file-chip">'+esc(types[i.kind])+'<strong>'+
     esc(i.config_name)+'</strong></div>').join("")+
@@ -668,6 +568,41 @@ async function removePreset(id){
     if(currentPreset===id)resetPreset();await refresh();message("Пресет удалён.");
   }catch(e){message(e.message,true)}
 }
+function renderMonitoringSettings(){
+  const select=$("monitoring-interval");
+  if(!select)return;
+  select.value=String(state.settings?.monitor_interval_ms===1000?1000:5000);
+  $("monitoring-status").textContent=select.value==="1000"?
+    "Очень быстрый режим · heartbeat и показатели примерно раз в секунду.":
+    "Обычный режим · heartbeat и показатели примерно раз в 5 секунд.";
+}
+async function saveMonitoring(){
+  const interval=Number($("monitoring-interval").value);
+  try{
+    const result=await api("/settings/monitoring","PUT",{interval_ms:interval});
+    state.settings.monitor_interval_ms=result.interval_ms;
+    renderMonitoringSettings();applyMonitoringInterval();
+    message("Частота мониторинга сохранена");
+  }catch(e){message(e.message,true)}
+}
+async function monitoringTick(){
+  if(monitoringBusy||document.hidden)return;
+  monitoringBusy=true;
+  try{
+    const data=await api("/agents");
+    nodeOverviewAgents=data.agents||[];
+    if(currentPage==="nodes"){
+      renderNodes();
+      if(selectedNodeId&&["overview","network"].includes(selectedNodeTab))renderNodeWorkspace();
+    }
+  }catch{}finally{monitoringBusy=false}
+}
+function applyMonitoringInterval(){
+  if(monitoringTimer)clearInterval(monitoringTimer);
+  const ms=state.settings?.monitor_interval_ms===1000?1000:5000;
+  monitoringTimer=setInterval(monitoringTick,ms);
+}
+
 function renderPanel(){
   $("panel-url").value=state.panel.url||"";
   $("panel-ip").value=state.panel.outbound_ip||"";
@@ -831,43 +766,8 @@ function bindEvents(){
       await renderNodeCertificates();
     }catch(err){message(err.message,true)}
   });
-  $("new-bridge").onclick=bridgeModal;
-  $("bridge-list").addEventListener("click",e=>{
-    const button=e.target.closest("[data-action]");
-    if(!button)return;
-    const action=button.dataset.action,id=button.dataset.bridge;
-    if(action==="toggle-bridge"){
-      expanded.has(id)?expanded.delete(id):expanded.add(id);
-      renderNodes();
-    }else if(action==="bridge-new")bridgeModal();
-    else if(action==="bridge-exit")bridgeExitModal(id);
-    else if(action==="bridge-import")bridgeImportModal(id).catch(err=>message(err.message,true));
-    else if(action==="open-plan")openPlanId(button.dataset.plan);
-  });
   $("modal-close").onclick=()=>$("modal").close();
-  $("plan-close").onclick=()=>$("plan-dialog").close();
-  $("plan-dismiss").onclick=()=>$("plan-dialog").close();
-  $("plan-approve").onclick=async()=>{
-    if(!currentPlan||!confirm("Утвердить черновик? Это НЕ применяет изменения к Remnawave или VPS."))return;
-    try{
-      await api("/plans/"+encodeURIComponent(currentPlan.id)+"/approve","POST");
-      $("plan-dialog").close();await refresh();
-      message("Черновик утверждён, но НЕ применён на сервере.");
-    }catch(e){message(e.message,true)}
-  };
   $("new-config").onclick=()=>resetConfig();
-  $("config-load-bridge").onclick=async()=>{
-    if(!discardConfig())return;
-    try{
-      const sample=await api("/template/default");
-      resetConfig(true);
-      $("config-name").value=sample.name;
-      $("config-kind").value="xray";
-      $("config-content").value=sample.content;
-      markConfigDirty();
-      message("Загружен образец. Переменные выделены ниже, файл пока не сохранён.");
-    }catch(e){message(e.message,true)}
-  };
   document.querySelectorAll("[data-config-category]").forEach(btn=>btn.addEventListener("click",()=>{
     configCategory=btn.dataset.configCategory;
     document.querySelectorAll("[data-config-category]").forEach(tab=>{
@@ -903,6 +803,7 @@ function bindEvents(){
     if(remove)removePreset(remove.dataset.presetDelete);
   });
   $("panel-form").onsubmit=e=>{e.preventDefault();savePanel()};
+  $("monitoring-form").onsubmit=e=>{e.preventDefault();saveMonitoring()};
   $("panel-check").onclick=checkPanel;
   window.addEventListener("beforeunload",e=>{
     if(configDirty){e.preventDefault();e.returnValue=""}

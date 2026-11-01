@@ -77,6 +77,8 @@ def delete_file(file_id: str):
     with storage.transaction() as c:
         if c.execute("SELECT 1 FROM preset_items WHERE config_id=?", (file_id,)).fetchone():
             raise ValueError("Файл используется в пресете. Сначала исключи его из набора.")
+        if c.execute("SELECT 1 FROM node_config_choices WHERE config_id=?", (file_id,)).fetchone():
+            raise ValueError("Файл выбран на одной или нескольких нодах. Сначала сними выбор.")
         if c.execute("DELETE FROM library_configs WHERE id=?", (file_id,)).rowcount != 1:
             raise LookupError("Файл не найден")
         storage.event(c, "config.delete", file_id, "Deleted library file")
@@ -99,8 +101,8 @@ def list_presets():
 
 def save_preset(*, name: str, description: str = "", config_ids: list[str],
                 preset_id: str = "", mode: str = "custom"):
-    if mode not in ("direct","bridge","custom"):
-        raise ValueError("Неизвестное назначение пресета")
+    if mode not in ("direct","custom"):
+        raise ValueError("Система мостов отключена: пресет может быть direct или custom")
     if not 1 <= len(name.strip()) <= 100 or len(description) > 600:
         raise ValueError("Название 1–100, описание до 600 символов")
     if not 1 <= len(config_ids) <= 4 or len(config_ids) != len(set(config_ids)):

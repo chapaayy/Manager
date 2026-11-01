@@ -19,6 +19,32 @@ class AgentBootstrapError(ValueError):
     """A deliberately sanitized actionable bootstrap failure."""
 
 
+def _ssh_password(node_id: str, supplied: str = "") -> str:
+    if supplied:
+        return supplied
+    saved=storage.get_saved_ssh_password(node_id)
+    if not saved:
+        raise AgentBootstrapError("SSH-пароль не сохранён. Введи его один раз в управлении нодой.")
+    return saved
+
+
+def validate_and_store_ssh(node_id: str,password: str) -> dict:
+    """Verify root auth and the stored host fingerprint before persisting secret."""
+    storage.get_node(node_id)
+    job=storage.get_install_job(node_id)
+    if not password:
+        raise AgentBootstrapError("Укажи SSH-пароль root")
+    try:
+        transport,_=vps_install.ssh_open(job["ip"],job["port"],password,job["ssh_fingerprint"])
+    except paramiko.AuthenticationException:
+        raise AgentBootstrapError("SSH: неверный пароль root") from None
+    except (ValueError,socket.timeout,TimeoutError,OSError,paramiko.SSHException):
+        raise AgentBootstrapError("SSH: подключение недоступно или fingerprint сервера изменился") from None
+    else:
+        transport.close()
+    return storage.save_ssh_password(node_id,password)
+
+
 STAGE_DESCRIPTION = {
     "preflight": "проверка установочных файлов",
     "dependencies": "проверка или установка зависимостей sudo",
@@ -121,6 +147,7 @@ def install_on_transport(transport: paramiko.Transport, node_id: str) -> dict:
 
 
 def install_existing(node_id: str, password: str, confirmed: bool) -> dict:
+    password=_ssh_password(node_id,password)
     if not confirmed:
         raise AgentBootstrapError("Подтверди однократную установку агента на существующую VPS")
     node = storage.get_node(node_id)
@@ -153,6 +180,7 @@ def install_existing(node_id: str, password: str, confirmed: bool) -> dict:
 
 
 def repair_existing(node_id: str, password: str, confirmed: bool) -> dict:
+    password=_ssh_password(node_id,password)
     """Explicit one-time repair of original agent sandbox; preserve identity."""
     if not confirmed:
         raise AgentBootstrapError("Подтверди исправление первоначальной установки агента")
@@ -226,6 +254,7 @@ def repair_existing(node_id: str, password: str, confirmed: bool) -> dict:
 
 
 def upgrade_existing(node_id:str,password:str,confirmed:bool)->dict:
+    password=_ssh_password(node_id,password)
     """One-time SSH migration of existing v1.2 agent; preserve its token/env."""
     if not confirmed:
         raise AgentBootstrapError("Подтверди однократное SSH-обновление агента")
@@ -289,6 +318,7 @@ def upgrade_existing(node_id:str,password:str,confirmed:bool)->dict:
 
 
 def enable_ssh_security(node_id: str,password: str,confirmed: bool) -> dict:
+    password=_ssh_password(node_id,password)
     """Explicit one-time SSH helper rollout; never reinstall or rotate Agent."""
     if not confirmed:
         raise AgentBootstrapError("Подтверди установку SSH-защиты на VPS")
@@ -296,7 +326,7 @@ def enable_ssh_security(node_id: str,password: str,confirmed: bool) -> dict:
     if node["status"]!="ready":
         raise AgentBootstrapError("Нода должна быть установлена")
     agent=next((x for x in agent_transport.nodes_status() if x["id"]==node_id),None)
-    if not agent or not agent["online"] or not agent["version"].startswith("1.4."):
+    if not agent or not agent["online"] or not re.fullmatch(r"1\\.(?:[4-9]|[1-9][0-9])\\.[0-9]{1,3}",agent["version"] or ""):
         raise AgentBootstrapError("Для настройки безопасности нужен Agent v1.4 или новее")
     job=storage.get_install_job(node_id)
     try:

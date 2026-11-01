@@ -1,6 +1,6 @@
 """SSH preflight and supervised first Remnawave Node installation.
 
-No password or node SECRET_KEY is persisted in the web database or logs.
+SSH password may be stored only encrypted at the user request/default install flow; it is never returned by API or logs.
 Root SSH is allowed only after a read-only host-key probe and user approval.
 Only CLEAN Ubuntu/Debian public IPv4 VPS are supported by this first installer.
 """
@@ -437,6 +437,7 @@ def resume_registration(node_id: str, password: str):
 
 
 def start_resume(node_id: str, password: str, confirmed: bool = False) -> dict:
+    password=password or storage.get_saved_ssh_password(node_id)
     """Requires explicit confirmation and re-authentication to the same SSH host."""
     if not confirmed:
         raise ValueError("Подтверди продолжение установки без переустановки VPS")
@@ -512,8 +513,8 @@ def start_install(*, code: str, country: str, name: str, domain: str, role: str,
                   ip: str, port: int, password: str, fingerprint_value: str,
                   panel_ip: str, existing_node_id: str | None = None,
                   preset_id: str | None = None) -> dict:
-    if role not in ("regular","exit","entry"):
-        raise ValueError("Неверное назначение VPS")
+    if role!="regular":
+        raise ValueError("Система мостов отключена: новые VPS добавляются только как обычные ноды")
     if not FP.fullmatch(fingerprint_value):
         raise ValueError("Нужно подтвердить SSH fingerprint из предварительной проверки")
     if not re.fullmatch(r"[A-Z][A-Z0-9_-]{1,19}",code):
@@ -528,7 +529,7 @@ def start_install(*, code: str, country: str, name: str, domain: str, role: str,
     # Check panel API and key before inserting anything or touching VPS.
     remnawave.node_secret()
     # Reuse a previously saved *draft* only when explicitly selected by its ID.
-    # Never reassign a different VPS, an active bridge entry or an installed node.
+    # Never reassign a different VPS or an installed node.
     created_new = existing_node_id is None
     if existing_node_id:
         node = storage.get_node(existing_node_id)
@@ -544,8 +545,9 @@ def start_install(*, code: str, country: str, name: str, domain: str, role: str,
     else:
         node = storage.create_node(code=code,name=name,domain=domain,country=country,role=role)
     try:
-        storage.create_install_job(node["id"],ip,port,fingerprint_value)
+        storage.create_install_job(node["id"],ip,port,fingerprint_value,password)
         storage.save_install_preset(node["id"],preset_id,snapshot)
+        storage.set_node_config_choices_from_preset(node["id"],preset_id)
     except Exception:
         # Remove only a newly-created unscheduled draft, not an existing card.
         if created_new:
