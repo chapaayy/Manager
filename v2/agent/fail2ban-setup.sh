@@ -3,9 +3,11 @@
 set -Eeuo pipefail
 umask 077
 admin="$1"
-STATE=/var/lib/node-manager/ssh-protection.state
+STATE=/var/lib/xppn-ssh-security/install.state
 CONF=/etc/fail2ban/jail.d/90-xppn-sshd.local
-mkdir -p -m 0700 /var/lib/node-manager
+install -d -m 0700 -o root -g root /var/lib/xppn-ssh-security
+exec 9>/run/lock/xppn-ssh-protection.lock
+flock -n 9 || exit 21
 emit(){ printf '%s\n' "$1" > "$STATE"; logger -t xppn-ssh-protection -- "$1"; }
 valid_ip(){
   python3 - "$1" <<'PY'
