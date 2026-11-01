@@ -718,6 +718,58 @@ def _f2b_value(field):
     return value if value is not None else ""
 
 
+def _managed_fail2ban_config():
+    path=Path("/etc/fail2ban/jail.d/90-xppn-sshd.local")
+    result={"maxretry":None,"findtime":None,"bantime":None,"ignoreip":[]}
+    if not path.is_file() or path.is_symlink():return result
+    try:
+        for line in path.read_text("utf-8").splitlines():
+            stripped=line.strip()
+            if not stripped or stripped.startswith("#") or "=" not in stripped:continue
+            key,value=(part.strip() for part in stripped.split("=",1))
+            if key in ("maxretry","findtime","bantime"):
+                try:result[key]=int(value)
+                except ValueError:pass
+            elif key=="ignoreip":
+                result["ignoreip"]=[x for x in value.split() if len(x)<=80][:40]
+    except (OSError,UnicodeError):
+        pass
+    return result
+
+
+def _logrotate_state(path):
+    target=Path(path)
+    state={"enabled":False,"valid":False,"size_mb":None,"archives":None,"compress":None}
+    if not target.is_file() or target.is_symlink():return state
+    state["enabled"]=True
+    state["valid"]=_logrotate_ok(path)
+    try:
+        for line in target.read_text("utf-8").splitlines():
+            stripped=line.strip()
+            m=re.fullmatch(r"size\s+([0-9]{1,4})M",stripped)
+            if m:state["size_mb"]=int(m.group(1))
+            m=re.fullmatch(r"rotate\s+([0-9]{1,2})",stripped)
+            if m:state["archives"]=int(m.group(1))
+            if stripped=="compress":state["compress"]=True
+            if stripped=="nocompress":state["compress"]=False
+    except (OSError,UnicodeError):
+        pass
+    return state
+
+
+def _firewall_allowed_sources(program,chain):
+    raw=_inspect([program,"-S",chain],timeout=6)
+    if not raw:return []
+    result=[]
+    for line in raw.splitlines():
+        match=re.search(r"(?:^|\s)-s\s+([^\s]+).*\s-j\s+ACCEPT(?:\s|$)",line)
+        if not match:continue
+        try:source=str(ipaddress.ip_network(match.group(1),strict=False))
+        except ValueError:continue
+        if source not in result:result.append(source)
+    return result[:40]
+
+
 def baseline_status():
     """Read-only actual state. Never interpret absent tooling as protection."""
     congestion=_inspect(["sysctl","-n","net.ipv4.tcp_congestion_control"])
@@ -774,9 +826,16 @@ def baseline_status():
         except OSError:
             pass
     ssh_security=_ssh_protection() if jail is not None else {"banned_ips":[],"history":[],"banned_count":None}
-    nginx_rotate=_logrotate_ok("/etc/logrotate.d/xppn-nginx")
-    node_rotate=_logrotate_ok("/etc/logrotate.d/xppn-remnanode")
+    nginx_rotate_state=_logrotate_state("/etc/logrotate.d/xppn-nginx")
+    node_rotate_state=_logrotate_state("/etc/logrotate.d/xppn-remnanode")
+    nginx_rotate=nginx_rotate_state["valid"]
+    node_rotate=node_rotate_state["valid"]
     rotate_timer=(_inspect(["systemctl","is-active","logrotate.timer"])=="active")
+    managed_f2b=_managed_fail2ban_config()
+    firewall_sources=_firewall_allowed_sources("iptables","XPPN_NODE_API4") if custom4 else []
+    if shutil.which("ip6tables"):
+        firewall_sources += [x for x in _firewall_allowed_sources("ip6tables","XPPN_NODE_API6")
+                             if x not in firewall_sources]
     return {
         "security_settings_supported":True,
         "security_helper_ready":Path("/usr/local/libexec/node-manager-fail2ban").is_file(),
@@ -793,17 +852,21 @@ def baseline_status():
         "fail2ban_active":f2b_active,
         "sshd_jail_active":jail is not None,
         "sshd_banned_count":banned,
-        "fail2ban_maxretry":_f2b_value("maxretry") if jail else "",
-        "fail2ban_findtime":_f2b_value("findtime") if jail else "",
-        "fail2ban_bantime":_f2b_value("bantime") if jail else "",
-        "fail2ban_ignoreip":_f2b_value("ignoreip") if jail else "",
+        "fail2ban_maxretry":managed_f2b["maxretry"] if jail else None,
+        "fail2ban_findtime":managed_f2b["findtime"] if jail else None,
+        "fail2ban_bantime":managed_f2b["bantime"] if jail else None,
+        "fail2ban_ignoreip":managed_f2b["ignoreip"] if jail else [],
         "panel_firewall_service_active":fwall,
         "panel_firewall_service_enabled":fwall_enabled,
         "panel_firewall_ipv4_rule":bool((custom4 and custom4_drop and custom4_panel) or legacy),
         "panel_firewall_ipv6_rule":ipv6,
         "panel_firewall_mode":"managed-chain" if custom4 else ("legacy" if legacy else ""),
+        "panel_firewall_panel_ip":panel_ip if panel_valid else "",
+        "panel_firewall_allowed_sources":firewall_sources,
         "nginx_logrotate":nginx_rotate,
         "remnanode_logrotate":node_rotate,
+        "nginx_logrotate_state":nginx_rotate_state,
+        "remnanode_logrotate_state":node_rotate_state,
         "logrotate_timer_active":rotate_timer,
         "nginx_log_bytes":_directory_log_bytes("/opt/nginx/logs"),
         "remnanode_log_bytes":_directory_log_bytes("/var/log/remnanode"),
