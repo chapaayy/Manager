@@ -1,8 +1,12 @@
 """Per-node opt-in auto-updates and explicit manual updater; no arbitrary URLs."""
 from __future__ import annotations
 import time
+import threading
 
 from . import agent_release, agent_transport, storage
+
+
+_SCHEDULE_LOCK=threading.Lock()
 
 
 class UpdateError(ValueError):
@@ -80,6 +84,11 @@ def _payload(info:dict)->dict:
 
 
 def auto_schedule(node_id:str,version:str,metrics:dict)->bool:
+    with _SCHEDULE_LOCK:
+        return _auto_schedule_locked(node_id,version,metrics)
+
+
+def _auto_schedule_locked(node_id:str,version:str,metrics:dict)->bool:
     # Heartbeats from old agents or unsupported architectures are read-only.
     if agent_release.compare(version,"1.3.0")<0:
         return False
@@ -96,6 +105,11 @@ def auto_schedule(node_id:str,version:str,metrics:dict)->bool:
     if arch not in release["binaries"] or agent_release.compare(release["version"],version)<=0:
         return False
     with storage.connect() as db:
+        recent=db.execute("""SELECT 1 FROM manager_agent_jobs
+                             WHERE action='agent.update' AND created_at>?
+                             LIMIT 1""",(now-120,)).fetchone()
+        if recent:
+            return False
         pending=db.execute("""SELECT 1 FROM manager_agent_jobs
                               WHERE node_id=? AND action='agent.update' AND status IN ('queued','leased')
                               LIMIT 1""",(node_id,)).fetchone()
