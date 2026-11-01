@@ -238,7 +238,8 @@ func (a *Agent) execute(job *Task) Response {
     raw,err:=json.Marshal(job.Payload)
     if err!=nil||len(raw)>50000{resp.Error="invalid payload";return resp}
     actionTimeout:=45*time.Second
-    if job.Action=="node.cleanup" {actionTimeout=110*time.Second}\n    if job.Action=="security.settings.apply" {actionTimeout=180*time.Second}
+    if job.Action=="node.cleanup" {actionTimeout=110*time.Second}
+    if job.Action=="security.settings.apply" {actionTimeout=180*time.Second}
     ctx,cancel:=context.WithTimeout(context.Background(),actionTimeout)
     defer cancel()
     cmd:=exec.CommandContext(ctx,"sudo","-n",Helper,job.Action)
