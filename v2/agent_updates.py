@@ -59,6 +59,12 @@ def manual(node_id:str,*,confirmed:bool,password:str="")->dict:
         from . import agent_bootstrap
         outcome=agent_bootstrap.upgrade_existing(node_id,password,True)
         return {**outcome,"mode":"one-time-ssh","latest_version":result["latest_version"]}
+    with storage.connect() as db:
+        recent=db.execute("""SELECT 1 FROM manager_agent_jobs
+                             WHERE node_id=? AND action='agent.update' AND created_at>?
+                             LIMIT 1""",(node_id,int(time.time())-120)).fetchone()
+    if recent:
+        raise UpdateError("Обновление агента уже запущено; дождись подтверждения новой версии")
     return {**agent_transport.enqueue(node_id,"agent.update",_payload(result),ttl=900),
             "mode":"agent","latest_version":result["latest_version"]}
 
