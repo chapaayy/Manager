@@ -223,7 +223,10 @@ async function refreshNodeWorkspaceData(){
   const [agents,certs]=await Promise.all([api("/agents"),api("/node-certificates")]);
   nodeOverviewAgents=agents.agents||[];
   nodeOverviewCerts=certs.nodes||[];
-  if(selectedNodeId)renderNodeWorkspace();
+  if(selectedNodeId){
+    renderNodeWorkspace();
+    if(selectedNodeTab==="manage")await loadNodeAgentUpdates();
+  }
 }
 async function showNodeConfig(name){
   if(nodeTaskBusy)return;
