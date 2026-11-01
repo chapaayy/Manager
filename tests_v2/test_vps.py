@@ -24,7 +24,7 @@ def test_starter_bundle_contains_working_example_nginx_and_compose(db):
         presets=c.execute("SELECT id FROM presets").fetchall()
     assert len(configs)==5
     assert {c["kind"] for c in configs}=={"xray","nginx","nginx_compose","node_compose"}
-    assert len(presets)==2
+    assert len(presets)==1
     originals={c["name"]:storage.decrypt(c["content_enc"]) for c in configs}
     by_kind={c["kind"]:storage.decrypt(c["content_enc"]) for c in configs}
     xray=json.loads(originals["XPPN · Xray Bridge VLESS TLS"])
@@ -86,17 +86,24 @@ def test_installer_rejects_unconfirmed_and_mismatched_ssh_key(db,monkeypatch):
     assert storage.list_nodes()==[]
 
 
-def test_interrupted_jobs_preserve_truth_without_password(db):
+def test_interrupted_jobs_preserve_truth_and_encrypt_saved_ssh_password(db):
     node=storage.create_node(code="DE1",name="Germany",domain="de1.example.org",
                              country="DE",role="regular")
-    storage.create_install_job(node["id"],"1.1.1.1",22,"SHA256:"+("a"*43))
+    storage.create_install_job(node["id"],"1.1.1.1",22,"SHA256:"+("a"*43),"super-secret-root-password")
     storage.set_install_status(node["id"],"installing","Устанавливаем Node")
     storage.mark_interrupted_jobs()
     assert storage.get_install_job(node["id"])["stage"]=="interrupted"
     assert storage.get_node(node["id"])["status"]=="interrupted"
+    public=storage.get_install_job(node["id"])
+    assert public["has_saved_ssh_password"] is True
+    assert "ssh_password_enc" not in public
+    assert storage.get_saved_ssh_password(node["id"])=="super-secret-root-password"
     with storage.connect() as c:
-        tables=[x["name"] for x in c.execute("PRAGMA table_info(node_installations)")]
-    assert not any("password" in t for t in tables)
+        row=c.execute("SELECT ssh_password_enc FROM node_installations WHERE node_id=?",(node["id"],)).fetchone()
+    assert row["ssh_password_enc"]
+    assert "super-secret-root-password" not in row["ssh_password_enc"]
+    storage.clear_ssh_password(node["id"])
+    assert storage.get_saved_ssh_password(node["id"])==""
 
 
 
