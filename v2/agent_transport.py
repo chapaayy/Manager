@@ -23,6 +23,10 @@ ALLOWED = {"system.status", "docker.status", "docker.restart", "docker.logs", "l
            "security.fail2ban.install", "security.fail2ban.unban"}
 MAX_RESULT = 48000
 LEASE_SECONDS = 120
+METRIC_SAMPLE_SECONDS = 5
+METRIC_RETENTION_SECONDS = 6 * 60 * 60
+_METRIC_PRUNE_LOCK=threading.Lock()
+_last_metric_prune=0
 
 _WAIT_LOCK=threading.Lock()
 _ASYNC_WAITERS={}
@@ -80,6 +84,14 @@ def initialize():
         );
         CREATE INDEX IF NOT EXISTS manager_agent_jobs_node
           ON manager_agent_jobs(node_id,status,created_at);
+        CREATE TABLE IF NOT EXISTS manager_agent_metrics(
+          node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+          ts INTEGER NOT NULL,
+          metrics_json TEXT NOT NULL,
+          PRIMARY KEY(node_id,ts)
+        );
+        CREATE INDEX IF NOT EXISTS manager_agent_metrics_node_ts
+          ON manager_agent_metrics(node_id,ts);
         """)
         cols={row["name"] for row in db.execute("PRAGMA table_info(manager_agents)")}
         if "auto_update" not in cols:
@@ -132,9 +144,22 @@ def heartbeat(node_id: str, data: dict) -> dict:
     if not isinstance(metrics,dict) or len(json.dumps(metrics)) > 4000:
         raise AgentError("Слишком большой heartbeat")
     now=int(time.time())
+    metrics_raw=json.dumps(metrics,separators=(",",":"))
+    bucket=now-(now%METRIC_SAMPLE_SECONDS)
+    global _last_metric_prune
     with storage.transaction() as db:
         db.execute("UPDATE manager_agents SET last_seen=?,version=?,last_status_json=? WHERE node_id=?",
-                   (now,version,json.dumps(metrics,separators=(",",":")),node_id))
+                   (now,version,metrics_raw,node_id))
+        # Persist at most one point per 5-second bucket even when live heartbeat is 1s.
+        # The current 1s value still comes from manager_agents for the live chart.
+        db.execute("""INSERT OR IGNORE INTO manager_agent_metrics(node_id,ts,metrics_json)
+                      VALUES(?,?,?)""",(node_id,bucket,metrics_raw))
+        if now-_last_metric_prune>=300:
+            with _METRIC_PRUNE_LOCK:
+                if now-_last_metric_prune>=300:
+                    db.execute("DELETE FROM manager_agent_metrics WHERE ts<?",
+                               (now-METRIC_RETENTION_SECONDS,))
+                    _last_metric_prune=now
     # First TLS verification is queued immediately on the first ready heartbeat.
     from . import node_cert_sync
     node_cert_sync.queue_initial_check(node_id)
@@ -296,6 +321,32 @@ def report(node_id: str, body: dict) -> dict:
 def online_window() -> float:
     # Slow monitoring intervals must not make a healthy Agent flap offline.
     return max(45.0, storage.monitoring_interval()*2.5)
+
+
+def monitoring_history(node_id: str, seconds: int = 3600) -> dict:
+    storage.get_node(node_id)
+    seconds=max(60,min(int(seconds),METRIC_RETENTION_SECONDS))
+    now=int(time.time())
+    with storage.connect() as db:
+        rows=db.execute("""SELECT ts,metrics_json FROM manager_agent_metrics
+                           WHERE node_id=? AND ts>=? ORDER BY ts""",
+                        (node_id,now-seconds)).fetchall()
+        current=db.execute("""SELECT last_seen,last_status_json FROM manager_agents
+                              WHERE node_id=? AND enabled=1""",(node_id,)).fetchone()
+    samples=[]
+    for row in rows:
+        try: metrics=json.loads(row["metrics_json"] or "{}")
+        except json.JSONDecodeError: metrics={}
+        samples.append({"ts":row["ts"],"metrics":metrics})
+    if current and current["last_seen"]:
+        try: latest=json.loads(current["last_status_json"] or "{}")
+        except json.JSONDecodeError: latest={}
+        if not samples or current["last_seen"]>samples[-1]["ts"]:
+            samples.append({"ts":current["last_seen"],"metrics":latest})
+        elif current["last_seen"]==samples[-1]["ts"]:
+            samples[-1]={"ts":current["last_seen"],"metrics":latest}
+    return {"node_id":node_id,"seconds":seconds,
+            "sample_interval":METRIC_SAMPLE_SECONDS,"samples":samples}
 
 
 def nodes_status() -> list[dict]:
