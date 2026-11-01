@@ -78,6 +78,7 @@ def install_on_transport(transport: paramiko.Transport, node_id: str) -> dict:
             "install.sh": (ROOT/"install-agent.sh").read_bytes(),
             "agent-uninstall.sh": (ROOT/"uninstall-agent.sh").read_bytes(),
             "agent-updater.sh": (ROOT/"agent-updater.sh").read_bytes(),
+            "fail2ban-setup.sh": (ROOT/"fail2ban-setup.sh").read_bytes(),
         }
     except (OSError, ValueError):
         raise AgentBootstrapError("В образе менеджера отсутствуют файлы агента. "
