@@ -615,6 +615,8 @@ def ssh_protection_helper(node_id: str, body: SSHProtectionHelperData,
 @app.post("/api/agents/{node_id}/ssh-protection/install")
 def ssh_protection_install(node_id: str, body: SSHProtectionInstallData,
                            _=Depends(write_access)):
+    if not body.confirmed:
+        raise HTTPException(422,"Подтверди установку только SSH Fail2Ban")
     try:
         return agent_transport.enqueue(
             node_id,"security.fail2ban.install",body.model_dump(),ttl=900,internal=True)
@@ -625,6 +627,8 @@ def ssh_protection_install(node_id: str, body: SSHProtectionInstallData,
 @app.post("/api/agents/{node_id}/ssh-protection/unban")
 def ssh_protection_unban(node_id: str, body: SSHProtectionUnbanData,
                          _=Depends(write_access)):
+    if not body.confirmed:
+        raise HTTPException(422,"Подтверди разблокировку SSH IP")
     try:
         return agent_transport.enqueue(
             node_id,"security.fail2ban.unban",body.model_dump(),ttl=300,internal=True)
