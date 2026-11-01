@@ -77,6 +77,8 @@ def delete_file(file_id: str):
     with storage.transaction() as c:
         if c.execute("SELECT 1 FROM preset_items WHERE config_id=?", (file_id,)).fetchone():
             raise ValueError("Файл используется в пресете. Сначала исключи его из набора.")
+        if c.execute("SELECT 1 FROM node_config_choices WHERE config_id=?", (file_id,)).fetchone():
+            raise ValueError("Файл выбран на одной или нескольких нодах. Сначала сними выбор.")
         if c.execute("DELETE FROM library_configs WHERE id=?", (file_id,)).rowcount != 1:
             raise LookupError("Файл не найден")
         storage.event(c, "config.delete", file_id, "Deleted library file")
