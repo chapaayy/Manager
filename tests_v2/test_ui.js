@@ -58,7 +58,7 @@ assert.doesNotMatch(html,/data-page="agents"/,"No Agents sidebar item");
 assert.doesNotMatch(html,/data-page="node-certs"/,"No TLS sidebar item");
 assert.match(html,/id="node-detail"/,"Node detail in Nodes page");
 assert.match(nodeDetail,/function openNodeWorkspace/,"Unified node workspace");
-assert.match(html,/node-security[.]js[?]v=1[.]1[.]0/,"Security dashboard asset loaded");
+assert.match(html,/node-security[.]js[?]v=1[.]2[.]0/,"Security dashboard asset loaded");
 assert.match(html,/node-monitoring[.]js[?]v=1[.]0[.]0/,"Monitoring dashboard asset loaded");
 assert.match(nodeSecurity,/function securityNetworkBody/,"Network page uses compact security layout");
 assert.match(nodeDetail,/monitor:"Мониторинг"/,"Node has dedicated Monitoring tab");
@@ -66,8 +66,10 @@ assert.match(nodeMonitoring,/function refreshNodeMonitoring/,"Monitoring tab has
 assert.match(nodeMonitoring,/function drawMonitoringChart/,"Monitoring tab renders SVG charts");
 assert.match(js,/selectedNodeTab==="monitor"/,"Fast interval only refreshes Monitoring tab");
 assert.doesNotMatch(js,/if\(selectedNodeId\)\{\s*await refreshNodeWorkspaceData/,"Fast timer must not rerender management tabs");
-assert.match(nodeSecurity,/function installNodeSSHProtection/,"Confirmed SSH-only install wizard exists");
+assert.match(nodeSecurity,/function saveNodeSecuritySettings/,"Structured security profile can be saved and applied");
 assert.match(nodeSecurity,/function unbanNodeSSH/,"Unban action requires confirmation");
+assert.match(nodeSecurity,new RegExp("security-settings/apply"),"Security changes use a dedicated confirmed endpoint");
+assert.match(nodeSecurity,/Remnawave Node API · TCP 2222/,"Node API firewall is clearly named");
 
 assert.match(nodeDetail,/function nodeCertText/,"Inline certificate state");
 assert.match(js,/async function nodeLifecycleModal/,"Node lifecycle confirmation UI exists");

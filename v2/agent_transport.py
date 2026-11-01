@@ -20,7 +20,7 @@ from . import storage
 ALLOWED = {"system.status", "docker.status", "docker.restart", "docker.logs", "logs.read",
            "service.status", "service.restart", "cert.status", "baseline.status",
            "config.read", "config.apply", "agent.update", "node.cleanup", "node.cleanup.finish",
-           "security.fail2ban.install", "security.fail2ban.unban"}
+           "security.fail2ban.install", "security.fail2ban.unban", "security.settings.apply"}
 MAX_RESULT = 48000
 LEASE_SECONDS = 120
 METRIC_SAMPLE_SECONDS = 5
@@ -185,8 +185,8 @@ def enqueue(node_id: str, action: str, payload: dict | None = None,
             ttl: int = 300, internal: bool = False) -> dict:
     if action not in ALLOWED:
         raise AgentError("Неподдерживаемая операция агента")
-    if action.startswith("security.fail2ban") and not internal:
-        raise AgentError("SSH-защита разрешена только через отдельные подтверждаемые действия")
+    if action.startswith("security.") and not internal:
+        raise AgentError("Настройки сети и защиты разрешены только через отдельные подтверждаемые действия")
     if action.startswith("node.cleanup") and not internal:
         raise AgentError("Удаление VPS разрешено только через мастер удаления")
     node=storage.get_node(node_id)
@@ -317,6 +317,14 @@ def report(node_id: str, body: dict) -> dict:
             raise AgentError("Секретные данные запрещены в журнале задания")
         if len(json.dumps(result)) > MAX_RESULT:
             result={"truncated":True}
+        if ok and row["action"]=="security.settings.apply":
+            try:
+                from . import security_settings
+                security_settings.mark_applied(node_id,result)
+            except Exception:
+                # Desired-state bookkeeping must never turn a successful VPS
+                # operation into a failed Agent acknowledgement.
+                pass
     now=int(time.time())
     with storage.transaction() as db:
         db.execute("""UPDATE manager_agent_jobs SET status=?,result_json=?,error=?,

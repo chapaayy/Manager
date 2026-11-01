@@ -23,7 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from pydantic import BaseModel, Field
 
-from . import agent_bootstrap, agent_release, agent_updates, agent_transport, bundled, library, node_cert_sync, node_lifecycle, node_removal, remnawave, service, storage, vps_install, web_updates
+from . import agent_bootstrap, agent_release, agent_updates, agent_transport, bundled, library, node_cert_sync, node_lifecycle, node_removal, remnawave, security_settings, service, storage, vps_install, web_updates
 from .template_engine import Endpoint, TemplateError, safe_preview, variables_map
 
 STATIC = Path(__file__).resolve().parent / "static"
@@ -95,6 +95,7 @@ def startup():
     _password_hash()
     storage.init_db()
     agent_transport.initialize()
+    security_settings.initialize()
     node_lifecycle.disable_pending_vps_cleanup()
     bundled.seed_defaults()
     storage.mark_interrupted_jobs()
@@ -660,6 +661,16 @@ class SSHProtectionUnbanData(BaseModel):
     confirmed: bool = False
 
 
+class NodeSecuritySettingsData(BaseModel):
+    config: dict
+    revision: int = Field(ge=0)
+
+
+class NodeSecurityApplyData(BaseModel):
+    revision: int = Field(ge=1)
+    confirmed: bool = False
+
+
 @app.post("/api/agents/{node_id}/ssh-protection/helper")
 def ssh_protection_helper(node_id: str, body: SSHProtectionHelperData,
                           _=Depends(write_access)):
@@ -690,6 +701,38 @@ def ssh_protection_unban(node_id: str, body: SSHProtectionUnbanData,
         return agent_transport.enqueue(
             node_id,"security.fail2ban.unban",body.model_dump(),ttl=300,internal=True)
     except (LookupError,agent_transport.AgentError) as exc:
+        raise HTTPException(422,str(exc)) from None
+
+
+@app.get("/api/nodes/{node_id}/security-settings")
+def node_security_settings(node_id: str, _=Depends(read_access)):
+    try:
+        return security_settings.get(node_id)
+    except LookupError as exc:
+        raise HTTPException(404,str(exc)) from None
+
+
+@app.put("/api/nodes/{node_id}/security-settings")
+def node_security_settings_save(node_id: str, body: NodeSecuritySettingsData,
+                                _=Depends(write_access)):
+    try:
+        return security_settings.save(node_id,body.config,body.revision)
+    except LookupError as exc:
+        raise HTTPException(404,str(exc)) from None
+    except ValueError as exc:
+        raise HTTPException(422,str(exc)) from None
+
+
+@app.post("/api/nodes/{node_id}/security-settings/apply")
+def node_security_settings_apply(node_id: str, body: NodeSecurityApplyData,
+                                 _=Depends(write_access)):
+    if not body.confirmed:
+        raise HTTPException(422,"Подтверди применение настроек сети и защиты")
+    try:
+        return security_settings.queue_apply(node_id,body.revision)
+    except LookupError as exc:
+        raise HTTPException(404,str(exc)) from None
+    except (ValueError,agent_transport.AgentError) as exc:
         raise HTTPException(422,str(exc)) from None
 
 
