@@ -324,8 +324,30 @@ def monitoring_settings_update(body: MonitoringData,_=Depends(write_access)):
         raise HTTPException(422,str(exc)) from None
 
 
+class NodeConfigChoicesData(BaseModel):
+    choices: dict[str,str] = Field(default_factory=dict)
+
+
 class SSHCredentialData(BaseModel):
     password: str = Field(min_length=1,max_length=512)
+
+
+@app.get("/api/nodes/{node_id}/config-choices")
+def node_config_choices(node_id: str,_=Depends(read_access)):
+    try:
+        return storage.get_node_config_choices(node_id)
+    except LookupError as exc:
+        raise HTTPException(404,str(exc)) from None
+
+
+@app.put("/api/nodes/{node_id}/config-choices")
+def node_config_choices_update(node_id: str,body:NodeConfigChoicesData,_=Depends(write_access)):
+    try:
+        return storage.set_node_config_choices(node_id,body.choices)
+    except LookupError as exc:
+        raise HTTPException(404,str(exc)) from None
+    except ValueError as exc:
+        raise HTTPException(422,str(exc)) from None
 
 
 @app.get("/api/nodes/{node_id}/ssh-access")
