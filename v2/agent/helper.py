@@ -25,7 +25,7 @@ CONTAINERS = {"nginx", "remnanode"}
 SYSTEMD = {"docker.service", "certbot.timer", "xppn-node-firewall.service"}
 ACTIONS = {"docker.status", "docker.logs", "docker.restart",
            "service.status", "service.restart", "logs.read", "cert.status",
-           "config.read", "config.apply", "baseline.status",
+           "config.read", "config.apply", "baseline.status", "agent.update",
            "node.cleanup", "node.cleanup.finish"}
 
 
@@ -262,7 +262,31 @@ def baseline_status():
     }
 
 
+def schedule_agent_update(data):
+    """Execute only the pinned manager-downloaded binary from fixed path."""
+    version=data.get("version")
+    expected=data.get("sha256")
+    if not isinstance(version,str) or not re.fullmatch(r"1\.[0-9]{1,3}\.[0-9]{1,3}",version):
+        fail("invalid agent update version")
+    if not isinstance(expected,str) or not re.fullmatch(r"[a-f0-9]{64}",expected):
+        fail("invalid agent checksum")
+    path=Path("/var/lib/node-manager/update.bin")
+    if path.is_symlink() or not path.is_file() or path.stat().st_size>14000000:
+        fail("staged agent update missing or invalid")
+    if hashlib.sha256(path.read_bytes()).hexdigest()!=expected:
+        fail("staged agent update checksum mismatch")
+    updater=Path("/usr/local/libexec/node-manager-updater")
+    if not updater.is_file() or updater.is_symlink():
+        fail("agent updater missing")
+    # A standalone transient timer ensures the current agent can ACK the
+    # task before the service is stopped. The watchdog lives in updater.
+    run(["systemd-run","--unit=xppn-agent-upgrade","--on-active=4s",
+         str(updater),version,expected],timeout=10,limit=1200)
+    return {"scheduled":True,"version":version,"sha256":expected}
+
+
 def execute(action, data):
+    if action=="agent.update":return schedule_agent_update(data)
     if action=="baseline.status":return baseline_status()
     if action=="node.cleanup":return _cleanup_managed(data)
     if action=="node.cleanup.finish":return _finish_cleanup(data)
