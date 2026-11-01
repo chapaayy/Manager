@@ -21,12 +21,28 @@ class AgentBootstrapError(ValueError):
 
 def _ssh_password(node_id: str, supplied: str = "") -> str:
     if supplied:
-        storage.save_ssh_password(node_id,supplied)
         return supplied
     saved=storage.get_saved_ssh_password(node_id)
     if not saved:
         raise AgentBootstrapError("SSH-пароль не сохранён. Введи его один раз в управлении нодой.")
     return saved
+
+
+def validate_and_store_ssh(node_id: str,password: str) -> dict:
+    """Verify root auth and the stored host fingerprint before persisting secret."""
+    storage.get_node(node_id)
+    job=storage.get_install_job(node_id)
+    if not password:
+        raise AgentBootstrapError("Укажи SSH-пароль root")
+    try:
+        transport,_=vps_install.ssh_open(job["ip"],job["port"],password,job["ssh_fingerprint"])
+    except paramiko.AuthenticationException:
+        raise AgentBootstrapError("SSH: неверный пароль root") from None
+    except (ValueError,socket.timeout,TimeoutError,OSError,paramiko.SSHException):
+        raise AgentBootstrapError("SSH: подключение недоступно или fingerprint сервера изменился") from None
+    else:
+        transport.close()
+    return storage.save_ssh_password(node_id,password)
 
 
 STAGE_DESCRIPTION = {
