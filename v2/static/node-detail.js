@@ -33,6 +33,7 @@ function openNodeWorkspace(id,tab="overview"){
   selectedNodeId=id;
   selectedNodeTab=tab;
   nodeSecuritySnapshot=null;
+  nodeSecuritySettings=null;
   nodeTaskRequest++;
   $("nodes-home").classList.add("hidden");
   $("node-detail").classList.remove("hidden");
@@ -41,7 +42,7 @@ function openNodeWorkspace(id,tab="overview"){
   window.scrollTo({top:0,behavior:"auto"});
 }
 function closeNodeWorkspace(){
-  selectedNodeId=null;nodeSecuritySnapshot=null;nodeTaskRequest++;
+  selectedNodeId=null;nodeSecuritySnapshot=null;nodeSecuritySettings=null;nodeTaskRequest++;
   if(typeof nodeMonitoringSamples!=="undefined"){nodeMonitoringSamples=[];nodeMonitoringLastNode="";}
   $("node-detail").classList.add("hidden");
   $("nodes-home").classList.remove("hidden");
@@ -346,17 +347,15 @@ function bindNodeWorkspace(){
       selectedNodeTab=control.dataset.nodeTab;nodeTaskRequest++;renderNodeWorkspace();
       if(selectedNodeTab==="monitor")return refreshNodeMonitoring(true);
       if(selectedNodeTab==="manage"){loadNodeAgentUpdates();return loadNodeSSHCredentials();}
-      if(selectedNodeTab==="network"){
-        const agent=currentAgent();
-        if(agent.online&&/^1\.(?:[2-9]|[1-9][0-9])\./.test(agent.version||""))
-          return executeNodeTask("baseline.status");
-      }
+      if(selectedNodeTab==="network")return securityReload();
       return;
     }
     if(control.hasAttribute("data-monitor-range"))return setNodeMonitoringRange(control.dataset.monitorRange);
     if(control.hasAttribute("data-node-network-refresh"))return refreshNodeWorkspaceData();
+    if(control.hasAttribute("data-security-refresh"))return securityReload();
+    if(control.hasAttribute("data-security-save"))return saveNodeSecuritySettings(false);
+    if(control.hasAttribute("data-security-apply"))return saveNodeSecuritySettings(true);
     if(control.hasAttribute("data-security-helper"))return prepareNodeSecurity();
-    if(control.hasAttribute("data-security-install"))return installNodeSSHProtection();
     if(control.hasAttribute("data-security-unban"))return unbanNodeSSH(control.dataset.securityUnban);
     if(control.dataset.nodeTask)return executeNodeTask(control.dataset.nodeTask);
     if(control.hasAttribute("data-node-logs")){
