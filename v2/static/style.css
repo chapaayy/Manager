@@ -176,3 +176,39 @@
 .security-foot{margin:16px 0 0;line-height:1.7}
 @media(max-width:1080px){.security-metrics,.security-status-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:600px){.security-metric,.security-status-item{padding:12px}.security-metric strong,.security-status-item strong{font-size:15px}.security-ssh .node-panel-head{align-items:flex-start}.security-history-row small{margin-left:0}.security-ban-row{align-items:flex-start}}
+
+
+/* Configurable per-node network/security profile. */
+.security-settings-panel{padding:22px}
+.security-settings-form{display:grid;gap:12px}
+.security-setting-card{border:1px solid #36363f;border-radius:11px;background:#1d1d22;padding:17px;display:grid;gap:14px}
+.security-setting-head{display:flex;align-items:flex-start;gap:16px;justify-content:space-between}
+.security-setting-head h3{margin:0 0 5px;font-size:14px}
+.security-setting-head p{margin:0;color:#9f9faa;font-size:11px;line-height:1.6;max-width:760px}
+.switch-row{display:flex;align-items:center;gap:8px;font-size:12px;color:#d5d5dc;white-space:nowrap}
+.switch-row input,.check-row input{width:auto;min-height:auto;accent-color:#b8c8ff}
+.security-fields{display:grid;gap:12px}
+.security-three{grid-template-columns:repeat(3,minmax(0,1fr))}
+.security-setting-card textarea{resize:vertical;min-height:74px;font:12px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace}
+.security-log-row{display:grid;grid-template-columns:minmax(160px,1.6fr) minmax(100px,1fr) minmax(90px,.8fr) minmax(100px,.8fr);gap:12px;align-items:end;padding:11px 0;border-top:1px solid #34343c}
+.security-log-row:first-of-type{border-top:0}
+.security-savebar{display:flex;align-items:center;justify-content:space-between;gap:18px;border-top:1px solid #3a3a43;padding-top:17px;margin-top:3px}
+.security-savebar p{margin:5px 0 0}
+.security-sync-line{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:13px}
+.security-sync-line small{color:#93939f}
+.security-upgrade-note{margin-top:16px;border:1px solid #655332;background:#272319;border-radius:10px;padding:14px}
+.security-upgrade-note strong{font-size:12px;color:#ead8ac}
+.security-upgrade-note p{margin:7px 0 11px}
+.security-history{margin-top:15px}
+.security-history summary{cursor:pointer;color:#bdbdc7;font-size:12px}
+@media(max-width:850px){
+  .security-three,.security-log-row{grid-template-columns:1fr 1fr}
+  .security-setting-head,.security-savebar{align-items:flex-start;flex-direction:column}
+}
+@media(max-width:560px){
+  .security-three,.security-log-row{grid-template-columns:1fr}
+  .security-settings-panel{padding:14px}
+  .security-setting-card{padding:13px}
+  .security-savebar .form-buttons{width:100%;display:grid;grid-template-columns:1fr}
+  .security-savebar .btn{width:100%}
+}
