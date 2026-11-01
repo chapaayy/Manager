@@ -254,7 +254,7 @@ async function loadNodeSSHCredentials(){
 function saveNodeSSHCredentials(){
   const id=selectedNodeId,n=currentNode();if(!id||!n)return;
   openModal("SSH-доступ · "+n.code,"ЗАШИФРОВАННО НА MANAGER",
-    '<form><label>Пароль root SSH<input name="password" type="password" required autocomplete="new-password"></label>'+
+    '<form><label>Пароль root SSH <span class="muted">· необязательно, если сохранён</span><input name="password" type="password" autocomplete="new-password" placeholder="Использовать сохранённый пароль"></label>'+
     '<p class="muted small">IP, порт и fingerprint уже сохранены при установке. Пароль шифруется XPPN_DATA_KEY и не показывается обратно.</p>'+
     '<div class="form-buttons"><button type="submit" class="btn primary">Сохранить пароль</button></div></form>',
     async fd=>{await api("/nodes/"+encodeURIComponent(id)+"/ssh-credentials","PUT",{password:fd.get("password")});
