@@ -193,7 +193,7 @@ async function nodeLifecycleModal(id){
     const sharedList=shared.map(n=>'<li>'+esc(n.name)+' <span class="muted small">('+esc(n.uuid)+')</span></li>').join("");
     const issue=data.remnawave_error?
       '<p class="form-feedback error">'+esc(data.remnawave_error)+'</p>':'';
-    const bridgeInfo=blocked?
+    const legacyDependencyInfo=blocked?
       '<p class="form-feedback error">У ноды остались устаревшие локальные связи старой топологии. Их можно удалить отдельно; VPS и Xray не изменятся.</p>':'';
     const profileInfo=!hasRemote?
       '<p class="muted small">В менеджере не сохранены UUID объектов Remnawave. Доступно удаление локальной записи; проверь Remnawave вручную.</p>':
@@ -219,7 +219,7 @@ async function nodeLifecycleModal(id){
     openModal("Удалить "+data.code,"НОДА / REMNAWAVE",
       '<p class="muted small"><strong>'+esc(data.code)+'</strong> · '+esc(data.domain)+'</p>'+
       '<p class="muted small">С VPS ничего не удаляется: Docker, Nginx, сертификаты и агент остаются на сервере.</p>'+
-      existingPhase+issue+bridgeInfo+profileInfo+sharedInfo+
+      existingPhase+issue+legacyDependencyInfo+profileInfo+sharedInfo+
       '<form><label class="check-row"><input type="checkbox" checked disabled> Удалить запись из XPPN Manager</label>'+
       remoteCheckbox+profileCheckbox+sharedConfirm+
       '<label>Подтверждение: введи код '+esc(data.code)+
@@ -767,16 +767,6 @@ function bindEvents(){
     }catch(err){message(err.message,true)}
   });
   $("modal-close").onclick=()=>$("modal").close();
-  $("plan-close").onclick=()=>$("plan-dialog").close();
-  $("plan-dismiss").onclick=()=>$("plan-dialog").close();
-  $("plan-approve").onclick=async()=>{
-    if(!currentPlan||!confirm("Утвердить черновик? Это НЕ применяет изменения к Remnawave или VPS."))return;
-    try{
-      await api("/plans/"+encodeURIComponent(currentPlan.id)+"/approve","POST");
-      $("plan-dialog").close();await refresh();
-      message("Черновик утверждён, но НЕ применён на сервере.");
-    }catch(e){message(e.message,true)}
-  };
   $("new-config").onclick=()=>resetConfig();
   document.querySelectorAll("[data-config-category]").forEach(btn=>btn.addEventListener("click",()=>{
     configCategory=btn.dataset.configCategory;
