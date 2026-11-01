@@ -72,7 +72,7 @@ def test_apply_always_includes_panel_ipv4(ready_node):
     config=state["config"]
     config["firewall"]["extra_allowed_sources"]=["9.9.9.0/24"]
     security_settings.save(ready_node["id"],config,0)
-    job=security_settings.queue_apply(ready_node["id"])
+    job=security_settings.queue_apply(ready_node["id"],1)
     assert job["action"]=="security.settings.apply"
     with storage.connect() as db:
         raw=db.execute("SELECT payload_json FROM manager_agent_jobs WHERE id=?",
@@ -87,7 +87,17 @@ def test_firewall_apply_requires_configured_panel_ipv4(ready_node):
     state=security_settings.get(ready_node["id"])
     security_settings.save(ready_node["id"],state["config"],0)
     with pytest.raises(ValueError,match="IPv4 Remnawave Panel"):
-        security_settings.queue_apply(ready_node["id"])
+        security_settings.queue_apply(ready_node["id"],1)
+
+
+def test_apply_rejects_stale_confirmed_revision(ready_node):
+    first=security_settings.get(ready_node["id"])
+    saved=security_settings.save(ready_node["id"],first["config"],0)
+    changed=saved["config"]
+    changed["fail2ban"]["maxretry"]=4
+    security_settings.save(ready_node["id"],changed,saved["revision"])
+    with pytest.raises(ValueError,match="изменился после подтверждения"):
+        security_settings.queue_apply(ready_node["id"],saved["revision"])
 
 
 def test_agent_security_apply_is_internal_only(ready_node):
