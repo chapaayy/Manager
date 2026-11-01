@@ -150,7 +150,9 @@ function nodeWorkspaceBody(n,a,c){
       '<button class="btn subtle" data-node-repair '+(!online?'disabled':'')+'>Исправить helper</button>'+
       '<button class="btn subtle" data-node-agent-install>Установить / восстановить агент</button>'+
       '<button class="btn subtle" data-node-archive>В архив / вернуть</button>'+
-      '<button class="btn subtle" data-node-remove>Удалить ноду…</button></div></div>';
+      '<button class="btn subtle" data-node-remove>Удалить ноду…</button></div>'+
+      '<div class="node-panel" id="node-agent-updater"><h2>Обновления агента</h2>'+
+      '<p class="muted small">Загружаем версии агента…</p></div></div>';
   }
   return "";
 }
@@ -258,8 +260,11 @@ function bindNodeWorkspace(){
   $("node-detail").addEventListener("click",async e=>{
     const control=e.target.closest("button");if(!control)return;
     if(control.hasAttribute("data-node-back"))return closeNodeWorkspace();
+    if(control.hasAttribute("data-agent-update-now"))return updateNodeAgentNow();
+    if(control.hasAttribute("data-agent-update-refresh"))return loadNodeAgentUpdates();
     if(control.dataset.nodeTab){
       selectedNodeTab=control.dataset.nodeTab;nodeTaskRequest++;renderNodeWorkspace();
+      if(selectedNodeTab==="manage")return loadNodeAgentUpdates();
       if(selectedNodeTab==="network"){
         const agent=currentAgent();
         if(agent.online&&/^1\.(?:[2-9]|[1-9][0-9])\./.test(agent.version||""))
