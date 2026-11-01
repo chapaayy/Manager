@@ -10,6 +10,7 @@ import json
 import re
 import secrets
 import time
+import threading
 import uuid
 from datetime import datetime, timezone
 
@@ -119,7 +120,7 @@ def heartbeat(node_id: str, data: dict) -> dict:
     except Exception:
         # Auto-updates must never interfere with the node's normal heartbeat.
         pass
-    return {"ok":True,"next_poll_seconds":5}
+    return {"ok":True,"next_heartbeat_seconds":storage.monitoring_interval()}
 
 
 def enqueue(node_id: str, action: str, payload: dict | None = None,
@@ -158,6 +159,7 @@ def enqueue(node_id: str, action: str, payload: dict | None = None,
              VALUES(?,?,?,?,?,?,?)""",
              (jid,node_id,action,json.dumps(payload,separators=(",",":")),now,now,now+ttl))
         storage.event(db,"agent.task",node_id,"Queued "+action)
+    _notify(node_id)
     return {"id":jid,"node_id":node_id,"action":action,"status":"queued"}
 
 
@@ -175,11 +177,31 @@ def poll(node_id: str) -> dict:
                           WHERE node_id=? AND status='queued' ORDER BY created_at,id LIMIT 1""",
                        (node_id,)).fetchone()
         if not row:
-            return {"job":None,"next_poll_seconds":5}
+            return {"job":None}
         db.execute("UPDATE manager_agent_jobs SET status='leased',updated_at=? WHERE id=?",
                    (now,row["id"]))
     return {"job":{"id":row["id"],"action":row["action"],
-                   "payload":json.loads(row["payload_json"])},"next_poll_seconds":1}
+                   "payload":json.loads(row["payload_json"])}}
+
+
+
+def long_poll(node_id: str, timeout: float=25.0) -> dict:
+    timeout=max(1.0,min(float(timeout),30.0))
+    deadline=time.monotonic()+timeout
+    while True:
+        result=poll(node_id)
+        if result.get("job") is not None:
+            return result
+        remaining=deadline-time.monotonic()
+        if remaining<=0:
+            return {"job":None}
+        cond=_waiter(node_id)
+        with cond:
+            # Recheck while holding the same condition used by enqueue notifier.
+            result=poll(node_id)
+            if result.get("job") is not None:
+                return result
+            cond.wait(timeout=min(remaining,25.0))
 
 
 def report(node_id: str, body: dict) -> dict:
