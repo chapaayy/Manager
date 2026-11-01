@@ -6,12 +6,12 @@ const esc = value => String(value ?? "").replace(/[&<>"']/g, c => ({
 const icon = name => '<svg><use href="/static/icons.svg#i-'+name+'"></use></svg>';
 const types = {xray:"Xray JSON",nginx:"Nginx",nginx_compose:"Nginx Compose",node_compose:"Remnawave Compose"};
 const titles = {nodes:"Ноды",agents:"Агенты VPS","node-certs":"Сертификаты нод",configs:"Конфигурации",presets:"Пресеты",settings:"Настройки",updates:"Обновления"};
-const labels = {regular:"Обычная",entry:"Входная / мост",exit:"Выходная"};
+const labels = {regular:"Нода",entry:"Нода",exit:"Нода"};
 let csrf = "", currentPage = "nodes", currentConfig = null, configRevision = 0,
-    configBase = "", configDirty = false, currentPreset = null, currentPlan = null,
-    panelProfiles = [], expanded = new Set(), toastTimer = null;
-let state = {panel:{},nodes:[],bridges:[],configs:[],presets:[]};
-let updateDetails = null, updatePolling = null;
+    configBase = "", configDirty = false, currentPreset = null,
+    panelProfiles = [], toastTimer = null;
+let state = {panel:{},settings:{monitor_interval_ms:5000},nodes:[],configs:[],presets:[]};
+let updateDetails = null, updatePolling = null, monitoringTimer = null, monitoringBusy = false;
 let showArchivedNodes=false;
 let configCategory="xray";
 
@@ -62,7 +62,7 @@ async function refresh(){
   if(extra[1].status==="fulfilled")nodeOverviewCerts=extra[1].value.nodes||[];
   state.panel=dashboard.panel;
   state.nodes=dashboard.nodes;
-  state.bridges=dashboard.bridges;
+  state.settings=dashboard.settings||{monitor_interval_ms:5000};
   state.configs=configs;
   state.presets=presets;
   renderNodes();
@@ -70,6 +70,8 @@ async function refresh(){
   renderConfigList();
   renderPresets();
   renderPanel();
+  renderMonitoringSettings();
+  applyMonitoringInterval();
 }
 async function signIn(username,password){
   const result=await api("/auth/login","POST",{username,password});
@@ -120,7 +122,7 @@ async function waitAgentTask(nodeId,jobId){
       if(result.status!=="done")throw Error(result.error||"Агент не выполнил задачу");
       return result.result;
     }
-    await new Promise(resolve=>setTimeout(resolve,2000));
+    await new Promise(resolve=>setTimeout(resolve,i<25?200:500));
   }
   throw Error("Агент ещё выполняет задачу. Результат будет доступен в истории заданий.");
 }
