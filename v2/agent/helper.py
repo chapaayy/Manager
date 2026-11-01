@@ -273,12 +273,9 @@ def install_ssh_protection(data):
     if not data.get("confirmed") is True:
         fail("explicit confirmation required")
     # Deployment is a task, not a blocking apt job. Observe through baseline.status.
-    state=Path("/var/lib/node-manager/ssh-protection.state")
-    if state.is_file() and not state.is_symlink() and state.read_text().strip()=="installing-packages":
-        fail("SSH protection setup already in progress")
     if _inspect(["systemctl","is-active","fail2ban.service"])=="active" and _inspect(["fail2ban-client","status","sshd"]):
         return {"scheduled":False,"already_protected":True}
-    run(["systemd-run","--collect","--unit=xppn-ssh-protection",
+    run(["systemd-run","--collect","--unit=xppn-ssh-protection-"+os.urandom(4).hex(),
          "--on-active=2s",str(script),admin],timeout=12,limit=1200)
     return {"scheduled":True,"message":"SSH-only Fail2Ban installation scheduled"}
 
