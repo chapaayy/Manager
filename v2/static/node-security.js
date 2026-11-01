@@ -216,14 +216,17 @@ async function saveNodeSecuritySettings(applyNow=false){
   const id=selectedNodeId;if(!id||!nodeSecuritySettings)return;
   try{
     const config=collectSecuritySettings();
+    if(applyNow){
+      if(!securityVersionAtLeast(currentAgent().version))throw new Error("Сначала обнови Agent до 1.7.0 или новее");
+      if(nodeSecuritySnapshot?.security_settings_supported!==true)throw new Error("Сначала подготовь новый helper для этой VPS");
+      if(!confirm("Сохранить и применить этот профиль сети и защиты на "+currentNode().code+"?"))return;
+    }
     nodeSecuritySettings=await api("/nodes/"+encodeURIComponent(id)+"/security-settings","PUT",
       {config,revision:nodeSecuritySettings.revision});
     const box=$("security-settings-panel");if(box)box.innerHTML=securitySettingsEditor(currentNode(),currentAgent());
     if(!applyNow){message("Профиль сети и защиты сохранён. VPS не изменялась.");return}
-    if(!securityVersionAtLeast(currentAgent().version))throw new Error("Сначала обнови Agent до 1.7.0 или новее");
-    if(nodeSecuritySnapshot?.security_settings_supported!==true)throw new Error("Сначала подготовь новый helper для этой VPS");
-    if(!confirm("Применить сохранённый профиль сети и защиты на "+currentNode().code+"?"))return;
-    const job=await api("/nodes/"+encodeURIComponent(id)+"/security-settings/apply","POST",{confirmed:true});
+    const job=await api("/nodes/"+encodeURIComponent(id)+"/security-settings/apply","POST",
+      {confirmed:true,revision:nodeSecuritySettings.revision});
     message("Настройки отправлены Agent. Проверяем результат…");
     await waitAgentTask(id,job.id);
     await securityReload();
