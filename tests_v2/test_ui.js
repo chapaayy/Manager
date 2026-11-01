@@ -8,7 +8,9 @@ const css=fs.readFileSync("v2/static/style.css","utf8");
 new vm.Script(js);
 const nodeDetail=fs.readFileSync("v2/static/node-detail.js","utf8");
 const nodeSecurity=fs.readFileSync("v2/static/node-security.js","utf8");
+const nodeMonitoring=fs.readFileSync("v2/static/node-monitoring.js","utf8");
 new vm.Script(nodeSecurity);
+new vm.Script(nodeMonitoring);
 new vm.Script(nodeDetail);
 const vps=fs.readFileSync("v2/static/vps.js","utf8");
 new vm.Script(vps);
@@ -24,7 +26,7 @@ for(const id of [
   assert(unique.has(id),"Required UI element: "+id);
 }
 assert.match(html,/\/static\/icons\.svg/);
-assert.match(html,/\/static\/app\.js\?v=2\.8\.0/);
+assert.match(html,/\/static\/app\.js\?v=2\.9\.0/);
 assert.match(css,/\.sidebar\.collapsed/);
 assert.match(css,/\.workspace\{flex:1;min-width:0;width:0/);
 assert.match(css,/prefers-reduced-motion/);
@@ -56,8 +58,14 @@ assert.doesNotMatch(html,/data-page="agents"/,"No Agents sidebar item");
 assert.doesNotMatch(html,/data-page="node-certs"/,"No TLS sidebar item");
 assert.match(html,/id="node-detail"/,"Node detail in Nodes page");
 assert.match(nodeDetail,/function openNodeWorkspace/,"Unified node workspace");
-assert.match(html,/node-security[.]js[?]v=1[.]0[.]0/,"Security dashboard asset loaded");
+assert.match(html,/node-security[.]js[?]v=1[.]1[.]0/,"Security dashboard asset loaded");
+assert.match(html,/node-monitoring[.]js[?]v=1[.]0[.]0/,"Monitoring dashboard asset loaded");
 assert.match(nodeSecurity,/function securityNetworkBody/,"Network page uses compact security layout");
+assert.match(nodeDetail,/monitor:"Мониторинг"/,"Node has dedicated Monitoring tab");
+assert.match(nodeMonitoring,/function refreshNodeMonitoring/,"Monitoring tab has incremental live refresh");
+assert.match(nodeMonitoring,/function drawMonitoringChart/,"Monitoring tab renders SVG charts");
+assert.match(js,/selectedNodeTab==="monitor"/,"Fast interval only refreshes Monitoring tab");
+assert.doesNotMatch(js,/if\(selectedNodeId\)\{\s*await refreshNodeWorkspaceData/,"Fast timer must not rerender management tabs");
 assert.match(nodeSecurity,/function installNodeSSHProtection/,"Confirmed SSH-only install wizard exists");
 assert.match(nodeSecurity,/function unbanNodeSSH/,"Unban action requires confirmation");
 
