@@ -20,12 +20,13 @@ import (
     "os/exec"
     "strconv"
     "strings"
+    "sync"
     "sync/atomic"
     "syscall"
     "time"
 )
 
-const Version = "1.5.0"
+const Version = "1.6.0"
 const MaxBody = 160000
 const Helper = "/usr/local/libexec/node-manager-helper"
 
@@ -77,11 +78,51 @@ func (a *Agent) send(ctx context.Context, method, route string, request interfac
 
 // Read lightweight kernel counters. These are cumulative, not Mbps samples.
 // Use the default-route interface to avoid counting docker/veth traffic twice.
+var metricsSampleMu sync.Mutex
+
 var lastNetSample struct {
     iface string
     rx uint64
     tx uint64
     when time.Time
+}
+
+var lastCPUSample struct {
+    total uint64
+    idle uint64
+    valid bool
+}
+
+func addCPUUsage(status map[string]interface{}) {
+    raw,err:=os.ReadFile("/proc/stat")
+    if err!=nil{return}
+    line:=strings.SplitN(string(raw),"\n",2)[0]
+    fields:=strings.Fields(line)
+    if len(fields)<5 || fields[0]!="cpu"{return}
+    values:=make([]uint64,0,len(fields)-1)
+    for _,part:=range fields[1:]{
+        value,e:=strconv.ParseUint(part,10,64)
+        if e!=nil{return}
+        values=append(values,value)
+    }
+    var total uint64
+    for _,value:=range values{total+=value}
+    idle:=values[3]
+    if len(values)>4{idle+=values[4]}
+    metricsSampleMu.Lock()
+    defer metricsSampleMu.Unlock()
+    if lastCPUSample.valid && total>lastCPUSample.total {
+        totalDelta:=total-lastCPUSample.total
+        idleDelta:=uint64(0)
+        if idle>=lastCPUSample.idle{idleDelta=idle-lastCPUSample.idle}
+        used:=float64(totalDelta-idleDelta)*100/float64(totalDelta)
+        if used<0{used=0}
+        if used>100{used=100}
+        status["cpu_percent"]=used
+    }
+    lastCPUSample.total=total
+    lastCPUSample.idle=idle
+    lastCPUSample.valid=true
 }
 
 func addNetworkCounters(status map[string]interface{}) {
@@ -107,8 +148,9 @@ func addNetworkCounters(status map[string]interface{}) {
                     tx,txErr:=strconv.ParseUint(nums[8],10,64)
                     now:=time.Now()
                     if rxErr==nil && txErr==nil {
+                        metricsSampleMu.Lock()
                         elapsed:=now.Sub(lastNetSample.when).Seconds()
-                        if lastNetSample.iface==iface && elapsed>1 && rx>=lastNetSample.rx && tx>=lastNetSample.tx {
+                        if lastNetSample.iface==iface && elapsed>0.5 && rx>=lastNetSample.rx && tx>=lastNetSample.tx {
                             status["net_rx_mbps"]=float64(rx-lastNetSample.rx)*8/elapsed/1000000
                             status["net_tx_mbps"]=float64(tx-lastNetSample.tx)*8/elapsed/1000000
                         }
@@ -116,6 +158,7 @@ func addNetworkCounters(status map[string]interface{}) {
                         lastNetSample.rx=rx
                         lastNetSample.tx=tx
                         lastNetSample.when=now
+                        metricsSampleMu.Unlock()
                     }
                     for key,index:=range map[string]int{
                         "net_rx_bytes":0,"net_rx_dropped":3,
@@ -171,6 +214,7 @@ func systemStatus() map[string]interface{} {
         status["disk_available_bytes"]=fs.Bavail*uint64(fs.Bsize)
     }
     status["architecture"]=runtime.GOARCH
+    addCPUUsage(status)
     addNetworkCounters(status)
     return status
 }
