@@ -112,6 +112,44 @@
 .vps-dialog #vps-preset-description{line-height:1.7;padding:10px 12px;background:#202026;border:1px solid #404049;border-radius:8px;margin-top:-6px}
 @media(max-width:620px){.config-category-tabs{width:100%}.config-category-tab{flex:1;padding:10px 8px}}
 
+
+
+/* Dedicated per-node Monitoring tab. Fast refresh updates only these elements. */
+.node-monitoring{display:grid;gap:14px}
+.monitor-head{margin-bottom:0}
+.monitor-head .node-panel-head{align-items:flex-start}
+.monitor-head .node-panel-head>div:first-child{min-width:220px}
+.monitor-head h2{margin-bottom:4px}
+.monitor-head p{margin:0}
+.monitor-range{display:flex;gap:7px;flex-wrap:wrap;margin-left:auto}
+.monitor-range .btn.active{background:#303038;border-color:#5b5b66;color:#fff}
+.monitor-live-line{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px}
+.monitor-kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}
+.monitor-kpi{min-width:0;border:1px solid #34343d;border-radius:11px;background:#1d1d22;padding:16px;display:flex;flex-direction:column;gap:7px}
+.monitor-kpi small{font-size:10px;color:#9e9eaa;text-transform:uppercase;letter-spacing:.06em}
+.monitor-kpi strong{font-size:18px;line-height:1.2;overflow-wrap:anywhere}
+.monitor-kpi span{font-size:11px;color:#9797a3;min-height:16px}
+.monitor-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.monitor-chart-card{margin-bottom:0;padding:18px}
+.monitor-chart-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:9px}
+.monitor-chart-head h3{font-size:13px;margin:0 0 3px}
+.monitor-chart-head span{font-size:10px;color:#9999a5}
+.monitor-chart{position:relative;min-height:245px;border-radius:8px;background:#111115;border:1px solid #2f2f37;overflow:hidden}
+.monitor-chart svg{display:block;width:100%;height:auto;min-height:220px}
+.monitor-chart-empty{min-height:245px;display:grid;place-items:center;color:#777785;font-size:11px}
+.monitor-grid-line{stroke:#2c2c34;stroke-width:1;vector-effect:non-scaling-stroke}
+.monitor-axis-label,.monitor-axis-time{fill:#777784;font:10px Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
+.monitor-line{fill:none;stroke-width:2.2;vector-effect:non-scaling-stroke;stroke-linecap:round;stroke-linejoin:round}
+.monitor-line.series-a,.monitor-legend .series-a{stroke:#8ab4ff;background:#8ab4ff}
+.monitor-line.series-b,.monitor-legend .series-b{stroke:#77d9ad;background:#77d9ad}
+.monitor-line.series-c,.monitor-legend .series-c{stroke:#d2a6ff;background:#d2a6ff}
+.monitor-legend{position:absolute;left:58px;top:10px;display:flex;gap:12px;flex-wrap:wrap;padding:5px 7px;border-radius:7px;background:rgba(17,17,21,.8);font-size:9px;color:#b5b5bf;pointer-events:none}
+.monitor-legend span{display:flex;align-items:center;gap:5px}
+.monitor-legend i{width:13px;height:2px;display:inline-block;border-radius:2px}
+@media(max-width:1250px){.monitor-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:900px){.monitor-grid{grid-template-columns:1fr}.monitor-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:560px){.monitor-kpis{grid-template-columns:1fr}.monitor-range{margin-left:0}.monitor-chart-card{padding:12px}.monitor-legend{left:48px}.monitor-axis-label,.monitor-axis-time{font-size:9px}}
+
 /* Node network and SSH protection: dense, full width, dark-neutral. */
 .security-workspace{display:grid;grid-template-columns:minmax(0,1fr);gap:14px}
 .security-workspace>.node-panel{margin-bottom:0}
