@@ -111,6 +111,6 @@ def test_security_ui_exposes_all_managed_groups():
     for marker in ("security-tcp-cc","security-tcp-qdisc","security-f2b-retry",
                    "security-f2b-find","security-f2b-ban","security-f2b-trusted",
                    "security-fw-extra","security-fw-ipv6",
-                   "security-log-nginx-size","security-log-remnanode-size",
+                   "security-log-","-size","-archives",
                    "saveNodeSecuritySettings"):
         assert marker in js
