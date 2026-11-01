@@ -54,8 +54,6 @@ def manual(node_id:str,*,confirmed:bool,password:str="")->dict:
         raise UpdateError("Подтверди обновление агента")
     result=_require_upgrade(node_id)
     if not result["supports_self_update"]:
-        if not password:
-            raise UpdateError("Для первого обновления старого агента нужен SSH-пароль root")
         from . import agent_bootstrap
         outcome=agent_bootstrap.upgrade_existing(node_id,password,True)
         return {**outcome,"mode":"one-time-ssh","latest_version":result["latest_version"]}
