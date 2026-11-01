@@ -551,8 +551,8 @@ def agent_heartbeat(body: AgentHeartbeatData, node_id=Depends(agent_required)):
 
 
 @app.get("/api/agent/v1/pull")
-def agent_pull(node_id=Depends(agent_required)):
-    return agent_transport.long_poll(node_id,25)
+async def agent_pull(node_id=Depends(agent_required)):
+    return await agent_transport.long_poll(node_id,25)
 
 
 @app.post("/api/agent/v1/report")
