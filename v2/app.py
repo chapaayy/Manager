@@ -178,7 +178,7 @@ class NodeData(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     country: str
     domain: str
-    role: str = Field(pattern=r"^(regular|entry|exit)$")
+    role: str = Field(default="regular",pattern=r"^regular$")
 
 
 class VpsProbeData(BaseModel):
@@ -201,7 +201,7 @@ class VpsInstallData(VpsProbeData):
     code: str = Field(min_length=2,max_length=20)
     name: str = Field(min_length=3,max_length=80)
     country: str = Field(pattern=r"^[A-Za-z]{2}$")
-    role: str = Field(pattern=r"^(regular|exit|entry)$")
+    role: str = Field(default="regular",pattern=r"^regular$")
     preset_id: str | None = Field(default=None,max_length=64)
     fingerprint: str
     confirm_clean: bool = False
@@ -300,9 +300,57 @@ def dashboard(_=Depends(read_access)):
     return {
         "panel": storage.get_panel(),
         "nodes": storage.list_nodes(),
-        "bridges": storage.list_bridges(),
+        "bridges": [],
         "phase": "preview-only",
     }
+
+
+class MonitoringSettingsData(BaseModel):
+    interval: float
+
+
+class NodeSSHCredentialData(BaseModel):
+    password: str = Field(min_length=1,max_length=512)
+
+
+@app.get("/api/settings/monitoring")
+def monitoring_settings(_=Depends(read_access)):
+    return {"interval":storage.monitoring_interval()}
+
+
+@app.put("/api/settings/monitoring")
+def update_monitoring_settings(body: MonitoringSettingsData,_=Depends(write_access)):
+    try:
+        return storage.set_monitoring_interval(body.interval)
+    except ValueError as exc:
+        raise HTTPException(422,str(exc)) from None
+
+
+@app.get("/api/nodes/{node_id}/ssh-credentials")
+def get_node_ssh_credentials(node_id:str,_=Depends(read_access)):
+    try:return storage.node_ssh_credentials(node_id)
+    except LookupError as exc:raise HTTPException(404,str(exc)) from None
+
+
+@app.put("/api/nodes/{node_id}/ssh-credentials")
+def put_node_ssh_credentials(node_id:str,body:NodeSSHCredentialData,_=Depends(write_access)):
+    try:
+        storage.save_node_ssh_password(node_id,body.password)
+        return storage.node_ssh_credentials(node_id)
+    except (LookupError,ValueError) as exc:
+        raise HTTPException(422,str(exc)) from None
+
+
+@app.delete("/api/nodes/{node_id}/ssh-credentials")
+def delete_node_ssh_credentials(node_id:str,_=Depends(write_access)):
+    try:return storage.clear_node_ssh_password(node_id)
+    except LookupError as exc:raise HTTPException(404,str(exc)) from None
+
+
+def _node_password(node_id:str,supplied:str="")->str:
+    if supplied:return supplied
+    try:return storage.node_ssh_credentials(node_id,include_secret=True).get("password","")
+    except LookupError:return ""
 
 
 @app.put("/api/panel")
@@ -470,7 +518,7 @@ class AgentTaskData(BaseModel):
 
 
 class AgentBootstrapData(BaseModel):
-    password: str = Field(min_length=1,max_length=512)
+    password: str = Field(default="",max_length=512)
     confirm_ssh_migration: bool = False
 
 
@@ -504,7 +552,7 @@ def agent_heartbeat(body: AgentHeartbeatData, node_id=Depends(agent_required)):
 
 @app.get("/api/agent/v1/pull")
 def agent_pull(node_id=Depends(agent_required)):
-    return agent_transport.poll(node_id)
+    return agent_transport.long_poll(node_id,25)
 
 
 @app.post("/api/agent/v1/report")
@@ -543,7 +591,7 @@ def agent_set_auto(node_id: str, body: AgentAutoUpdateData,
 def agent_start_update(node_id: str, body: AgentUpdateData,
                        _=Depends(write_access)):
     try:
-        return agent_updates.manual(node_id,confirmed=body.confirmed,password=body.password)
+        return agent_updates.manual(node_id,confirmed=body.confirmed,password=_node_password(node_id,body.password))
     except (LookupError,agent_updates.UpdateError,agent_bootstrap.AgentBootstrapError) as exc:
         raise HTTPException(422,str(exc)) from None
 
@@ -567,7 +615,7 @@ def agent_binary(arch: str, node_id=Depends(agent_required)):
 @app.post("/api/agents/{node_id}/bootstrap")
 def bootstrap_agent(node_id: str,body: AgentBootstrapData,_=Depends(write_access)):
     try:
-        return agent_bootstrap.install_existing(node_id,body.password,body.confirm_ssh_migration)
+        return agent_bootstrap.install_existing(node_id,_node_password(node_id,body.password),body.confirm_ssh_migration)
     except (LookupError,ValueError) as e:
         raise HTTPException(422,str(e)) from None
     except Exception:
@@ -579,7 +627,7 @@ def repair_agent_helper(node_id: str, body: AgentBootstrapData, _=Depends(write_
     """One-time recovery for the first agent install's broken sudo sandbox."""
     try:
         return agent_bootstrap.repair_existing(
-            node_id,body.password,body.confirm_ssh_migration)
+            node_id,_node_password(node_id,body.password),body.confirm_ssh_migration)
     except (LookupError,agent_bootstrap.AgentBootstrapError,ValueError) as e:
         raise HTTPException(422,str(e)) from None
     except Exception:
@@ -589,7 +637,7 @@ def repair_agent_helper(node_id: str, body: AgentBootstrapData, _=Depends(write_
 
 
 class SSHProtectionHelperData(BaseModel):
-    password: str = Field(min_length=1,max_length=512)
+    password: str = Field(default="",max_length=512)
     confirmed: bool = False
 
 
@@ -607,7 +655,7 @@ class SSHProtectionUnbanData(BaseModel):
 def ssh_protection_helper(node_id: str, body: SSHProtectionHelperData,
                           _=Depends(write_access)):
     try:
-        return agent_bootstrap.enable_ssh_security(node_id,body.password,body.confirmed)
+        return agent_bootstrap.enable_ssh_security(node_id,_node_password(node_id,body.password),body.confirmed)
     except (LookupError,agent_bootstrap.AgentBootstrapError,ValueError) as exc:
         raise HTTPException(422,str(exc)) from None
 
