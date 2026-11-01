@@ -77,6 +77,7 @@ def install_on_transport(transport: paramiko.Transport, node_id: str) -> dict:
             "agent-helper.py": (ROOT/"helper.py").read_bytes(),
             "install.sh": (ROOT/"install-agent.sh").read_bytes(),
             "agent-uninstall.sh": (ROOT/"uninstall-agent.sh").read_bytes(),
+            "agent-updater.sh": (ROOT/"agent-updater.sh").read_bytes(),
         }
     except (OSError, ValueError):
         raise AgentBootstrapError("В образе менеджера отсутствуют файлы агента. "
@@ -221,3 +222,62 @@ def repair_existing(node_id: str, password: str, confirmed: bool) -> dict:
         return {"node_id":node_id,"repaired":True,"credentials_unchanged":True}
     finally:
         transport.close()
+
+
+def upgrade_existing(node_id:str,password:str,confirmed:bool)->dict:
+    """One-time SSH migration of existing v1.2 agent; preserve its token/env."""
+    if not confirmed:
+        raise AgentBootstrapError("Подтверди однократное SSH-обновление агента")
+    node=storage.get_node(node_id)
+    if node["status"]!="ready":
+        raise AgentBootstrapError("Нода не установлена")
+    job=storage.get_install_job(node_id)
+    agent=next((x for x in agent_transport.nodes_status() if x["id"]==node_id),None)
+    if not agent or not agent["online"] or agent["revoked"]:
+        raise AgentBootstrapError("Требуется работающий зарегистрированный агент")
+    try:
+        t,_=vps_install.ssh_open(job["ip"],job["port"],password,job["ssh_fingerprint"])
+    except paramiko.AuthenticationException:
+        raise AgentBootstrapError("Неверный SSH пароль root") from None
+    except (ValueError,socket.timeout,TimeoutError,OSError,paramiko.SSHException) as exc:
+        raise AgentBootstrapError("SSH обновление недоступно: проверь доступ и fingerprint VPS") from None
+    try:
+        try:
+            vps_install.verify_existing_install(t,vps_install.Endpoint(node["code"],node["domain"],node["country"]))
+        except ValueError:
+            raise AgentBootstrapError("Существующая VPS не прошла проверку целостности") from None
+        arch=vps_install.run_command(t,"uname -m",timeout=10).strip()
+        binary_name={"x86_64":"agent-amd64","aarch64":"agent-arm64"}.get(arch)
+        if not binary_name:
+            raise AgentBootstrapError("Неподдерживаемая архитектура VPS")
+        try:
+            files={"agent-binary":(ROOT/binary_name).read_bytes(),
+                   "agent-helper.py":(ROOT/"helper.py").read_bytes(),
+                   "agent-updater.sh":(ROOT/"agent-updater.sh").read_bytes(),
+                   "upgrade.sh":(ROOT/"upgrade-agent.sh").read_bytes()}
+        except OSError:
+            raise AgentBootstrapError("В Manager отсутствуют файлы новой версии агента") from None
+        if any(not item or len(item)>14000000 for item in files.values()):
+            raise AgentBootstrapError("Некорректные файлы обновления агента")
+        vps_install.run_command(t,"mkdir -p -m 0700 /root/.node-manager-agent-upgrade",timeout=12)
+        client=paramiko.SFTPClient.from_transport(t)
+        try:
+            for filename,contents in files.items():
+                with client.file("/root/.node-manager-agent-upgrade/"+filename,"wb") as dest:
+                    dest.write(contents)
+                client.chmod("/root/.node-manager-agent-upgrade/"+filename,0o600)
+        finally:
+            client.close()
+        try:
+            result=vps_install.run_command(
+                t,"bash /root/.node-manager-agent-upgrade/upgrade.sh",
+                timeout=90,max_bytes=1000)
+            if "AGENT_UPGRADE:restarted" not in result:
+                raise AgentBootstrapError("Не подтверждён запуск обновлённого агента")
+        except (RuntimeError,TimeoutError,OSError,ValueError):
+            raise AgentBootstrapError("Не удалось обновить агент; проверь systemd node-manager-agent. "
+                                     "Резервные копии сохранены на VPS") from None
+        return {"node_id":node_id,"upgraded":True,"credentials_unchanged":True,
+                "pending_heartbeat":True}
+    finally:
+        t.close()
