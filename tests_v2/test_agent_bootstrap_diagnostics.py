@@ -42,7 +42,7 @@ def test_bad_ssh_password_is_not_leaked(existing_node,monkeypatch):
 def test_remote_script_failure_has_concrete_stage_without_shell_logs(existing_node,tmp_path,monkeypatch):
     root=tmp_path/"agent"
     root.mkdir()
-    for name in ("agent-amd64","helper.py","install-agent.sh","uninstall-agent.sh"):
+    for name in ("agent-amd64","helper.py","install-agent.sh","uninstall-agent.sh","agent-updater.sh"):
         (root/name).write_bytes(b"test content")
     monkeypatch.setattr(agent_bootstrap,"ROOT",root)
     monkeypatch.setattr(agent_bootstrap,"manager_url",lambda:"https://manager.example.org")
