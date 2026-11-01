@@ -178,6 +178,13 @@ def init_db():
             kind TEXT NOT NULL,
             PRIMARY KEY(preset_id,kind)
         );
+        CREATE TABLE IF NOT EXISTS node_config_choices (
+            node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+            kind TEXT NOT NULL CHECK(kind IN ('xray','nginx','nginx_compose','node_compose')),
+            config_id TEXT NOT NULL REFERENCES library_configs(id) ON DELETE RESTRICT,
+            updated_at INTEGER NOT NULL,
+            PRIMARY KEY(node_id,kind)
+        );
         CREATE TABLE IF NOT EXISTS events (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             time INTEGER NOT NULL,
@@ -470,6 +477,42 @@ def get_install_job(node_id: str) -> dict:
     secret=result.pop("ssh_password_enc","")
     result["has_saved_ssh_password"]=bool(secret)
     return result
+
+
+def get_node_config_choices(node_id: str) -> dict:
+    get_node(node_id)
+    with connect() as c:
+        rows=c.execute("""SELECT x.kind,x.config_id,c.name,c.revision
+                          FROM node_config_choices x
+                          JOIN library_configs c ON c.id=x.config_id
+                          WHERE x.node_id=? ORDER BY x.kind""",(node_id,)).fetchall()
+    return {"node_id":node_id,"choices":{r["kind"]:{
+        "config_id":r["config_id"],"name":r["name"],"revision":r["revision"]}
+        for r in rows}}
+
+
+def set_node_config_choices(node_id: str, choices: dict) -> dict:
+    get_node(node_id)
+    allowed={"xray","nginx","nginx_compose","node_compose"}
+    if not isinstance(choices,dict) or set(choices)-allowed:
+        raise ValueError("Некорректный выбор конфигураций")
+    with transaction() as c:
+        for kind,config_id in choices.items():
+            if config_id in (None,""):
+                c.execute("DELETE FROM node_config_choices WHERE node_id=? AND kind=?",(node_id,kind))
+                continue
+            row=c.execute("SELECT kind FROM library_configs WHERE id=?",(config_id,)).fetchone()
+            if not row:
+                raise LookupError("Конфигурация не найдена")
+            if row["kind"]!=kind:
+                raise ValueError("Тип выбранной конфигурации не совпадает")
+            c.execute("""INSERT INTO node_config_choices(node_id,kind,config_id,updated_at)
+                         VALUES(?,?,?,?)
+                         ON CONFLICT(node_id,kind) DO UPDATE SET
+                           config_id=excluded.config_id,updated_at=excluded.updated_at""",
+                      (node_id,kind,config_id,int(time.time())))
+        event(c,"node.config.select",node_id,"Updated independent config choices")
+    return get_node_config_choices(node_id)
 
 
 def save_ssh_password(node_id: str, password: str) -> dict:
