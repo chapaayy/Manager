@@ -30,7 +30,8 @@ ACTIONS = {"docker.status", "docker.logs", "docker.restart",
            "service.status", "service.restart", "logs.read", "cert.status",
            "config.read", "config.apply", "baseline.status", "agent.update",
            "node.cleanup", "node.cleanup.finish",
-           "security.fail2ban.install","security.fail2ban.unban"}
+           "security.fail2ban.install","security.fail2ban.unban",
+           "security.settings.apply"}
 
 
 def fail(message):
@@ -291,11 +292,433 @@ def unban_ssh_ip(data):
     return {"unbanned":ip}
 
 
+def _security_bool(value, name):
+    if not isinstance(value, bool):
+        fail(name + " must be boolean")
+    return value
+
+
+def _security_int(value, name, minimum, maximum, allow_minus_one=False):
+    if isinstance(value, bool) or not isinstance(value, int):
+        fail(name + " must be integer")
+    if allow_minus_one and value == -1:
+        return value
+    if not minimum <= value <= maximum:
+        fail(name + " out of range")
+    return value
+
+
+def _security_networks(value, name, limit=32):
+    if not isinstance(value, list) or len(value) > limit:
+        fail(name + " invalid")
+    result=[]
+    for item in value:
+        if not isinstance(item,str) or len(item)>80:
+            fail(name + " invalid")
+        try:
+            network=ipaddress.ip_network(item.strip(),strict=False)
+        except ValueError:
+            fail(name + " invalid")
+        canonical=str(network)
+        if canonical not in result:
+            result.append(canonical)
+    return result
+
+
+def _replace_root_file(path, content, mode=0o644):
+    if path.is_symlink():
+        fail("managed file unexpectedly linked")
+    data=content.encode("utf-8") if isinstance(content,str) else content
+    path.parent.mkdir(parents=True,exist_ok=True)
+    fd,tmp=tempfile.mkstemp(prefix=".xppn-",dir=str(path.parent))
+    try:
+        os.fchmod(fd,mode)
+        with os.fdopen(fd,"wb") as stream:
+            stream.write(data);stream.flush();os.fsync(stream.fileno())
+        os.replace(tmp,path)
+        os.chmod(path,mode)
+    finally:
+        try:os.unlink(tmp)
+        except FileNotFoundError:pass
+
+
+def _install_packages(packages):
+    missing=[name for name in packages if shutil.which(name) is None]
+    if not missing:return
+    proc=subprocess.run(
+        ["apt-get","-o","DPkg::Lock::Timeout=60","install","-y","-qq",*packages],
+        stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=150,check=False,
+        env={**os.environ,"DEBIAN_FRONTEND":"noninteractive","NEEDRESTART_MODE":"l"})
+    if proc.returncode:
+        fail("package installation failed")
+
+
+def _apply_tcp_settings(cfg):
+    enabled=_security_bool(cfg.get("enabled"),"tcp.enabled")
+    cc=str(cfg.get("congestion_control","")).strip().lower()
+    qdisc=str(cfg.get("qdisc","")).strip().lower()
+    if cc not in {"bbr","cubic","reno"}:fail("unsupported congestion control")
+    if qdisc not in {"fq","fq_codel"}:fail("unsupported qdisc")
+    managed=Path("/etc/sysctl.d/90-xppn-baseline.conf")
+    previous=Path("/etc/xppn-baseline-previous")
+    current_cc=_inspect(["sysctl","-n","net.ipv4.tcp_congestion_control"]) or ""
+    current_qdisc=_inspect(["sysctl","-n","net.core.default_qdisc"]) or ""
+    if enabled:
+        if shutil.which("modprobe"):
+            if cc=="bbr":subprocess.run(["modprobe","tcp_bbr"],capture_output=True,timeout=8)
+            if qdisc=="fq":subprocess.run(["modprobe","sch_fq"],capture_output=True,timeout=8)
+            if qdisc=="fq_codel":subprocess.run(["modprobe","sch_fq_codel"],capture_output=True,timeout=8)
+        available=(_inspect(["sysctl","-n","net.ipv4.tcp_available_congestion_control"]) or "").split()
+        if cc not in available:fail("requested congestion control unavailable")
+        if not managed.exists() and current_cc and current_qdisc and not previous.exists():
+            if re.fullmatch(r"[a-z0-9_]+",current_cc) and re.fullmatch(r"[a-z0-9_]+",current_qdisc):
+                _replace_root_file(previous,
+                    "tcp_congestion_control="+current_cc+"\ndefault_qdisc="+current_qdisc+"\n",0o600)
+        old=managed.read_bytes() if managed.is_file() and not managed.is_symlink() else None
+        content=("# Managed by XPPN Manager. Only selected TCP congestion and default qdisc.\n"
+                 "net.core.default_qdisc = "+qdisc+"\n"
+                 "net.ipv4.tcp_congestion_control = "+cc+"\n")
+        _replace_root_file(managed,content,0o644)
+        try:
+            run(["sysctl","-p",str(managed)],timeout=12,limit=1500)
+            if _inspect(["sysctl","-n","net.ipv4.tcp_congestion_control"])!=cc:
+                raise SystemExit(1)
+            if _inspect(["sysctl","-n","net.core.default_qdisc"])!=qdisc:
+                raise SystemExit(1)
+        except SystemExit:
+            if old is None:
+                try:managed.unlink()
+                except FileNotFoundError:pass
+            else:_replace_root_file(managed,old,0o644)
+            if current_cc:subprocess.run(["sysctl","-w","net.ipv4.tcp_congestion_control="+current_cc],capture_output=True,timeout=8)
+            if current_qdisc:subprocess.run(["sysctl","-w","net.core.default_qdisc="+current_qdisc],capture_output=True,timeout=8)
+            fail("tcp settings failed validation")
+    else:
+        if managed.is_symlink():fail("managed sysctl unexpectedly linked")
+        if managed.is_file():managed.unlink()
+        restored=False
+        if previous.is_file() and not previous.is_symlink():
+            values={}
+            for line in previous.read_text("utf-8").splitlines():
+                if "=" in line:
+                    key,value=line.split("=",1)
+                    if key in ("tcp_congestion_control","default_qdisc") and re.fullmatch(r"[a-z0-9_]+",value):
+                        values[key]=value
+            if values.get("tcp_congestion_control"):
+                subprocess.run(["sysctl","-w","net.ipv4.tcp_congestion_control="+values["tcp_congestion_control"]],
+                               capture_output=True,timeout=8)
+                restored=True
+            if values.get("default_qdisc"):
+                subprocess.run(["sysctl","-w","net.core.default_qdisc="+values["default_qdisc"]],
+                               capture_output=True,timeout=8)
+                restored=True
+        return {"enabled":False,"restored_previous":restored}
+    return {"enabled":True,"congestion_control":cc,"qdisc":qdisc}
+
+
+def _ssh_ports():
+    raw=_inspect(["/usr/sbin/sshd","-T"],timeout=8) or ""
+    ports=[]
+    for line in raw.splitlines():
+        parts=line.split()
+        if len(parts)==2 and parts[0]=="port" and parts[1].isdigit():
+            number=int(parts[1])
+            if 1<=number<=65535 and str(number) not in ports:ports.append(str(number))
+    if not ports:fail("ssh port unavailable")
+    return ",".join(ports)
+
+
+def _apply_fail2ban_settings(cfg, panel_ip):
+    enabled=_security_bool(cfg.get("enabled"),"fail2ban.enabled")
+    maxretry=_security_int(cfg.get("maxretry"),"fail2ban.maxretry",1,20)
+    findtime=_security_int(cfg.get("findtime_seconds"),"fail2ban.findtime",60,86400)
+    bantime=_security_int(cfg.get("bantime_seconds"),"fail2ban.bantime",60,604800,True)
+    trusted=_security_networks(cfg.get("trusted_sources",[]),"fail2ban.trusted")
+    conf=Path("/etc/fail2ban/jail.d/90-xppn-sshd.local")
+    marker=Path("/var/lib/node-manager/fail2ban-managed")
+    if not enabled:
+        if conf.is_symlink():fail("managed fail2ban config linked")
+        if conf.is_file():
+            marker.parent.mkdir(parents=True,exist_ok=True)
+            _replace_root_file(marker,"managed\n",0o600)
+            conf.unlink()
+            if shutil.which("fail2ban-client"):
+                subprocess.run(["systemctl","restart","fail2ban.service"],capture_output=True,timeout=20)
+        return {"enabled":False}
+    if shutil.which("fail2ban-client") and not conf.exists() and not marker.exists():
+        fail("existing fail2ban needs review")
+    if shutil.which("fail2ban-client") is None:
+        _install_packages(["fail2ban","python3-systemd"])
+    ports=_ssh_ports()
+    ignore=["127.0.0.1/8","::1"]
+    for item in trusted:
+        if item not in ignore:ignore.append(item)
+    if panel_ip and panel_ip+"/32" not in ignore:ignore.append(panel_ip+"/32")
+    content=("# Managed by XPPN Manager. SSH jail only.\n"
+             "[sshd]\n"
+             "enabled = true\n"
+             "backend = systemd\n"
+             "mode = normal\n"
+             "port = "+ports+"\n"
+             "maxretry = "+str(maxretry)+"\n"
+             "findtime = "+str(findtime)+"\n"
+             "bantime = "+str(bantime)+"\n"
+             "ignoreip = "+" ".join(ignore)+"\n")
+    old=conf.read_bytes() if conf.is_file() and not conf.is_symlink() else None
+    _replace_root_file(conf,content,0o644)
+    marker.parent.mkdir(parents=True,exist_ok=True)
+    _replace_root_file(marker,"managed\n",0o600)
+    test=subprocess.run(["fail2ban-client","-t"],capture_output=True,timeout=20,check=False)
+    if test.returncode:
+        if old is None:
+            try:conf.unlink()
+            except FileNotFoundError:pass
+        else:_replace_root_file(conf,old,0o644)
+        fail("fail2ban configuration invalid")
+    proc=subprocess.run(["systemctl","enable","--now","fail2ban.service"],
+                        capture_output=True,timeout=25,check=False)
+    if proc.returncode:
+        fail("fail2ban service unavailable")
+    run(["fail2ban-client","reload"],timeout=15,limit=2000)
+    if _inspect(["fail2ban-client","status","sshd"],timeout=8) is None:
+        fail("fail2ban ssh jail unavailable")
+    return {"enabled":True,"maxretry":maxretry,"findtime_seconds":findtime,
+            "bantime_seconds":bantime,"trusted_sources":trusted}
+
+
+def _firewall_script(panel_ip, allowed, block_ipv6, enabled):
+    old_panel=panel_ip
+    lines=["#!/usr/bin/env bash","set -Eeuo pipefail",
+           "PORT=2222",
+           "cleanup4(){",
+           " while iptables -C INPUT -p tcp --dport \"$PORT\" -j XPPN_NODE_API4 2>/dev/null; do iptables -D INPUT -p tcp --dport \"$PORT\" -j XPPN_NODE_API4; done",
+           " iptables -F XPPN_NODE_API4 2>/dev/null || true",
+           " iptables -X XPPN_NODE_API4 2>/dev/null || true",
+           "}",
+           "cleanup6(){",
+           " if command -v ip6tables >/dev/null; then",
+           "  while ip6tables -C INPUT -p tcp --dport \"$PORT\" -j XPPN_NODE_API6 2>/dev/null; do ip6tables -D INPUT -p tcp --dport \"$PORT\" -j XPPN_NODE_API6; done",
+           "  ip6tables -F XPPN_NODE_API6 2>/dev/null || true",
+           "  ip6tables -X XPPN_NODE_API6 2>/dev/null || true",
+           " fi",
+           "}",
+           "cleanup4","cleanup6"]
+    if old_panel:
+        lines += [
+          "while iptables -C INPUT -p tcp --dport \"$PORT\" ! -s "+old_panel+" -j DROP 2>/dev/null; do iptables -D INPUT -p tcp --dport \"$PORT\" ! -s "+old_panel+" -j DROP; done",
+          "if command -v ip6tables >/dev/null; then while ip6tables -C INPUT -p tcp --dport \"$PORT\" -j DROP 2>/dev/null; do ip6tables -D INPUT -p tcp --dport \"$PORT\" -j DROP; done; fi"
+        ]
+    if not enabled:return "\n".join(lines)+"\n"
+    ipv4=[];ipv6=[]
+    for source in allowed:
+        network=ipaddress.ip_network(source,strict=False)
+        (ipv4 if network.version==4 else ipv6).append(str(network))
+    lines += ["iptables -N XPPN_NODE_API4"]
+    for source in ipv4:lines.append("iptables -A XPPN_NODE_API4 -s "+source+" -j ACCEPT")
+    lines += ["iptables -A XPPN_NODE_API4 -j DROP",
+              "iptables -I INPUT 1 -p tcp --dport \"$PORT\" -j XPPN_NODE_API4"]
+    if block_ipv6 or ipv6:
+        lines += ["if command -v ip6tables >/dev/null; then",
+                  " ip6tables -N XPPN_NODE_API6"]
+        for source in ipv6:lines.append(" ip6tables -A XPPN_NODE_API6 -s "+source+" -j ACCEPT")
+        lines += [" ip6tables -A XPPN_NODE_API6 -j DROP",
+                  " ip6tables -I INPUT 1 -p tcp --dport \"$PORT\" -j XPPN_NODE_API6",
+                  "fi"]
+    return "\n".join(lines)+"\n"
+
+
+def _apply_firewall_settings(cfg):
+    enabled=_security_bool(cfg.get("enabled"),"firewall.enabled")
+    block_ipv6=_security_bool(cfg.get("block_ipv6"),"firewall.block_ipv6")
+    allowed=_security_networks(cfg.get("allowed_sources",[]),"firewall.allowed")
+    panel_ip=str(cfg.get("panel_ip","")).strip()
+    old_panel=""
+    panel_path=Path("/opt/remnanode/panel-ip")
+    if panel_path.is_file() and not panel_path.is_symlink():
+        old_panel=panel_path.read_text("utf-8").strip()
+    if enabled:
+        try:
+            panel=ipaddress.ip_address(panel_ip)
+        except ValueError:
+            fail("panel ipv4 required")
+        if panel.version!=4 or not panel.is_global:fail("panel ipv4 invalid")
+        if not any(panel in ipaddress.ip_network(item,strict=False) for item in allowed):
+            fail("firewall must allow panel ipv4")
+    else:
+        panel_ip=old_panel if re.fullmatch(r"[0-9.]+",old_panel or "") else ""
+    script_path=Path("/usr/local/sbin/xppn-node-firewall")
+    unit=Path("/etc/systemd/system/xppn-node-firewall.service")
+    script=_firewall_script(old_panel or panel_ip,allowed,block_ipv6,enabled)
+    old_script=script_path.read_bytes() if script_path.is_file() and not script_path.is_symlink() else None
+    _replace_root_file(script_path,script,0o700)
+    _replace_root_file(unit,
+        "[Unit]\nDescription=Restrict Remnawave Node API to allowed sources\n"
+        "Wants=docker.service\nAfter=docker.service\n"
+        "[Service]\nType=oneshot\nExecStart=/usr/local/sbin/xppn-node-firewall\n"
+        "RemainAfterExit=yes\n[Install]\nWantedBy=multi-user.target\n",0o644)
+    run(["systemctl","daemon-reload"],timeout=15,limit=1000)
+    try:
+        run([str(script_path)],timeout=20,limit=1800)
+    except SystemExit:
+        if old_script is not None:
+            _replace_root_file(script_path,old_script,0o700)
+            try:run([str(script_path)],timeout=20,limit=1800)
+            except SystemExit:pass
+        fail("firewall update failed")
+    if enabled:
+        _replace_root_file(panel_path,panel_ip+"\n",0o600)
+        run(["systemctl","enable","xppn-node-firewall.service"],timeout=15,limit=1000)
+        run(["systemctl","restart","xppn-node-firewall.service"],timeout=20,limit=1000)
+    else:
+        subprocess.run(["systemctl","disable","xppn-node-firewall.service"],
+                       capture_output=True,timeout=15)
+    return {"enabled":enabled,"allowed_sources":allowed,
+            "block_ipv6":block_ipv6,"panel_ip":panel_ip if enabled else ""}
+
+
+def _logrotate_config(path, size_mb, archives, compress):
+    directive="compress" if compress else "nocompress"
+    return (path+" {\n"
+            "    daily\n"
+            "    size "+str(size_mb)+"M\n"
+            "    rotate "+str(archives)+"\n"
+            "    "+directive+"\n"
+            "    missingok\n"
+            "    notifempty\n"
+            "    copytruncate\n"
+            "}\n")
+
+
+def _apply_one_logrotate(cfg, file_path, log_path, name):
+    enabled=_security_bool(cfg.get("enabled"),name+".enabled")
+    size_mb=_security_int(cfg.get("size_mb"),name+".size",1,2048)
+    archives=_security_int(cfg.get("archives"),name+".archives",1,30)
+    compress=_security_bool(cfg.get("compress"),name+".compress")
+    path=Path(file_path)
+    if not enabled:
+        if path.is_symlink():fail("managed logrotate linked")
+        if path.is_file():path.unlink()
+        return {"enabled":False}
+    _install_packages(["logrotate"])
+    old=path.read_bytes() if path.is_file() and not path.is_symlink() else None
+    _replace_root_file(path,_logrotate_config(log_path,size_mb,archives,compress),0o644)
+    proc=subprocess.run(["logrotate","-d",str(path)],capture_output=True,timeout=15,check=False)
+    if proc.returncode:
+        if old is None:
+            try:path.unlink()
+            except FileNotFoundError:pass
+        else:_replace_root_file(path,old,0o644)
+        fail(name+" logrotate invalid")
+    return {"enabled":True,"size_mb":size_mb,"archives":archives,"compress":compress}
+
+
+def _apply_log_settings(cfg):
+    if not isinstance(cfg,dict):fail("logs invalid")
+    nginx=_apply_one_logrotate(cfg.get("nginx",{}),"/etc/logrotate.d/xppn-nginx",
+                               "/opt/nginx/logs/*.log","nginx")
+    node=_apply_one_logrotate(cfg.get("remnanode",{}),"/etc/logrotate.d/xppn-remnanode",
+                              "/var/log/remnanode/*.log","remnanode")
+    if shutil.which("systemctl"):
+        subprocess.run(["systemctl","enable","--now","logrotate.timer"],
+                       capture_output=True,timeout=20)
+    return {"nginx":nginx,"remnanode":node}
+
+
+def apply_security_settings(data):
+    revision=data.get("revision")
+    cfg=data.get("config")
+    if isinstance(revision,bool) or not isinstance(revision,int) or revision<1:
+        fail("invalid security revision")
+    if not isinstance(cfg,dict):fail("invalid security config")
+    for name in ("tcp","fail2ban","firewall","logs"):
+        if not isinstance(cfg.get(name),dict):fail("incomplete security config")
+    firewall_cfg=cfg["firewall"]
+    panel_ip=str(firewall_cfg.get("panel_ip","")).strip()
+    # Validate all user-controlled fields before the first mutation.
+    _security_bool(cfg["tcp"].get("enabled"),"tcp.enabled")
+    if str(cfg["tcp"].get("congestion_control","")).lower() not in {"bbr","cubic","reno"}:
+        fail("unsupported congestion control")
+    if str(cfg["tcp"].get("qdisc","")).lower() not in {"fq","fq_codel"}:
+        fail("unsupported qdisc")
+    _security_bool(cfg["fail2ban"].get("enabled"),"fail2ban.enabled")
+    _security_int(cfg["fail2ban"].get("maxretry"),"fail2ban.maxretry",1,20)
+    _security_int(cfg["fail2ban"].get("findtime_seconds"),"fail2ban.findtime",60,86400)
+    _security_int(cfg["fail2ban"].get("bantime_seconds"),"fail2ban.bantime",60,604800,True)
+    _security_networks(cfg["fail2ban"].get("trusted_sources",[]),"fail2ban.trusted")
+    _security_bool(firewall_cfg.get("enabled"),"firewall.enabled")
+    _security_bool(firewall_cfg.get("block_ipv6"),"firewall.block_ipv6")
+    _security_networks(firewall_cfg.get("allowed_sources",[]),"firewall.allowed")
+    for logname in ("nginx","remnanode"):
+        item=cfg["logs"].get(logname)
+        if not isinstance(item,dict):fail("logs incomplete")
+        _security_bool(item.get("enabled"),logname+".enabled")
+        _security_int(item.get("size_mb"),logname+".size",1,2048)
+        _security_int(item.get("archives"),logname+".archives",1,30)
+        _security_bool(item.get("compress"),logname+".compress")
+    logs=_apply_log_settings(cfg["logs"])
+    fail2ban=_apply_fail2ban_settings(cfg["fail2ban"],panel_ip)
+    tcp=_apply_tcp_settings(cfg["tcp"])
+    firewall=_apply_firewall_settings(firewall_cfg)
+    return {"revision":revision,"applied":True,"tcp":tcp,"fail2ban":fail2ban,
+            "firewall":firewall,"logs":logs}
+
+
+def _active_qdisc():
+    route=_inspect(["ip","-o","route","show","default"],timeout=5) or ""
+    match=re.search(r"(?:^|\s)dev\s+([A-Za-z0-9_.:-]+)",route)
+    if not match:return {"interface":"","qdisc":""}
+    iface=match.group(1)
+    out=_inspect(["tc","qdisc","show","dev",iface],timeout=5) or ""
+    qdisc=""
+    for line in out.splitlines():
+        parts=line.split()
+        if len(parts)>=2 and parts[0]=="qdisc":
+            qdisc=parts[1];break
+    return {"interface":iface,"qdisc":qdisc}
+
+
+def _iptables_has(args):
+    try:
+        return subprocess.run(args,capture_output=True,timeout=5,check=False).returncode==0
+    except (OSError,subprocess.TimeoutExpired):
+        return False
+
+
+def _logrotate_ok(path):
+    target=Path(path)
+    if not target.is_file() or target.is_symlink() or not shutil.which("logrotate"):
+        return False
+    try:
+        return subprocess.run(["logrotate","-d",str(target)],capture_output=True,
+                              timeout=10,check=False).returncode==0
+    except (OSError,subprocess.TimeoutExpired):
+        return False
+
+
+def _directory_log_bytes(path):
+    root=Path(path)
+    total=0
+    if not root.is_dir() or root.is_symlink():return 0
+    try:
+        for item in root.iterdir():
+            if item.is_file() and not item.is_symlink() and item.name.endswith(".log"):
+                total+=min(item.stat().st_size,2**40)
+    except OSError:
+        return 0
+    return total
+
+
+def _f2b_value(field):
+    value=_inspect(["fail2ban-client","get","sshd",field],timeout=6)
+    return value if value is not None else ""
+
+
 def baseline_status():
     """Read-only actual state. Never interpret absent tooling as protection."""
     congestion=_inspect(["sysctl","-n","net.ipv4.tcp_congestion_control"])
     available=_inspect(["sysctl","-n","net.ipv4.tcp_available_congestion_control"])
     qdisc=_inspect(["sysctl","-n","net.core.default_qdisc"])
+    active_qdisc=_active_qdisc()
     rule_file=Path("/etc/sysctl.d/90-xppn-baseline.conf")
     f2b_available=shutil.which("fail2ban-client") is not None
     f2b_active=(_inspect(["systemctl","is-active","fail2ban.service"])=="active")
@@ -303,7 +726,7 @@ def baseline_status():
     banned=None
     if jail:
         hit=re.search(r"Currently banned:\s*(\d+)",jail)
-        if hit: banned=int(hit.group(1))
+        if hit:banned=int(hit.group(1))
     panel=Path("/opt/remnanode/panel-ip")
     panel_ip=panel.read_text().strip() if panel.is_file() and not panel.is_symlink() else ""
     panel_valid=False
@@ -312,12 +735,23 @@ def baseline_status():
     except ValueError:
         pass
     fwall=(_inspect(["systemctl","is-active","xppn-node-firewall.service"])=="active")
-    rule=None
+    fwall_enabled=(_inspect(["systemctl","is-enabled","xppn-node-firewall.service"])=="enabled")
+    custom4=_iptables_has(["iptables","-C","INPUT","-p","tcp","--dport","2222",
+                           "-j","XPPN_NODE_API4"])
+    custom4_drop=_iptables_has(["iptables","-C","XPPN_NODE_API4","-j","DROP"]) if custom4 else False
+    custom4_panel=(_iptables_has(["iptables","-C","XPPN_NODE_API4","-s",panel_ip+"/32",
+                                  "-j","ACCEPT"]) if custom4 and panel_valid else False)
+    legacy=False
     if panel_valid:
-        check=subprocess.run(
-            ["iptables","-C","INPUT","-p","tcp","--dport","2222","!","-s",panel_ip,"-j","DROP"],
-            capture_output=True,timeout=5,check=False)
-        rule=check.returncode==0
+        legacy=_iptables_has(["iptables","-C","INPUT","-p","tcp","--dport","2222",
+                              "!","-s",panel_ip,"-j","DROP"])
+    ipv6=False
+    if shutil.which("ip6tables"):
+        custom6=_iptables_has(["ip6tables","-C","INPUT","-p","tcp","--dport","2222",
+                               "-j","XPPN_NODE_API6"])
+        ipv6=custom6 and _iptables_has(["ip6tables","-C","XPPN_NODE_API6","-j","DROP"])
+        if not ipv6:
+            ipv6=_iptables_has(["ip6tables","-C","INPUT","-p","tcp","--dport","2222","-j","DROP"])
     baseline_history=Path("/var/log/xppn-baseline-status.log")
     events=[]
     if baseline_history.is_file() and not baseline_history.is_symlink():
@@ -335,7 +769,11 @@ def baseline_status():
         except OSError:
             pass
     ssh_security=_ssh_protection() if jail is not None else {"banned_ips":[],"history":[],"banned_count":None}
+    nginx_rotate=_logrotate_ok("/etc/logrotate.d/xppn-nginx")
+    node_rotate=_logrotate_ok("/etc/logrotate.d/xppn-remnanode")
+    rotate_timer=(_inspect(["systemctl","is-active","logrotate.timer"])=="active")
     return {
+        "security_settings_supported":True,
         "security_helper_ready":Path("/usr/local/libexec/node-manager-fail2ban").is_file(),
         "ssh_install_state":current_state,
         **ssh_security,
@@ -343,14 +781,27 @@ def baseline_status():
         "tcp_congestion":congestion,
         "available_congestion":available,
         "default_qdisc":qdisc,
+        "active_qdisc":active_qdisc.get("qdisc",""),
+        "network_interface":active_qdisc.get("interface",""),
         "bbr_config_managed":rule_file.is_file() and not rule_file.is_symlink(),
         "fail2ban_installed":f2b_available,
         "fail2ban_active":f2b_active,
         "sshd_jail_active":jail is not None,
         "sshd_banned_count":banned,
+        "fail2ban_maxretry":_f2b_value("maxretry") if jail else "",
+        "fail2ban_findtime":_f2b_value("findtime") if jail else "",
+        "fail2ban_bantime":_f2b_value("bantime") if jail else "",
+        "fail2ban_ignoreip":_f2b_value("ignoreip") if jail else "",
         "panel_firewall_service_active":fwall,
-        "panel_firewall_ipv4_rule":rule,
-        "nginx_logrotate":Path("/etc/logrotate.d/xppn-nginx").is_file(),
+        "panel_firewall_service_enabled":fwall_enabled,
+        "panel_firewall_ipv4_rule":bool((custom4 and custom4_drop and custom4_panel) or legacy),
+        "panel_firewall_ipv6_rule":ipv6,
+        "panel_firewall_mode":"managed-chain" if custom4 else ("legacy" if legacy else ""),
+        "nginx_logrotate":nginx_rotate,
+        "remnanode_logrotate":node_rotate,
+        "logrotate_timer_active":rotate_timer,
+        "nginx_log_bytes":_directory_log_bytes("/opt/nginx/logs"),
+        "remnanode_log_bytes":_directory_log_bytes("/var/log/remnanode"),
         "read_only":True,
     }
 
@@ -435,6 +886,7 @@ def schedule_agent_update(data):
 def execute(action, data):
     if action=="security.fail2ban.install":return install_ssh_protection(data)
     if action=="security.fail2ban.unban":return unban_ssh_ip(data)
+    if action=="security.settings.apply":return apply_security_settings(data)
     if action=="agent.update":return schedule_agent_update(data)
     if action=="baseline.status":return baseline_status()
     if action=="node.cleanup":return _cleanup_managed(data)
