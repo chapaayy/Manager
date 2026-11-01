@@ -29,7 +29,8 @@ SYSTEMD = {"docker.service", "certbot.timer", "xppn-node-firewall.service"}
 ACTIONS = {"docker.status", "docker.logs", "docker.restart",
            "service.status", "service.restart", "logs.read", "cert.status",
            "config.read", "config.apply", "baseline.status", "agent.update",
-           "node.cleanup", "node.cleanup.finish"}
+           "node.cleanup", "node.cleanup.finish",
+           "security.fail2ban.install","security.fail2ban.unban"}
 
 
 def fail(message):
@@ -222,6 +223,77 @@ def _inspect(args, timeout=5):
         return None
 
 
+def _ssh_protection():
+    """Inspect only the SSH jail. Never expose arbitrary systemd log lines."""
+    raw=_inspect(["fail2ban-client","status","sshd"],timeout=6)
+    ips=[]
+    if raw:
+        m=re.search(r"Banned IP list:\s*([^\r\n]*)",raw)
+        if m:
+            for item in m.group(1).split():
+                try:
+                    if isinstance(ipaddress.ip_address(item),ipaddress.IPv4Address):
+                        ips.append(item)
+                except ValueError:
+                    pass
+    # Deduplicated history extracted only from tagged Fail2Ban journal events.
+    events=[]
+    out=_inspect(["journalctl","-u","fail2ban.service","-n","150","--no-pager","-o","short-iso"],timeout=8)
+    if out:
+        for line in out.splitlines():
+            m=re.search(r"\[sshd\]\s+(Ban|Unban)\s+([0-9.]+)",line)
+            if not m:continue
+            try:
+                if not isinstance(ipaddress.ip_address(m.group(2)),ipaddress.IPv4Address):continue
+            except ValueError:
+                continue
+            events.append({"action":m.group(1).lower(),"ip":m.group(2),
+                           "when":line[:25]})
+    return {"banned_ips":ips[:50],"history":events[-30:],
+            "banned_count":len(ips) if raw else None}
+
+
+def _admin_ipv4(raw):
+    if not isinstance(raw,str) or len(raw)>45:
+        fail("administrator IP required")
+    try:
+        addr=ipaddress.ip_address(raw)
+        if addr.version!=4 or not addr.is_global:
+            fail("administrator IP must be public IPv4")
+    except ValueError:
+        fail("administrator IP invalid")
+    return str(addr)
+
+
+def install_ssh_protection(data):
+    admin=_admin_ipv4(data.get("admin_ip"))
+    script=Path("/usr/local/libexec/node-manager-fail2ban")
+    if not script.is_file() or script.is_symlink():
+        fail("SSH protection installer not deployed")
+    if not data.get("confirmed") is True:
+        fail("explicit confirmation required")
+    # Deployment is a task, not a blocking apt job. Observe through baseline.status.
+    state=Path("/var/lib/node-manager/ssh-protection.state")
+    if state.is_file() and not state.is_symlink() and state.read_text().strip()=="installing-packages":
+        fail("SSH protection setup already in progress")
+    if _inspect(["systemctl","is-active","fail2ban.service"])=="active" and _inspect(["fail2ban-client","status","sshd"]):
+        return {"scheduled":False,"already_protected":True}
+    run(["systemd-run","--collect","--unit=xppn-ssh-protection",
+         "--on-active=2s",str(script),admin],timeout=12,limit=1200)
+    return {"scheduled":True,"message":"SSH-only Fail2Ban installation scheduled"}
+
+
+def unban_ssh_ip(data):
+    if data.get("confirmed") is not True:fail("explicit confirmation required")
+    ip=_admin_ipv4(data.get("ip"))
+    if _inspect(["systemctl","is-active","fail2ban.service"])!="active":
+        fail("fail2ban not active")
+    status=_ssh_protection()
+    if ip not in status["banned_ips"]:fail("IP not in SSH ban list")
+    run(["fail2ban-client","set","sshd","unbanip",ip],timeout=10,limit=240)
+    return {"unbanned":ip}
+
+
 def baseline_status():
     """Read-only actual state. Never interpret absent tooling as protection."""
     congestion=_inspect(["sysctl","-n","net.ipv4.tcp_congestion_control"])
@@ -257,7 +329,19 @@ def baseline_status():
                     if re.fullmatch(r"[a-z0-9-]{3,65}",v)]
         except (OSError,UnicodeError):
             pass
+    install_state=Path("/var/lib/node-manager/ssh-protection.state")
+    current_state=""
+    if install_state.is_file() and not install_state.is_symlink():
+        try:
+            raw=install_state.read_text("utf-8").strip()
+            if re.fullmatch(r"[a-z0-9-]{3,60}",raw):current_state=raw
+        except OSError:
+            pass
+    ssh_security=_ssh_protection() if jail is not None else {"banned_ips":[],"history":[],"banned_count":None}
     return {
+        "security_helper_ready":Path("/usr/local/libexec/node-manager-fail2ban").is_file(),
+        "ssh_install_state":current_state,
+        **ssh_security,
         "baseline_events":events,
         "tcp_congestion":congestion,
         "available_congestion":available,
@@ -352,6 +436,8 @@ def schedule_agent_update(data):
 
 
 def execute(action, data):
+    if action=="security.fail2ban.install":return install_ssh_protection(data)
+    if action=="security.fail2ban.unban":return unban_ssh_ip(data)
     if action=="agent.update":return schedule_agent_update(data)
     if action=="baseline.status":return baseline_status()
     if action=="node.cleanup":return _cleanup_managed(data)
