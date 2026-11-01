@@ -667,6 +667,7 @@ class NodeSecuritySettingsData(BaseModel):
 
 
 class NodeSecurityApplyData(BaseModel):
+    revision: int = Field(ge=1)
     confirmed: bool = False
 
 
@@ -728,7 +729,7 @@ def node_security_settings_apply(node_id: str, body: NodeSecurityApplyData,
     if not body.confirmed:
         raise HTTPException(422,"Подтверди применение настроек сети и защиты")
     try:
-        return security_settings.queue_apply(node_id)
+        return security_settings.queue_apply(node_id,body.revision)
     except LookupError as exc:
         raise HTTPException(404,str(exc)) from None
     except (ValueError,agent_transport.AgentError) as exc:
