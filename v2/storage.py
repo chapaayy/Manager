@@ -75,6 +75,7 @@ def init_db():
             caddy_api_key_enc TEXT NOT NULL DEFAULT '',
             config_profile_uuid TEXT NOT NULL DEFAULT '',
             inbound_uuids_json TEXT NOT NULL DEFAULT '[]',
+            monitor_interval REAL NOT NULL DEFAULT 5,
             updated_at INTEGER NOT NULL DEFAULT 0
         );
         CREATE TABLE IF NOT EXISTS nodes (
@@ -128,6 +129,7 @@ def init_db():
             profile_uuid TEXT NOT NULL DEFAULT '',
             preset_id TEXT NOT NULL DEFAULT '',
             preset_snapshot_enc TEXT NOT NULL DEFAULT '',
+            ssh_password_enc TEXT NOT NULL DEFAULT '',
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL
         );
@@ -189,15 +191,68 @@ def init_db():
         columns = {r["name"] for r in c.execute("PRAGMA table_info(panel)").fetchall()}
         if "caddy_api_key_enc" not in columns:
             c.execute("ALTER TABLE panel ADD COLUMN caddy_api_key_enc TEXT NOT NULL DEFAULT ''")
+        if "monitor_interval" not in columns:
+            c.execute("ALTER TABLE panel ADD COLUMN monitor_interval REAL NOT NULL DEFAULT 5")
         installation_columns={r["name"] for r in c.execute("PRAGMA table_info(node_installations)")}
         if "preset_id" not in installation_columns:
             c.execute("ALTER TABLE node_installations ADD COLUMN preset_id TEXT NOT NULL DEFAULT ''")
         if "preset_snapshot_enc" not in installation_columns:
             c.execute("ALTER TABLE node_installations ADD COLUMN preset_snapshot_enc TEXT NOT NULL DEFAULT ''")
+        if "ssh_password_enc" not in installation_columns:
+            c.execute("ALTER TABLE node_installations ADD COLUMN ssh_password_enc TEXT NOT NULL DEFAULT ''")
         preset_columns={r["name"] for r in c.execute("PRAGMA table_info(presets)")}
         if "mode" not in preset_columns:
             c.execute("ALTER TABLE presets ADD COLUMN mode TEXT NOT NULL DEFAULT 'custom'")
 
+
+
+def monitoring_interval() -> float:
+    with connect() as c:
+        row=c.execute("SELECT monitor_interval FROM panel WHERE id=1").fetchone()
+    value=float(row["monitor_interval"] if row else 5)
+    return value if value in (1,2,5,10,15,30,60) else 5
+
+
+def set_monitoring_interval(value: float) -> dict:
+    value=float(value)
+    if value not in (1,2,5,10,15,30,60):
+        raise ValueError("Недопустимый интервал мониторинга")
+    with transaction() as c:
+        c.execute("UPDATE panel SET monitor_interval=?,updated_at=? WHERE id=1",
+                  (value,int(time.time())))
+        event(c,"settings.monitoring","panel",f"Monitoring interval {value:g}s")
+    return {"monitor_interval":value}
+
+
+def save_node_ssh_password(node_id: str,password: str) -> None:
+    if not isinstance(password,str) or not 1<=len(password)<=512 or "\x00" in password:
+        raise ValueError("Некорректный SSH-пароль")
+    with transaction() as c:
+        if c.execute("UPDATE node_installations SET ssh_password_enc=?,updated_at=? WHERE node_id=?",
+                     (encrypt(password),int(time.time()),node_id)).rowcount!=1:
+            raise LookupError("Установка ноды не найдена")
+        event(c,"node.ssh_credentials",node_id,"SSH password updated")
+
+
+def node_ssh_credentials(node_id: str, *, include_secret: bool=False) -> dict:
+    with connect() as c:
+        row=c.execute("SELECT ip,port,ssh_fingerprint,ssh_password_enc FROM node_installations WHERE node_id=?",
+                      (node_id,)).fetchone()
+    if not row: raise LookupError("Установка ноды не найдена")
+    result={"ip":row["ip"],"port":row["port"],"fingerprint":row["ssh_fingerprint"],
+            "has_password":bool(row["ssh_password_enc"])}
+    if include_secret and row["ssh_password_enc"]:
+        result["password"]=decrypt(row["ssh_password_enc"])
+    return result
+
+
+def clear_node_ssh_password(node_id: str) -> dict:
+    with transaction() as c:
+        if c.execute("UPDATE node_installations SET ssh_password_enc='',updated_at=? WHERE node_id=?",
+                     (int(time.time()),node_id)).rowcount!=1:
+            raise LookupError("Установка ноды не найдена")
+        event(c,"node.ssh_credentials",node_id,"SSH password cleared")
+    return node_ssh_credentials(node_id)
 
 def event(c, action: str, target: str, message: str):
     c.execute("INSERT INTO events(time,action,target,message) VALUES(?,?,?,?)",
@@ -213,6 +268,7 @@ def get_panel() -> dict:
         "url": r["url"], "outbound_ip": r["outbound_ip"],
         "has_token": bool(r["token_enc"]),
         "has_caddy_api_key": bool(r["caddy_api_key_enc"]),
+        "monitor_interval": float(r["monitor_interval"]),
         "config_profile_uuid": r["config_profile_uuid"],
         "inbound_uuids": json.loads(r["inbound_uuids_json"]),
         "updated_at": r["updated_at"],
