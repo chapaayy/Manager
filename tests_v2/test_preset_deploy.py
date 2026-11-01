@@ -1,4 +1,4 @@
-"""Preset-backed installation: only snapshots, never real SSH or Remnawave."""
+"""Preset-backed installation: direct nodes only, no topology side effects."""
 import json
 from pathlib import Path
 import pytest
@@ -17,26 +17,27 @@ def ready(tmp_path,monkeypatch):
     return Endpoint("RUS10","rus10.gowayot.com","RU")
 
 
-def _presets():
-    return {p["mode"]:p for p in library.list_presets()}
+def _direct():
+    return next(p for p in library.list_presets() if p["mode"]=="direct")
 
 
-def test_two_xray_templates_and_two_install_presets_seed_idempotently(ready):
-    bundles=_presets()
-    assert set(bundles)=={"direct","bridge"}
+def test_two_xray_templates_but_only_one_install_preset(ready):
     configs=library.list_files()
     assert len(configs)==5
     assert sum(c["kind"]=="xray" for c in configs)==2
-    assert all({i["kind"] for i in p["items"]}==
-               {"xray","nginx","nginx_compose","node_compose"}
-               for p in bundles.values())
+    presets=library.list_presets()
+    assert any(p["mode"]=="direct" for p in presets)
+    assert not any(p["mode"]=="bridge" for p in presets)
+    direct=_direct()
+    assert {i["kind"] for i in direct["items"]}=={
+        "xray","nginx","nginx_compose","node_compose"}
     bundled.seed_defaults()
     assert len(library.list_files())==5
-    assert len(library.list_presets())==2
+    assert not any(p["mode"]=="bridge" for p in library.list_presets())
 
 
 def test_direct_template_is_rendered_from_actual_library_file(ready):
-    preset=_presets()["direct"]
+    preset=_direct()
     snap=preset_deploy.render_snapshot(preset["id"],ready,"regular")
     x=snap["xray"]
     validate_rendered(x)
@@ -50,28 +51,11 @@ def test_direct_template_is_rendered_from_actual_library_file(ready):
     assert "{{" not in json.dumps(x)
 
 
-def test_bridge_bootstraps_two_inbounds_but_no_unverified_exit(ready):
-    preset=_presets()["bridge"]
-    snap=preset_deploy.render_snapshot(preset["id"],ready,"entry")
-    x=snap["xray"]
-    validate_rendered(x)
-    assert snap["mode"]=="bridge"
-    assert len(x["inbounds"])==2
-    assert {i["port"] for i in x["inbounds"]}=={443,8443}
-    assert all("rus10.gowayot.com" in json.dumps(i) for i in x["inbounds"])
-    assert [o["tag"] for o in x["outbounds"]]==["BLOCKED"]
-    assert all(r["outboundTag"]=="BLOCKED" for r in x["routing"]["rules"])
-    assert "exit.domain" not in json.dumps(x)
-    assert "bridge.user_id" not in json.dumps(x)
-    assert "до создания реальных" in snap["note"]
-
-
-def test_role_mismatch_refused_before_writes(ready):
-    bundles=_presets()
-    with pytest.raises(ValueError,match="не соответствует"):
-        preset_deploy.render_snapshot(bundles["bridge"]["id"],ready,"regular")
-    with pytest.raises(ValueError,match="не соответствует"):
-        preset_deploy.render_snapshot(bundles["direct"]["id"],ready,"entry")
+def test_bridge_xray_remains_library_file_but_is_not_install_role(ready):
+    cfg=next(c for c in library.list_files() if c["name"]=="XPPN · Xray Bridge VLESS TLS")
+    assert cfg["kind"]=="xray"
+    with pytest.raises(ValueError,match="обычная нода|Direct"):
+        preset_deploy.render_snapshot(_direct()["id"],ready,"entry")
 
 
 def test_edited_xray_library_file_is_used_without_modifying_existing_nodes(ready):
@@ -81,13 +65,13 @@ def test_edited_xray_library_file_is_used_without_modifying_existing_nodes(ready
     assert changed!=old["content"]
     library.save_file(name=cfg["name"],kind="xray",content=changed,
                       file_id=cfg["id"],revision=cfg["revision"])
-    snap=preset_deploy.render_snapshot(_presets()["direct"]["id"],ready,"exit")
+    snap=preset_deploy.render_snapshot(_direct()["id"],ready,"regular")
     assert snap["xray"]["log"]["loglevel"]=="info"
     assert snap["revisions"]["xray"]==2
 
 
 def test_immutable_snapshot_after_library_change(ready):
-    p=_presets()["direct"]
+    p=_direct()
     snap=preset_deploy.render_snapshot(p["id"],ready,"regular")
     n=storage.create_node(code=ready.code,name=ready.code,domain=ready.domain,
                           country=ready.country,role="regular")
@@ -101,11 +85,10 @@ def test_immutable_snapshot_after_library_change(ready):
                       file_id=cfg["id"],revision=cfg["revision"])
     persisted=storage.get_install_preset(n["id"])
     assert persisted["xray"]["log"]["loglevel"]=="warning"
-    assert persisted["preset_id"]==p["id"]
 
 
-def test_compose_changes_are_restricted_but_log_rotation_customization_allowed(ready):
-    p=_presets()["direct"]
+def test_compose_changes_restricted_but_log_rotation_customization_allowed(ready):
+    p=_direct()
     conf=next(c for c in library.list_files() if c["kind"]=="nginx_compose")
     current=library.get_file(conf["id"])
     safe=current["content"].replace('max-file: "3"','max-file: "5"')
@@ -120,10 +103,10 @@ def test_compose_changes_are_restricted_but_log_rotation_customization_allowed(r
         preset_deploy.render_snapshot(p["id"],ready,"regular")
 
 
-def test_preview_mentions_mode_without_secret_or_panel_operations(ready):
-    preset=_presets()["bridge"]
-    report=vps_install.preview_plan(ready,preset["id"],"entry")
-    assert report["name"]=="XPPN RUS10 RU BRIDGE VLESS TLS"
-    assert report["preset_mode"]=="bridge"
+def test_preview_mentions_direct_mode_without_secret(ready):
+    preset=_direct()
+    report=vps_install.preview_plan(ready,preset["id"],"regular")
+    assert report["name"]=="XPPN RUS10 RU VLESS TLS"
+    assert report["preset_mode"]=="direct"
     assert "SECRET_KEY" not in json.dumps(report)
-    assert report["xray"]["outbounds"]==[{"tag":"BLOCKED","protocol":"blackhole"}]
+    assert {o["tag"] for o in report["xray"]["outbounds"]}=={"DIRECT","BLOCKED"}
