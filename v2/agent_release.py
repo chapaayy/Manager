@@ -5,7 +5,7 @@ import re
 
 ROOT=Path(__file__).resolve().parent/"agent"
 VERSION_FILE=ROOT/"main.go"
-VERSION_RE=re.compile(r'const Version = "([0-9]+\\.[0-9]+\\.[0-9]+)"')
+VERSION_RE=re.compile(r'const Version = "([0-9]+[.][0-9]+[.][0-9]+)"')
 
 
 def release() -> dict:
@@ -36,7 +36,7 @@ def artifact(arch:str)->Path:
 
 def compare(a:str,b:str)->int:
     """Only semver triplets; unknown older agents never auto-update."""
-    pat=r"[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}"
+    pat=r"[0-9]{1,3}[.][0-9]{1,3}[.][0-9]{1,3}"
     if not re.fullmatch(pat,a) or not re.fullmatch(pat,b):
         return 0
     aa=tuple(map(int,a.split(".")))
