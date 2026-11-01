@@ -233,10 +233,12 @@ def _panel_ipv4() -> str:
     return str(ip)
 
 
-def queue_apply(node_id: str) -> dict:
+def queue_apply(node_id: str, expected_revision: int) -> dict:
     state = get(node_id)
-    if state["revision"] == 0:
-        state = save(node_id, state["config"], 0)
+    if not isinstance(expected_revision, int) or expected_revision < 1:
+        raise ValueError("Сначала сохрани профиль сети и защиты")
+    if state["revision"] != expected_revision:
+        raise ValueError("Профиль изменился после подтверждения. Обнови страницу и проверь настройки.")
     config = copy.deepcopy(state["config"])
     panel_ip = ""
     if config["firewall"]["enabled"]:
