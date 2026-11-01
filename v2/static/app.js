@@ -385,64 +385,23 @@ async function renderNodeCertificates(){
 
 function renderNodes(){
   $("metric-nodes").textContent=String(state.nodes.length);
-  $("metric-bridges").textContent=String(state.bridges.length);
-  $("metric-exits").textContent=String(state.bridges.reduce((n,b)=>n+b.exits.length,0));
-  const bridges = state.bridges;
-  const target=$("bridge-list");
-  if(!bridges.length){
-    target.innerHTML='<div class="empty-state"><span class="feature-icon">'+icon("git-branch")+
-      '</span><h3>Мостов пока нет</h3><p>Добавь входной VPS и создай мост. Внутри него будут появляться все выходные серверы и планы изменений.</p>'+
-      '<button class="btn subtle" data-action="bridge-new">'+icon("plus")+' Создать первый мост</button></div>';
-  }else{
-    target.innerHTML=bridges.map(b=>{
-      const open=expanded.has(b.id);
-      const main=b.entry;
-      const children=b.exits.map(e=>
-        '<button type="button" class="bridge-child" data-node-open="'+esc(e.id)+'">'+icon("server")+
-        '<span class="child-body"><strong>'+esc(e.code)+' · '+esc(e.name)+'</strong><small>'+
-          esc(e.domain)+' · TCP/'+esc(e.inbound_port)+'</small>'+nodeListBadges(e.id)+'</span>'+
-        '<span class="tiny-chip success">Открыть ноду</span></button>'
-      ).join("");
-      const pending=b.plans.map(p=>
-        '<button class="bridge-child" data-action="open-plan" data-plan="'+esc(p.id)+'" type="button">'+
-        icon("file-code")+'<div class="child-body"><strong>'+esc(p.exit_code)+
-        ' · черновик</strong><small>Не применён на VPS · TCP/'+esc(p.inbound_port)+'</small></div>'+
-        '<span class="tiny-chip warning">'+esc(p.status)+'</span></button>'
-      ).join("");
-      return '<article class="bridge-card '+(open?'open':'')+'">'+
-        '<button class="bridge-head" data-action="toggle-bridge" data-bridge="'+esc(b.id)+'" aria-expanded="'+open+'">'+
-        '<span class="feature-icon">'+icon("git-branch")+'</span>'+
-        '<span class="bridge-title"><strong>'+esc(main.code)+' · '+esc(b.name)+
-        '</strong><small>'+esc(main.domain)+' · '+b.exits.length+' связанных нод</small></span>'+
-        '<span class="tiny-chip">'+(b.has_snapshot?"Xray сохранён":"Bridge")+'</span>'+
-        '<span class="bridge-chevron">'+icon("chevron-down")+'</span></button>'+
-        '<div class="bridge-node-shortcut"><button type="button" class="btn subtle" data-node-open="'+esc(main.id)+'">Открыть '+esc(main.code)+'</button></div>'+
-        (open?'<div class="bridge-children">'+(children||'<p class="muted small">Пока нет подключённых выходов.</p>')+pending+
-          '<div class="bridge-footer">'+
-          '<button class="btn subtle" data-action="bridge-exit" data-bridge="'+esc(b.id)+'">'+icon("plus")+' Добавить выход</button>'+
-          '<button class="btn subtle" data-action="bridge-import" data-bridge="'+esc(b.id)+'">'+icon("file-code")+' Импорт Xray</button>'+
-          '</div></div>':'')+'</article>';
-    }).join("");
-  }
-  const grouped=new Set(state.bridges.flatMap(b=>[b.entry_id,...b.exits.map(e=>e.id)]));
-  const others=state.nodes.filter(n=>!grouped.has(n.id) && (showArchivedNodes||!n.archived));
-  $("other-nodes").innerHTML=others.length?others.map(n=>
+  $("metric-ready").textContent=String(state.nodes.filter(n=>n.status==="ready"&&!n.archived).length);
+  $("metric-archived").textContent=String(state.nodes.filter(n=>n.archived).length);
+  const nodes=state.nodes.filter(n=>showArchivedNodes||!n.archived);
+  $("other-nodes").innerHTML=nodes.length?nodes.map(n=>
     '<div class="node-card"><span class="feature-icon">'+icon("server")+'</span><div><strong>'+
-    esc(n.code)+' · '+esc(n.name)+'</strong><p>'+esc(n.domain)+' · '+esc(labels[n.role])+
+    esc(n.code)+' · '+esc(n.name)+'</strong><p>'+esc(n.domain)+' · '+esc(labels[n.role]||"Нода")+
     '</p>'+nodeListBadges(n.id)+'</div><span class="tiny-chip '+(n.status==="registered"||n.status==="ready"?"success":"warning")+'">'+
     esc(n.archived?"Архив":n.lifecycle_phase?"Удаление: "+n.lifecycle_phase:n.status==="planned"?"Черновик":n.status)+'</span>'+
     '<button type="button" class="btn primary" data-node-open="'+esc(n.id)+'">Открыть ноду</button>'+
-    (n.status==="planned"?
-       '<button type="button" class="btn subtle" data-delete-draft="'+esc(n.id)+'">Удалить черновик</button>':"")+
-    (n.status==="planned" && (n.role==="regular"||n.role==="exit")?
-       '<button type="button" class="btn subtle" data-draft-install="'+esc(n.id)+'">Установить VPS</button>':
-       n.status!=="planned"?
-       '<button type="button" class="btn subtle" data-install-node="'+esc(n.id)+'">Статус</button>':"")+
+    (n.status==="planned"?'<button type="button" class="btn subtle" data-delete-draft="'+esc(n.id)+'">Удалить черновик</button>':"")+
+    (n.status==="planned"?'<button type="button" class="btn subtle" data-draft-install="'+esc(n.id)+'">Установить VPS</button>':
+       n.status!=="planned"?'<button type="button" class="btn subtle" data-install-node="'+esc(n.id)+'">Статус</button>':"")+
     (["failed","interrupted"].includes(n.status)?
        '<button type="button" class="btn primary" data-retry-vps="'+esc(n.id)+'">Продолжить</button>'+
        '<button type="button" class="btn subtle" data-forget-vps="'+esc(n.id)+'">Удалить…</button>':"")+
     '</div>'
-  ).join(""):'<div class="empty-state"><h3>Незадействованных серверов нет</h3><p>Новые VPS появятся здесь, пока ты не включишь их в мост.</p></div>';
+  ).join(""):'<div class="empty-state"><h3>Нод пока нет</h3><p>Добавь VPS — она появится здесь как самостоятельный сервер.</p></div>';
 }
 function openModal(title,kicker,content,submit){
   $("modal-title").textContent=title;$("modal-kicker").textContent=kicker;
@@ -458,77 +417,8 @@ function openModal(title,kicker,content,submit){
     finally{if(b)b.disabled=false}
   });
 }
-function bridgeModal(){
-  const entries=state.nodes.filter(n=>n.role==="entry"&&!state.bridges.some(b=>b.entry_id===n.id));
-  if(!entries.length)return message("Сначала добавь сервер с ролью «Вход моста».",true);
-  openModal("Создать мост","ТОПОЛОГИЯ / НОВЫЙ МОСТ",
-    '<form><label>Название<input name="name" required placeholder="RU-01 · Мост"></label>'+
-    '<label>Входная нода<select name="entry_id">'+entries.map(n=>
-    '<option value="'+esc(n.id)+'">'+esc(n.code)+' · '+esc(n.name)+'</option>').join("")+
-    '</select></label><p class="muted small">Выходы можно добавить после создания. Существующий Xray-конфиг сначала импортируй как копию.</p>'+
-    '<div class="form-buttons"><button class="btn primary" type="submit">Создать мост</button></div></form>',
-    async fd=>{const r=await api("/bridges","POST",Object.fromEntries(fd));expanded.add(r.id);message("Мост создан. Действующие серверы не изменены.")});
-}
-function bridgeExitModal(id){
-  const bridge=state.bridges.find(x=>x.id===id);
-  if(!bridge)return;
-  const exits=state.nodes.filter(n=>n.role==="exit"&&!bridge.exits.some(e=>e.id===n.id));
-  if(!exits.length)return message("Сначала добавь новую выходную ноду, например NL1.",true);
-  openModal("Добавить выходную ноду","BRIDGE / ПЛАН ИЗМЕНЕНИЙ",
-    '<p class="muted small">Создадим дополнительный outbound, выделим свободный inbound-порт и покажем разницу. Существующий маршрут не перезаписывается.</p>'+
-    '<form><label>Выходная нода<select name="exit_id">'+exits.map(n=>
-    '<option value="'+esc(n.id)+'">'+esc(n.code)+' · '+esc(n.domain)+'</option>').join("")+
-    '</select></label>'+
-    (!bridge.has_snapshot?'<label>Шаблон Xray <span class="muted">· для нового моста</span><select name="config_template_id"><option value="">Стандартный образец XPPN</option>'+state.configs.filter(f=>f.kind==="xray").map(f=>'<option value="'+esc(f.id)+'">'+esc(f.name)+'</option>').join("")+'</select></label>':'')+
-    '<label>UUID межсерверного VLESS <span class="muted">· необязательно</span><input name="outgoing_uuid" placeholder="Пусто = создать новый UUID" autocomplete="off"></label>'+
-    (bridge.has_snapshot?'<label>Дополнительный TCP-порт <span class="muted">· автоматически</span><input name="inbound_port" type="number" min="8444" max="8999" placeholder="8444"></label>':'')+
-    '<p class="muted small">UUID должен совпадать с пользователем принимающего outbound на выходном сервере. Автоматическая синхронизация обеих сторон пока не включена.</p>'+
-    '<div class="form-buttons"><button type="submit" class="btn primary">Подготовить изменения</button></div></form>',
-    async fd=>{
-      const data={exit_id:fd.get("exit_id")};
-      if(fd.get("outgoing_uuid"))data.outgoing_uuid=fd.get("outgoing_uuid");
-      if(fd.get("inbound_port"))data.inbound_port=Number(fd.get("inbound_port"));
-      if(fd.get("config_template_id"))data.config_template_id=fd.get("config_template_id");
-      const plan=await api("/bridges/"+encodeURIComponent(id)+"/plans","POST",data);
-      setTimeout(()=>openPlan(plan),80);
-      message("Черновик моста подготовлен без изменений на VPS.");
-    });
-}
-async function bridgeImportModal(id){
-  const b=await api("/bridges/"+encodeURIComponent(id));
-  openModal("Импорт текущего Xray","BRIDGE / ТОЛЬКО ЧТЕНИЕ",
-    '<p class="muted small">Вставь JSON действующего моста. Менеджер сохранит его в зашифрованной базе только как снимок. Это НЕ загрузка конфига на VPS.</p>'+
-    '<form><label>Действующий Xray JSON<textarea name="config" rows="14" required spellcheck="false" placeholder="{ ... }"></textarea></label>'+
-    '<label><input type="checkbox" name="confirm" required> Я понимаю, что на VPS ничего не меняется.</label>'+
-    '<div class="form-buttons"><button class="btn primary" type="submit">Сохранить снимок</button></div></form>',
-    async fd=>{
-      let parsed;
-      try{parsed=JSON.parse(fd.get("config"))}catch{throw new Error("JSON не удалось прочитать")}
-      await api("/bridges/"+encodeURIComponent(id)+"/import","POST",{
-        config:parsed,revision:b.revision,confirm_read_only:fd.has("confirm")
-      });
-      message("Снимок текущего Xray сохранён зашифрованно.");
-    });
-}
-function openPlan(plan){
-  currentPlan=plan;
-  $("plan-diff").innerHTML=String(plan.diff||"").split("\n").map(line=>{
-    const kind=line.startsWith("+")?"added":line.startsWith("-")?"removed":
-      line.startsWith("@")?"hunk":"";
-    return '<span class="'+kind+'">'+esc(line)+'</span>';
-  }).join("\n");
-  $("plan-json").textContent=JSON.stringify(plan.config||{},null,2);
-  $("plan-approve").disabled=plan.status!=="draft";
-  $("plan-approve").textContent=plan.status==="approved"?
-    "Черновик утверждён (не применён)":"Утвердить черновик (без применения)";
-  $("plan-dialog").showModal();
-}
-async function openPlanId(id){
-  try{openPlan(await api("/plans/"+encodeURIComponent(id)))}
-  catch(e){message(e.message,true)}
-}
 function renderVariablePreview(){
-  const fallback='{\\n  "inbounds":[{"tag":"{{source.code}}_{{exit.code}}_VLESS_TLS_IN"}],\\n  "outbounds":[{"address":"{{exit.domain}}","id":"{{bridge.user_id}}"}]\\n}';
+  const fallback='{\\n  "inbounds":[{"tag":"{{source.code}}_VLESS_TLS_IN","streamSettings":{"tlsSettings":{"certificates":[{"keyFile":"/opt/nginx/certs/{{source.domain}}_privkey.key"}]}}}]\\n}';
   const source=$("config-content").value||fallback;
   const clipped=source.length>30000?source.slice(0,30000)+"\\n… предпросмотр ограничен 30 000 символами":source;
   $("placeholder-preview").innerHTML=highlightTokens(clipped);
