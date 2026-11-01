@@ -20,7 +20,7 @@ STARTERS=(
 )
 BRIDGE_PRESET="XPPN · Bridge VLESS TLS RAW"
 DIRECT_PRESET="XPPN · Direct VLESS TLS RAW"
-DEFAULT_PRESET=BRIDGE_PRESET
+DEFAULT_PRESET=DIRECT_PRESET
 
 
 def seed_defaults() -> None:
@@ -43,16 +43,18 @@ def seed_defaults() -> None:
             if not c.execute("SELECT 1 FROM starter_seeds WHERE name=?",(key,)).fetchone():
                 c.execute("INSERT INTO starter_seeds(name,applied_at) VALUES(?,?)",(key,now))
         common=("nginx.conf","nginx-compose.yml","remnanode-compose.yml")
+        # Bridge topology is disabled. Keep the bridge Xray file as a plain
+        # library config, but only seed the normal-node installation bundle.
+        existing_bridge=c.execute("SELECT id,mode FROM presets WHERE name=?",(BRIDGE_PRESET,)).fetchone()
+        if existing_bridge and existing_bridge["mode"]=="bridge":
+            c.execute("UPDATE presets SET mode='custom' WHERE id=?",(existing_bridge["id"],))
         for name,mode,xray in (
             (DIRECT_PRESET,"direct","xray_direct_template.json"),
-            (BRIDGE_PRESET,"bridge","xray_bridge_template.json")
         ):
             key="preset:"+name
             existing=c.execute("SELECT id,mode FROM presets WHERE name=?",(name,)).fetchone()
             if existing:
-                # Upgrade only the known old seed to its declared purpose.
-                if name==BRIDGE_PRESET and existing["mode"]=="custom":
-                    c.execute("UPDATE presets SET mode='bridge' WHERE id=?",(existing["id"],))
+                pass
             elif not c.execute("SELECT 1 FROM starter_seeds WHERE name=?",(key,)).fetchone():
                 if all(f in ids for f in (xray,*common)):
                     preset_id=str(uuid.uuid4())
