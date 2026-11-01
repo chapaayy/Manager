@@ -11,6 +11,7 @@ import re
 import secrets
 import time
 import threading
+import asyncio
 import uuid
 from datetime import datetime, timezone
 
@@ -22,6 +23,29 @@ ALLOWED = {"system.status", "docker.status", "docker.restart", "docker.logs", "l
            "security.fail2ban.install", "security.fail2ban.unban"}
 MAX_RESULT = 48000
 LEASE_SECONDS = 120
+
+_WAIT_LOCK=threading.Lock()
+_ASYNC_WAITERS={}
+
+
+def _async_waiter(node_id: str):
+    loop=asyncio.get_running_loop()
+    with _WAIT_LOCK:
+        saved=_ASYNC_WAITERS.get(node_id)
+        if saved is None or saved[0] is not loop:
+            saved=(loop,asyncio.Event())
+            _ASYNC_WAITERS[node_id]=saved
+        return saved[1]
+
+
+def _notify(node_id: str):
+    with _WAIT_LOCK:
+        saved=_ASYNC_WAITERS.get(node_id)
+    if not saved:return
+    loop,event=saved
+    try:loop.call_soon_threadsafe(event.set)
+    except RuntimeError:pass
+
 
 
 class AgentError(ValueError):
@@ -185,23 +209,22 @@ def poll(node_id: str) -> dict:
 
 
 
-def long_poll(node_id: str, timeout: float=25.0) -> dict:
+async def long_poll(node_id: str, timeout: float=25.0) -> dict:
     timeout=max(1.0,min(float(timeout),30.0))
+    event=_async_waiter(node_id)
     deadline=time.monotonic()+timeout
     while True:
         result=poll(node_id)
-        if result.get("job") is not None:
-            return result
+        if result.get("job") is not None:return result
         remaining=deadline-time.monotonic()
-        if remaining<=0:
+        if remaining<=0:return {"job":None}
+        event.clear()
+        result=poll(node_id)
+        if result.get("job") is not None:return result
+        try:
+            await asyncio.wait_for(event.wait(),timeout=remaining)
+        except asyncio.TimeoutError:
             return {"job":None}
-        cond=_waiter(node_id)
-        with cond:
-            # Recheck while holding the same condition used by enqueue notifier.
-            result=poll(node_id)
-            if result.get("job") is not None:
-                return result
-            cond.wait(timeout=min(remaining,25.0))
 
 
 def report(node_id: str, body: dict) -> dict:
