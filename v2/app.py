@@ -548,6 +548,11 @@ def agent_start_update(node_id: str, body: AgentUpdateData,
         raise HTTPException(422,str(exc)) from None
 
 
+@app.get("/api/agent/v1/update/manifest")
+def agent_update_manifest(node_id=Depends(agent_required)):
+    return agent_release.release()
+
+
 @app.get("/api/agent/v1/update/binary/{arch}")
 def agent_binary(arch: str, node_id=Depends(agent_required)):
     try:
