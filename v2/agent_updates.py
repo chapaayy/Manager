@@ -22,14 +22,15 @@ def current(node_id:str)->dict:
     rel=agent_release.release()
     current_version=row["version"] or ""
     target=rel["binaries"].get(arch,{})
-    upgrade_needed=bool(target and agent_release.compare(rel["version"],current_version)>0)
     modern=agent_release.compare(current_version,"1.3.0")>=0
+    upgrade_needed=bool(agent_release.compare(rel["version"],current_version)>0 and
+                        (bool(target) or not modern and bool(rel["binaries"])))
     return {"node_id":node_id,"node_code":node["code"],
             "current_version":current_version,"latest_version":rel["version"],
             "architecture":arch or "unknown","auto_update":bool(row["auto_update"]),
             "online":bool(row["last_seen"] and int(time.time())-row["last_seen"]<45),
             "upgrade_needed":upgrade_needed,"supports_self_update":modern,
-            "artifact_ready":bool(target),
+            "artifact_ready":bool(target) or not modern and bool(rel["binaries"]),
             "one_time_ssh_migration_required":not modern and upgrade_needed}
 
 
