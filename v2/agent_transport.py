@@ -17,7 +17,7 @@ from . import storage
 
 ALLOWED = {"system.status", "docker.status", "docker.restart", "docker.logs", "logs.read",
            "service.status", "service.restart", "cert.status", "baseline.status",
-           "config.read", "config.apply", "node.cleanup", "node.cleanup.finish"}
+           "config.read", "config.apply", "agent.update", "node.cleanup", "node.cleanup.finish"}
 MAX_RESULT = 48000
 LEASE_SECONDS = 120
 
@@ -36,7 +36,9 @@ def initialize():
           last_seen INTEGER NOT NULL DEFAULT 0,
           last_status_json TEXT NOT NULL DEFAULT '{}',
           enabled INTEGER NOT NULL DEFAULT 1,
-          enrolled_at INTEGER NOT NULL DEFAULT 0
+          enrolled_at INTEGER NOT NULL DEFAULT 0,
+          auto_update INTEGER NOT NULL DEFAULT 0,
+          last_update_check INTEGER NOT NULL DEFAULT 0
         );
         CREATE TABLE IF NOT EXISTS manager_agent_jobs(
           id TEXT PRIMARY KEY,
@@ -53,6 +55,11 @@ def initialize():
         CREATE INDEX IF NOT EXISTS manager_agent_jobs_node
           ON manager_agent_jobs(node_id,status,created_at);
         """)
+        cols={row["name"] for row in db.execute("PRAGMA table_info(manager_agents)")}
+        if "auto_update" not in cols:
+            db.execute("ALTER TABLE manager_agents ADD COLUMN auto_update INTEGER NOT NULL DEFAULT 0")
+        if "last_update_check" not in cols:
+            db.execute("ALTER TABLE manager_agents ADD COLUMN last_update_check INTEGER NOT NULL DEFAULT 0")
 
 
 def issue_token(node_id: str) -> str:
@@ -105,6 +112,12 @@ def heartbeat(node_id: str, data: dict) -> dict:
     # First TLS verification is queued immediately on the first ready heartbeat.
     from . import node_cert_sync
     node_cert_sync.queue_initial_check(node_id)
+    try:
+        from . import agent_updates
+        agent_updates.auto_schedule(node_id,version,metrics)
+    except Exception:
+        # Auto-updates must never interfere with the node's normal heartbeat.
+        pass
     return {"ok":True,"next_poll_seconds":5}
 
 
@@ -236,7 +249,7 @@ def nodes_status() -> list[dict]:
     now=int(time.time())
     with storage.connect() as db:
         rows=db.execute("""SELECT n.id,n.code,n.domain,a.enabled,a.version,a.last_seen,
-                           a.last_status_json FROM nodes n
+                           a.last_status_json,a.auto_update FROM nodes n
                            LEFT JOIN manager_agents a ON n.id=a.node_id
                            ORDER BY n.code""").fetchall()
     return [{"id":r["id"],"code":r["code"],"domain":r["domain"],
@@ -244,7 +257,8 @@ def nodes_status() -> list[dict]:
             "revoked":bool(r["enabled"] is not None and not r["enabled"]),
             "online":bool(r["enabled"] and r["last_seen"] and now-r["last_seen"]<45),
             "version":r["version"] or "", "last_seen":r["last_seen"] or 0,
-            "metrics":json.loads(r["last_status_json"] or "{}")}
+            "metrics":json.loads(r["last_status_json"] or "{}"),
+            "auto_update":bool(r["auto_update"])}
             for r in rows]
 
 
