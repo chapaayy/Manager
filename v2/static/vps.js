@@ -14,7 +14,7 @@ function renderVpsPresets(){
 function updateVpsPresetSelection(){
   const selected=state.presets.find(p=>p.id===document.getElementById("vps-preset").value);
   document.getElementById("vps-preset-description").textContent=selected?
-    "Набор конфигураций для обычной ноды. Мостовая топология отключена.":
+    "Набор конфигураций для обычной ноды.":
     "Нет полного набора для установки обычной ноды. Проверь вкладку «Пресеты».";
 }
 
