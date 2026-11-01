@@ -77,6 +77,12 @@ def set_auto(node_id:str,enabled:bool)->dict:
             raise UpdateError("Агент не зарегистрирован")
         db.execute("UPDATE manager_agents SET auto_update=?,last_update_check=0 WHERE node_id=?",
                    (int(enabled),node_id))
+        if not enabled:
+            db.execute("""UPDATE manager_agent_jobs
+                       SET status='failed',error='Automatic updates disabled',updated_at=?
+                       WHERE node_id=? AND action='agent.update' AND status='queued'
+                         AND payload_json LIKE '%"automatic":true%'""",
+                       (int(time.time()),node_id))
         storage.event(db,"agent.autoupdate",node_id,"Enabled" if enabled else "Disabled")
     return current(node_id)
 
@@ -122,7 +128,7 @@ def _auto_schedule_locked(node_id:str,version:str,metrics:dict)->bool:
     if pending:
         return False
     try:
-        agent_transport.enqueue(node_id,"agent.update",release["binaries"][arch],ttl=900,internal=True)
+        agent_transport.enqueue(node_id,"agent.update",{**release["binaries"][arch],"automatic":True},ttl=900,internal=True)
     except (agent_transport.AgentError,LookupError):
         return False
     with storage.transaction() as db:
