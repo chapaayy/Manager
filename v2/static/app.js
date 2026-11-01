@@ -758,19 +758,6 @@ function bindEvents(){
       await renderNodeCertificates();
     }catch(err){message(err.message,true)}
   });
-  $("new-bridge").onclick=bridgeModal;
-  $("bridge-list").addEventListener("click",e=>{
-    const button=e.target.closest("[data-action]");
-    if(!button)return;
-    const action=button.dataset.action,id=button.dataset.bridge;
-    if(action==="toggle-bridge"){
-      expanded.has(id)?expanded.delete(id):expanded.add(id);
-      renderNodes();
-    }else if(action==="bridge-new")bridgeModal();
-    else if(action==="bridge-exit")bridgeExitModal(id);
-    else if(action==="bridge-import")bridgeImportModal(id).catch(err=>message(err.message,true));
-    else if(action==="open-plan")openPlanId(button.dataset.plan);
-  });
   $("modal-close").onclick=()=>$("modal").close();
   $("plan-close").onclick=()=>$("plan-dialog").close();
   $("plan-dismiss").onclick=()=>$("plan-dialog").close();
@@ -783,18 +770,6 @@ function bindEvents(){
     }catch(e){message(e.message,true)}
   };
   $("new-config").onclick=()=>resetConfig();
-  $("config-load-bridge").onclick=async()=>{
-    if(!discardConfig())return;
-    try{
-      const sample=await api("/template/default");
-      resetConfig(true);
-      $("config-name").value=sample.name;
-      $("config-kind").value="xray";
-      $("config-content").value=sample.content;
-      markConfigDirty();
-      message("Загружен образец. Переменные выделены ниже, файл пока не сохранён.");
-    }catch(e){message(e.message,true)}
-  };
   document.querySelectorAll("[data-config-category]").forEach(btn=>btn.addEventListener("click",()=>{
     configCategory=btn.dataset.configCategory;
     document.querySelectorAll("[data-config-category]").forEach(tab=>{
@@ -830,6 +805,7 @@ function bindEvents(){
     if(remove)removePreset(remove.dataset.presetDelete);
   });
   $("panel-form").onsubmit=e=>{e.preventDefault();savePanel()};
+  $("monitoring-form").onsubmit=e=>{e.preventDefault();saveMonitoring()};
   $("panel-check").onclick=checkPanel;
   window.addEventListener("beforeunload",e=>{
     if(configDirty){e.preventDefault();e.returnValue=""}
