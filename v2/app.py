@@ -924,7 +924,7 @@ class ConfigFileData(BaseModel):
 
 
 class PresetData(BaseModel):
-    mode: str = Field(default="custom",pattern=r"^(custom|direct|bridge)$")
+    mode: str = Field(default="custom",pattern=r"^(custom|direct)$")
     name: str = Field(min_length=1, max_length=100)
     description: str = Field(default="", max_length=600)
     config_ids: list[str] = Field(min_length=1, max_length=4)
