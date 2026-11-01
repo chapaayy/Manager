@@ -289,7 +289,7 @@ def schedule_agent_update(data):
         fail("agent updater missing")
     # A standalone transient timer ensures the current agent can ACK the
     # task before the service is stopped. The watchdog lives in updater.
-    run(["systemd-run","--unit=xppn-agent-upgrade","--on-active=4s",
+    run(["systemd-run","--collect","--unit=xppn-agent-upgrade-"+expected[:12],"--on-active=4s",
          str(updater),version,expected],timeout=10,limit=1200)
     return {"scheduled":True,"version":version,"sha256":expected}
 
