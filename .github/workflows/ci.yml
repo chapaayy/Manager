@@ -28,6 +28,7 @@ jobs:
           bash -n v2/agent/uninstall-agent.sh
           bash -n v2/agent/agent-updater.sh
           bash -n v2/agent/upgrade-agent.sh
+          bash -n v2/agent/fail2ban-setup.sh
       - name: Install only v2 dependencies
         run: python -m pip install -r v2/requirements.txt pytest httpx
       - name: Compile and verify the isolated v2 app
@@ -35,6 +36,7 @@ jobs:
           python -m compileall -q v2 tests_v2
           node --check v2/static/app.js
           node --check v2/static/node-detail.js
+          node --check v2/static/node-security.js
           node --check v2/static/vps.js
           node tests_v2/test_ui.js
           bash -n v2/preview-install.sh v2/install.sh v2/activate-web-updates.sh v2/data/remote-install.sh v2/data/node-baseline.sh
