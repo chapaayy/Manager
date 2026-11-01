@@ -844,18 +844,6 @@ function bindEvents(){
     }catch(e){message(e.message,true)}
   };
   $("new-config").onclick=()=>resetConfig();
-  $("config-load-bridge").onclick=async()=>{
-    if(!discardConfig())return;
-    try{
-      const sample=await api("/template/default");
-      resetConfig(true);
-      $("config-name").value=sample.name;
-      $("config-kind").value="xray";
-      $("config-content").value=sample.content;
-      markConfigDirty();
-      message("Загружен образец. Переменные выделены ниже, файл пока не сохранён.");
-    }catch(e){message(e.message,true)}
-  };
   document.querySelectorAll("[data-config-category]").forEach(btn=>btn.addEventListener("click",()=>{
     configCategory=btn.dataset.configCategory;
     document.querySelectorAll("[data-config-category]").forEach(tab=>{
