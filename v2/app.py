@@ -23,7 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from pydantic import BaseModel, Field
 
-from . import agent_bootstrap, agent_transport, bundled, library, node_cert_sync, node_lifecycle, node_removal, remnawave, service, storage, vps_install, web_updates
+from . import agent_bootstrap, agent_release, agent_updates, agent_transport, bundled, library, node_cert_sync, node_lifecycle, node_removal, remnawave, service, storage, vps_install, web_updates
 from .template_engine import Endpoint, TemplateError, safe_preview, variables_map
 
 STATIC = Path(__file__).resolve().parent / "static"
@@ -474,6 +474,15 @@ class AgentBootstrapData(BaseModel):
     confirm_ssh_migration: bool = False
 
 
+class AgentUpdateData(BaseModel):
+    confirmed: bool = False
+    password: str = Field(default="", max_length=512)
+
+
+class AgentAutoUpdateData(BaseModel):
+    enabled: bool
+
+
 class AgentRevokeData(BaseModel):
     confirmed: bool = False
 
@@ -513,6 +522,43 @@ def agents_status(_=Depends(read_access)):
     return {"agents":agent_transport.nodes_status()}
 
 
+@app.get("/api/agents/{node_id}/update-status")
+def agent_update_status(node_id: str, _=Depends(read_access)):
+    try:
+        return agent_updates.current(node_id)
+    except (LookupError,agent_updates.UpdateError) as exc:
+        raise HTTPException(422,str(exc)) from None
+
+
+@app.put("/api/agents/{node_id}/auto-update")
+def agent_set_auto(node_id: str, body: AgentAutoUpdateData,
+                   _=Depends(write_access)):
+    try:
+        return agent_updates.set_auto(node_id,body.enabled)
+    except (LookupError,agent_updates.UpdateError) as exc:
+        raise HTTPException(422,str(exc)) from None
+
+
+@app.post("/api/agents/{node_id}/update")
+def agent_start_update(node_id: str, body: AgentUpdateData,
+                       _=Depends(write_access)):
+    try:
+        return agent_updates.manual(node_id,confirmed=body.confirmed,password=body.password)
+    except (LookupError,agent_updates.UpdateError,agent_bootstrap.AgentBootstrapError) as exc:
+        raise HTTPException(422,str(exc)) from None
+
+
+@app.get("/api/agent/v1/update/binary/{arch}")
+def agent_binary(arch: str, node_id=Depends(agent_required)):
+    try:
+        path=agent_release.artifact(arch)
+    except (ValueError,FileNotFoundError):
+        raise HTTPException(404,"Artifact unavailable") from None
+    # Authentication is required. Never allow arbitrary filesystem paths.
+    return FileResponse(str(path),media_type="application/octet-stream",
+                        headers={"Cache-Control":"no-store"})
+
+
 @app.post("/api/agents/{node_id}/bootstrap")
 def bootstrap_agent(node_id: str,body: AgentBootstrapData,_=Depends(write_access)):
     try:
@@ -538,6 +584,8 @@ def repair_agent_helper(node_id: str, body: AgentBootstrapData, _=Depends(write_
 
 @app.post("/api/agents/{node_id}/tasks")
 def agent_enqueue(node_id: str, body: AgentTaskData, _=Depends(write_access)):
+    if body.action=="agent.update":
+        raise HTTPException(422,"Обновляй агент через отдельную кнопку в настройках ноды")
     if body.action in ("docker.restart","service.restart","config.apply") and not body.confirmed:
         raise HTTPException(422,"Подтверди изменение VPS")
     try:
