@@ -189,7 +189,7 @@ class VpsProbeData(BaseModel):
 
 
 class VpsResumeData(BaseModel):
-    password: str = Field(min_length=1, max_length=512)
+    password: str = Field(default="", max_length=512)
     confirm_existing: bool = False
 
 
@@ -393,7 +393,7 @@ def update_panel_profile(body: PanelProfile, _=Depends(write_access)):
 
 class VpsPreviewData(BaseModel):
     preset_id: str | None = Field(default=None,max_length=64)
-    role: str = Field(default="regular",pattern=r"^(regular|exit|entry)$")
+    role: str = Field(default="regular",pattern=r"^regular$")
     code: str = Field(min_length=2,max_length=20)
     domain: str = Field(min_length=4,max_length=253)
     country: str = Field(pattern=r"^[A-Za-z]{2}$")
@@ -457,7 +457,7 @@ def vps_job_status(node_id: str, _=Depends(read_access)):
 @app.post("/api/vps/jobs/{node_id}/resume")
 def resume_vps(node_id: str, body: VpsResumeData, _=Depends(write_access)):
     try:
-        return vps_install.start_resume(node_id, body.password, body.confirm_existing)
+        return vps_install.start_resume(node_id, _node_password(node_id,body.password), body.confirm_existing)
     except (ValueError, TemplateError, remnawave.PanelError, LookupError) as e:
         _fail(e)
     except Exception:
