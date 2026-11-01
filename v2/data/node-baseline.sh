@@ -3,7 +3,13 @@
 # Never change INPUT/FORWARD policy, sshd, Docker or network interfaces.
 set -Eeuo pipefail
 umask 077
-say(){ printf 'BASELINE:%s\n' "$1"; }
+say(){
+  # No personal data, commands, tokens or IPs are logged: only allowlisted tags.
+  printf 'BASELINE:%s\n' "$1"
+  if [[ "$1" =~ ^[a-z0-9-]+$ ]]; then
+    printf '%s\n' "$1" >> /var/log/xppn-baseline-status.log
+  fi
+}
 SYSCTL_FILE=/etc/sysctl.d/90-xppn-baseline.conf
 F2B_FILE=/etc/fail2ban/jail.d/90-xppn-sshd.local
 ROTATE_FILE=/etc/logrotate.d/xppn-nginx
@@ -49,12 +55,15 @@ install_ssh_f2b() {
   if [[ -e "$F2B_FILE" ]]; then say fail2ban-existing-not-modified; return; fi
   local peer panel_ip ssh_ports
   peer="$(printenv SSH_CONNECTION 2>/dev/null | awk '{print $1}' || true)"
+  if [[ -z "$peer" ]]; then
+    peer="$(printenv SSH_CLIENT 2>/dev/null | awk '{print $1}' || true)"
+  fi
   if [[ ! "$peer" =~ ^[0-9a-fA-F:.]+$ || -z "$peer" ]]; then
     say fail2ban-skipped-unknown-ssh-peer; return
   fi
   panel_ip="$(cat /opt/remnanode/panel-ip 2>/dev/null || true)"
   [[ "$panel_ip" =~ ^[0-9.]+$ ]] || panel_ip=''
-  ssh_ports="$(sshd -T 2>/dev/null | awk '$1=="port" && $2~/^[0-9]+$/ {if(out!="")out=out",";out=out $2} END {print out}')"
+  ssh_ports="$(/usr/sbin/sshd -T 2>/dev/null | awk '$1=="port" && $2~/^[0-9]+$/ {if(out!="")out=out",";out=out $2} END {print out}')"
   if [[ -z "$ssh_ports" || ! "$ssh_ports" =~ ^[0-9,]+$ ]]; then
     say fail2ban-skipped-ssh-port-unknown; return
   fi
