@@ -256,6 +256,70 @@ async function showNodeConfig(name){
   }catch(e){if(id===selectedNodeId)output.innerHTML='<p class="form-feedback error">'+esc(e.message)+'</p>'}
   finally{nodeTaskBusy=false}
 }
+async function loadNodeAgentUpdates(){
+  const id=selectedNodeId,box=$("node-agent-updater");
+  if(!id||!box)return;
+  box.innerHTML='<h2>Обновления агента</h2><p class="muted small">Проверяем версии…</p>';
+  try{
+    const u=await api("/agents/"+encodeURIComponent(id)+"/update-status");
+    if(selectedNodeId!==id||!document.getElementById("node-agent-updater"))return;
+    const label=u.supports_self_update?"Через защищённое соединение агента":
+      "Первый переход требует SSH";
+    box.innerHTML='<div class="node-panel-head"><h2>Обновления агента</h2>'+
+      '<button class="btn subtle" type="button" data-agent-update-refresh>Проверить версии</button></div>'+
+      '<div class="node-kv"><span>Текущая версия</span><strong>'+esc(u.current_version||"Неизвестна")+'</strong>'+
+      '<span>Версия в Manager</span><strong>'+esc(u.latest_version||"Недоступна")+'</strong>'+
+      '<span>Архитектура</span><strong>'+esc(u.architecture)+'</strong>'+
+      '<span>Способ обновления</span><strong>'+esc(label)+'</strong></div>'+
+      '<label class="check-row"><input type="checkbox" id="agent-auto-update-switch" '+
+      (u.auto_update?'checked':'')+'> Автоматически обновлять агент при появлении новой версии</label>'+
+      '<p class="muted small">По умолчанию выключено. Обновляется только Agent. Если новая версия не подтвердит подключение, старая восстанавливается.</p>'+
+      (u.one_time_ssh_migration_required?
+      '<p class="muted small">Сейчас установлен старый агент. Для первого перехода потребуется пароль SSH root. В дальнейшем SSH не нужен.</p>':'')+
+      '<div class="form-buttons"><button type="button" class="btn primary" data-agent-update-now '+
+      (!u.online||!u.upgrade_needed||!u.artifact_ready?'disabled':'')+'>'+
+      (u.upgrade_needed?'Обновить агент':'Последняя версия установлена')+'</button></div>';
+    const input=$("agent-auto-update-switch");
+    input.onchange=async()=>{
+      input.disabled=true;
+      try{
+        await api("/agents/"+encodeURIComponent(id)+"/auto-update","PUT",{enabled:input.checked});
+        message(input.checked?"Автообновление агента включено":"Автообновление агента отключено");
+      }catch(e){input.checked=!input.checked;message(e.message,true)}
+      finally{input.disabled=false}
+    };
+  }catch(e){
+    box.innerHTML='<h2>Обновления агента</h2><p class="form-feedback error">'+esc(e.message)+'</p>';
+  }
+}
+async function updateNodeAgentNow(){
+  const id=selectedNodeId,n=currentNode();
+  if(!id||!n)return;
+  try{
+    const state=await api("/agents/"+encodeURIComponent(id)+"/update-status");
+    if(!state.upgrade_needed)return message("Агент уже последней версии");
+    if(state.one_time_ssh_migration_required){
+      openModal("Обновить агент "+n.code,"ОДНОКРАТНО ЧЕРЕЗ SSH",
+        '<p class="muted small">Первый переход старого агента на обновления через HTTPS. Токен и файл agent.env сохраняются; VPN и Docker не меняются.</p>'+
+        '<form><label>Пароль root SSH<input name="password" type="password" required autocomplete="new-password"></label>'+
+        '<label class="check-row"><input type="checkbox" name="confirm" required> Подтверждаю обновление только агента</label>'+
+        '<div class="form-buttons"><button class="btn primary" type="submit">Обновить агент</button></div></form>',
+        async fd=>{
+          await api("/agents/"+encodeURIComponent(id)+"/update","POST",{
+            confirmed:fd.get("confirm")==="on",password:fd.get("password")});
+          message("Агент перезапущен. Ожидаем heartbeat новой версии.");
+          await refreshNodeWorkspaceData();
+        });
+      return;
+    }
+    if(!confirm("Обновить только Agent на "+n.code+" до "+state.latest_version+
+       "? Если он не подключится, предыдущая версия будет восстановлена."))return;
+    await api("/agents/"+encodeURIComponent(id)+"/update","POST",{confirmed:true});
+    message("Обновление поставлено в очередь. Проверяй версию после следующего heartbeat.");
+    return loadNodeAgentUpdates();
+  }catch(e){message(e.message,true)}
+}
+
 function bindNodeWorkspace(){
   $("node-detail").addEventListener("click",async e=>{
     const control=e.target.closest("button");if(!control)return;
