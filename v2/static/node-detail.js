@@ -3,7 +3,7 @@
 // not from the Remnawave host filesystem.
 let selectedNodeId=null, selectedNodeTab="overview", nodeOverviewAgents=[], nodeOverviewCerts=[];
 let nodeTaskRequest=0, nodeTaskBusy=false;
-const nodeTabs={overview:"Обзор",docker:"Docker и службы",logs:"Логи",tls:"Сертификат",network:"Сеть и защита",configs:"Конфигурации",manage:"Управление"};
+const nodeTabs={overview:"Обзор",monitor:"Мониторинг",docker:"Docker и службы",logs:"Логи",tls:"Сертификат",network:"Сеть и защита",configs:"Конфигурации",manage:"Управление"};
 const nodeTime=t=>t?new Date(t*1000).toLocaleString("ru-RU"):"Ещё нет";
 const nodeSize=n=>typeof n==="number"&&Number.isFinite(n)?(n/1073741824).toFixed(1)+" ГБ":"—";
 const nodePercent=(a,b)=>b>0?Math.max(0,Math.min(100,Math.round(a/b*100)))+"%":"—";
@@ -42,6 +42,7 @@ function openNodeWorkspace(id,tab="overview"){
 }
 function closeNodeWorkspace(){
   selectedNodeId=null;nodeSecuritySnapshot=null;nodeTaskRequest++;
+  if(typeof nodeMonitoringSamples!=="undefined"){nodeMonitoringSamples=[];nodeMonitoringLastNode="";}
   $("node-detail").classList.add("hidden");
   $("nodes-home").classList.remove("hidden");
   renderNodes();
@@ -71,6 +72,8 @@ function renderNodeWorkspace(){
 function nodeWorkspaceBody(n,a,c){
   const online=Boolean(a.online),m=a.metrics||{};
   switch(selectedNodeTab){
+  case "monitor":
+    return nodeMonitoringBody(n,a);
   case "overview":
     return '<div class="node-ws-columns"><div class="node-panel"><div class="node-panel-head"><h2>Система</h2>'+
       '<button class="btn subtle" data-node-task="system.status">Обновить данные</button></div>'+
@@ -341,6 +344,7 @@ function bindNodeWorkspace(){
     if(control.hasAttribute("data-agent-update-refresh"))return loadNodeAgentUpdates();
     if(control.dataset.nodeTab){
       selectedNodeTab=control.dataset.nodeTab;nodeTaskRequest++;renderNodeWorkspace();
+      if(selectedNodeTab==="monitor")return refreshNodeMonitoring(true);
       if(selectedNodeTab==="manage"){loadNodeAgentUpdates();return loadNodeSSHCredentials();}
       if(selectedNodeTab==="network"){
         const agent=currentAgent();
@@ -349,6 +353,7 @@ function bindNodeWorkspace(){
       }
       return;
     }
+    if(control.hasAttribute("data-monitor-range"))return setNodeMonitoringRange(control.dataset.monitorRange);
     if(control.hasAttribute("data-node-network-refresh"))return refreshNodeWorkspaceData();
     if(control.hasAttribute("data-security-helper"))return prepareNodeSecurity();
     if(control.hasAttribute("data-security-install"))return installNodeSSHProtection();
