@@ -136,6 +136,7 @@ function nodeWorkspaceBody(n,a,c){
       '<button class="btn subtle" data-node-agent-install>Установить / восстановить агент</button>'+
       '<button class="btn subtle" data-node-archive>В архив / вернуть</button>'+
       '<button class="btn subtle" data-node-remove>Удалить ноду…</button></div>'+
+      '<div class="node-panel" id="node-ssh-credentials"><h2>Доступ к VPS</h2><p class="muted small">Загружаем сохранённый доступ…</p></div>'+
       '<div class="node-panel" id="node-agent-updater"><h2>Обновления агента</h2>'+
       '<p class="muted small">Загружаем версии агента…</p></div></div>';
   }
@@ -199,7 +200,7 @@ async function refreshNodeWorkspaceData(){
   nodeOverviewCerts=certs.nodes||[];
   if(selectedNodeId){
     renderNodeWorkspace();
-    if(selectedNodeTab==="manage")await loadNodeAgentUpdates();
+    if(selectedNodeTab==="manage"){await Promise.all([loadNodeAgentUpdates(),loadNodeSSHCredentials()]);}
   }
 }
 async function showNodeConfig(name){
@@ -233,6 +234,39 @@ async function showNodeConfig(name){
   }catch(e){if(id===selectedNodeId)output.innerHTML='<p class="form-feedback error">'+esc(e.message)+'</p>'}
   finally{nodeTaskBusy=false}
 }
+async function loadNodeSSHCredentials(){
+  const id=selectedNodeId,box=$("node-ssh-credentials");
+  if(!id||!box)return;
+  try{
+    const c=await api("/nodes/"+encodeURIComponent(id)+"/ssh-credentials");
+    if(id!==selectedNodeId)return;
+    box.innerHTML='<div class="node-panel-head"><h2>Доступ к VPS</h2>'+
+      '<span class="node-state '+(c.has_password?'is-good':'')+'">'+(c.has_password?'Пароль сохранён':'Пароль не сохранён')+'</span></div>'+
+      '<div class="node-kv"><span>IPv4</span><strong>'+esc(c.ip)+'</strong>'+
+      '<span>SSH порт</span><strong>'+esc(c.port)+'</strong>'+
+      '<span>Fingerprint</span><strong class="credential-fingerprint">'+esc(c.fingerprint)+'</strong></div>'+
+      '<p class="muted small">Пароль хранится только на Manager в зашифрованном виде и никогда не возвращается в браузер. Используется для редких подтверждённых SSH-операций.</p>'+
+      '<div class="node-manage-actions"><button class="btn subtle" data-node-ssh-save>'+
+      (c.has_password?'Изменить пароль':'Сохранить пароль')+'</button>'+
+      (c.has_password?'<button class="btn subtle" data-node-ssh-clear>Удалить сохранённый пароль</button>':'')+'</div>';
+  }catch(e){box.innerHTML='<h2>Доступ к VPS</h2><p class="form-feedback error">'+esc(e.message)+'</p>'}
+}
+function saveNodeSSHCredentials(){
+  const id=selectedNodeId,n=currentNode();if(!id||!n)return;
+  openModal("SSH-доступ · "+n.code,"ЗАШИФРОВАННО НА MANAGER",
+    '<form><label>Пароль root SSH<input name="password" type="password" required autocomplete="new-password"></label>'+
+    '<p class="muted small">IP, порт и fingerprint уже сохранены при установке. Пароль шифруется XPPN_DATA_KEY и не показывается обратно.</p>'+
+    '<div class="form-buttons"><button type="submit" class="btn primary">Сохранить пароль</button></div></form>',
+    async fd=>{await api("/nodes/"+encodeURIComponent(id)+"/ssh-credentials","PUT",{password:fd.get("password")});
+      message("SSH-пароль сохранён в зашифрованном виде");await loadNodeSSHCredentials();});
+}
+async function clearNodeSSHCredentials(){
+  const id=selectedNodeId;if(!id)return;
+  if(!confirm("Удалить сохранённый SSH-пароль этой ноды из Manager?"))return;
+  try{await api("/nodes/"+encodeURIComponent(id)+"/ssh-credentials","DELETE");message("SSH-пароль удалён");await loadNodeSSHCredentials()}
+  catch(e){message(e.message,true)}
+}
+
 async function loadNodeAgentUpdates(){
   const id=selectedNodeId,box=$("node-agent-updater");
   if(!id||!box)return;
@@ -301,11 +335,13 @@ function bindNodeWorkspace(){
   $("node-detail").addEventListener("click",async e=>{
     const control=e.target.closest("button");if(!control)return;
     if(control.hasAttribute("data-node-back"))return closeNodeWorkspace();
+    if(control.hasAttribute("data-node-ssh-save"))return saveNodeSSHCredentials();
+    if(control.hasAttribute("data-node-ssh-clear"))return clearNodeSSHCredentials();
     if(control.hasAttribute("data-agent-update-now"))return updateNodeAgentNow();
     if(control.hasAttribute("data-agent-update-refresh"))return loadNodeAgentUpdates();
     if(control.dataset.nodeTab){
       selectedNodeTab=control.dataset.nodeTab;nodeTaskRequest++;renderNodeWorkspace();
-      if(selectedNodeTab==="manage")return loadNodeAgentUpdates();
+      if(selectedNodeTab==="manage"){loadNodeAgentUpdates();return loadNodeSSHCredentials();}
       if(selectedNodeTab==="network"){
         const agent=currentAgent();
         if(agent.online&&/^1\.(?:[2-9]|[1-9][0-9])\./.test(agent.version||""))
