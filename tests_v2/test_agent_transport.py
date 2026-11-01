@@ -40,6 +40,26 @@ def test_per_node_token_issued_then_rotated_and_revoked(node):
     assert not agent_transport.authenticate(node["id"],"Bearer "+newer)
 
 
+def test_monitoring_history_is_bounded_and_exposes_latest_metrics(node):
+    agent_transport.issue_token(node["id"])
+    agent_transport.heartbeat(node["id"],{"version":"1.6.0","metrics":{
+        "cpu_percent":12.5,"MemTotal_bytes":1000,"MemAvailable_bytes":700,
+        "net_rx_mbps":1.2,"net_tx_mbps":0.5}})
+    agent_transport.heartbeat(node["id"],{"version":"1.6.0","metrics":{
+        "cpu_percent":18.0,"MemTotal_bytes":1000,"MemAvailable_bytes":650,
+        "net_rx_mbps":2.4,"net_tx_mbps":0.8}})
+    history=agent_transport.monitoring_history(node["id"],3600)
+    assert history["sample_interval"]==5
+    assert history["version"]=="1.6.0"
+    assert history["online"] is True
+    assert 1<=len(history["samples"])<=2
+    assert history["samples"][-1]["metrics"]["cpu_percent"]==18.0
+    incremental=agent_transport.monitoring_history(
+        node["id"],3600,history["samples"][-1]["ts"]-10)
+    assert incremental["samples"]
+    assert incremental["samples"][-1]["metrics"]["net_rx_mbps"]==2.4
+
+
 def test_queue_dispatch_acknowledge_once_and_status(node):
     agent_transport.issue_token(node["id"])
     agent_transport.heartbeat(node["id"],{"version":"1.0.0","metrics":{
