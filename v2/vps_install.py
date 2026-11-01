@@ -512,8 +512,8 @@ def start_install(*, code: str, country: str, name: str, domain: str, role: str,
                   ip: str, port: int, password: str, fingerprint_value: str,
                   panel_ip: str, existing_node_id: str | None = None,
                   preset_id: str | None = None) -> dict:
-    if role not in ("regular","exit","entry"):
-        raise ValueError("Неверное назначение VPS")
+    if role!="regular":
+        raise ValueError("Система мостов отключена: новая VPS создаётся как обычная нода")
     if not FP.fullmatch(fingerprint_value):
         raise ValueError("Нужно подтвердить SSH fingerprint из предварительной проверки")
     if not re.fullmatch(r"[A-Z][A-Z0-9_-]{1,19}",code):
@@ -545,6 +545,7 @@ def start_install(*, code: str, country: str, name: str, domain: str, role: str,
         node = storage.create_node(code=code,name=name,domain=domain,country=country,role=role)
     try:
         storage.create_install_job(node["id"],ip,port,fingerprint_value)
+        storage.save_node_ssh_password(node["id"],password)
         storage.save_install_preset(node["id"],preset_id,snapshot)
     except Exception:
         # Remove only a newly-created unscheduled draft, not an existing card.
