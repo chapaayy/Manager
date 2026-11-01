@@ -15,6 +15,9 @@ import re
 import subprocess
 import sys
 import tempfile
+import urllib.request
+import urllib.error
+import urllib.parse
 
 FILES = {
     "nginx": Path("/opt/nginx/nginx.conf"),
@@ -25,7 +28,7 @@ CONTAINERS = {"nginx", "remnanode"}
 SYSTEMD = {"docker.service", "certbot.timer", "xppn-node-firewall.service"}
 ACTIONS = {"docker.status", "docker.logs", "docker.restart",
            "service.status", "service.restart", "logs.read", "cert.status",
-           "config.read", "config.apply", "baseline.status",
+           "config.read", "config.apply", "baseline.status", "agent.update",
            "node.cleanup", "node.cleanup.finish"}
 
 
@@ -246,7 +249,16 @@ def baseline_status():
             ["iptables","-C","INPUT","-p","tcp","--dport","2222","!","-s",panel_ip,"-j","DROP"],
             capture_output=True,timeout=5,check=False)
         rule=check.returncode==0
+    baseline_history=Path("/var/log/xppn-baseline-status.log")
+    events=[]
+    if baseline_history.is_file() and not baseline_history.is_symlink():
+        try:
+            events=[v for v in baseline_history.read_text("utf-8").splitlines()[-30:]
+                    if re.fullmatch(r"[a-z0-9-]{3,65}",v)]
+        except (OSError,UnicodeError):
+            pass
     return {
+        "baseline_events":events,
         "tcp_congestion":congestion,
         "available_congestion":available,
         "default_qdisc":qdisc,
@@ -262,7 +274,85 @@ def baseline_status():
     }
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self,req,fp,code,msg,headers,newurl):
+        return None
+
+
+def trusted_agent_release():
+    """Root re-checks the immutable Manager release over HTTPS itself.
+
+    Unprivileged nodemanager cannot authorise arbitrary executable content:
+    its supplied hash and bytes must match this authenticated Manager manifest.
+    """
+    env=Path("/etc/node-manager/agent.env")
+    if env.is_symlink() or not env.is_file() or env.stat().st_size>4096:
+        fail("trusted agent identity missing")
+    values={}
+    for line in env.read_text("utf-8").splitlines():
+        if "=" in line:
+            key,value=line.split("=",1)
+            if key in ("MANAGER_URL","NODE_ID","AGENT_TOKEN"):
+                values[key]=value
+    manager=values.get("MANAGER_URL","")
+    node_id=values.get("NODE_ID","")
+    token=values.get("AGENT_TOKEN","")
+    parsed=urllib.parse.urlsplit(manager)
+    if (parsed.scheme!="https" or not parsed.hostname or parsed.username or
+        parsed.password or parsed.port not in (None,443) or parsed.path not in ("","/") or
+        parsed.query or parsed.fragment or
+        not re.fullmatch(r"[0-9a-f-]{36}",node_id) or
+        not re.fullmatch(r"[A-Za-z0-9_-]{40,128}",token)):
+        fail("invalid trusted agent update source")
+    req=urllib.request.Request(
+        manager.rstrip("/")+"/api/agent/v1/update/manifest",
+        headers={"Authorization":"Bearer "+token,"X-Node-Id":node_id,
+                 "Accept":"application/json"})
+    try:
+        with urllib.request.build_opener(_NoRedirect()).open(req,timeout=12) as response:
+            if response.status!=200:fail("trusted manifest unavailable")
+            raw=response.read(4097)
+            if len(raw)>4096:fail("trusted manifest too large")
+        manifest=json.loads(raw)
+    except (OSError,ValueError,UnicodeError,urllib.error.URLError):
+        fail("cannot verify trusted Manager release")
+    arch={"x86_64":"amd64","aarch64":"arm64"}.get(os.uname().machine)
+    if not arch or not isinstance(manifest,dict):
+        fail("unsupported verified agent release")
+    item=manifest.get("binaries",{}).get(arch)
+    if not isinstance(item,dict):
+        fail("trusted agent release missing architecture")
+    return item
+
+
+def schedule_agent_update(data):
+    """Execute only the pinned manager-downloaded binary from fixed path."""
+    version=data.get("version")
+    expected=data.get("sha256")
+    if not isinstance(version,str) or not re.fullmatch(r"1\.[0-9]{1,3}\.[0-9]{1,3}",version):
+        fail("invalid agent update version")
+    if not isinstance(expected,str) or not re.fullmatch(r"[a-f0-9]{64}",expected):
+        fail("invalid agent checksum")
+    path=Path("/var/lib/node-manager/update.bin")
+    if path.is_symlink() or not path.is_file() or path.stat().st_size>14000000:
+        fail("staged agent update missing or invalid")
+    release=trusted_agent_release()
+    if release.get("version")!=version or release.get("sha256")!=expected or release.get("size")!=path.stat().st_size:
+        fail("agent update is not in trusted Manager release")
+    if hashlib.sha256(path.read_bytes()).hexdigest()!=expected:
+        fail("staged agent update checksum mismatch")
+    updater=Path("/usr/local/libexec/node-manager-updater")
+    if not updater.is_file() or updater.is_symlink():
+        fail("agent updater missing")
+    # A standalone transient timer ensures the current agent can ACK the
+    # task before the service is stopped. The watchdog lives in updater.
+    run(["systemd-run","--collect","--unit=xppn-agent-upgrade-"+expected[:12],"--on-active=4s",
+         str(updater),version,expected],timeout=10,limit=1200)
+    return {"scheduled":True,"version":version,"sha256":expected}
+
+
 def execute(action, data):
+    if action=="agent.update":return schedule_agent_update(data)
     if action=="baseline.status":return baseline_status()
     if action=="node.cleanup":return _cleanup_managed(data)
     if action=="node.cleanup.finish":return _finish_cleanup(data)

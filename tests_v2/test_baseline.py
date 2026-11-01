@@ -14,7 +14,8 @@ def test_fresh_vps_bundle_contains_baseline_only():
     installer=files["remote-install.sh"]
     assert "test \"$(docker inspect" in installer
     assert installer.index("STEP: REMNANODE_RUNNING") < installer.index("node-baseline.sh")
-    assert "bash /root/.xppn-pending/node-baseline.sh ||" in installer
+    assert "bash /root/.xppn-pending/node-baseline.sh |" in installer
+    assert 'done || echo "STEP: Baseline skipped' in installer
 
 
 def test_two_sysctls_and_no_high_load_or_hysteria():
