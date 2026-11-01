@@ -32,6 +32,7 @@ function openNodeWorkspace(id,tab="overview"){
   if(!state.nodes.some(n=>n.id===id))return message("Нода не найдена",true);
   selectedNodeId=id;
   selectedNodeTab=tab;
+  nodeSecuritySnapshot=null;
   nodeTaskRequest++;
   $("nodes-home").classList.add("hidden");
   $("node-detail").classList.remove("hidden");
@@ -40,7 +41,7 @@ function openNodeWorkspace(id,tab="overview"){
   window.scrollTo({top:0,behavior:"auto"});
 }
 function closeNodeWorkspace(){
-  selectedNodeId=null;nodeTaskRequest++;
+  selectedNodeId=null;nodeSecuritySnapshot=null;nodeTaskRequest++;
   $("node-detail").classList.add("hidden");
   $("nodes-home").classList.remove("hidden");
   renderNodes();
@@ -118,23 +119,7 @@ function nodeWorkspaceBody(n,a,c){
       '<p class="muted small">После установки проверка запускается автоматически при готовности ноды. Приватные ключи на панель не передаются. Продление Certbot остаётся на VPS.</p>'+
       '<div id="node-task-output"></div>'+
       '<button class="btn subtle" data-tls-migrate="'+esc(n.id)+'" '+(!online?'disabled':'')+'>Проверить совместимость TLS-профиля</button></div>';
-  case "network":
-    return '<div class="node-ws-columns"><div class="node-panel"><div class="node-panel-head"><h2>Сеть</h2>'+
-      '<button class="btn subtle" data-node-network-refresh>Обновить</button></div>'+
-      '<div class="node-kv">'+
-      '<span>Интерфейс</span><strong>'+esc(m.net_interface||"Не определён")+'</strong>'+
-      '<span>Текущая скорость RX / TX</span><strong>'+esc(typeof m.net_rx_mbps==="number"&&typeof m.net_tx_mbps==="number"?m.net_rx_mbps.toFixed(1)+" / "+m.net_tx_mbps.toFixed(1)+" Мбит/с":"Ожидаем второй замер")+'</strong>'+
-      '<span>Исходящий трафик (всего)</span><strong>'+esc(nodeSize(m.net_tx_bytes))+'</strong>'+
-      '<span>TCP-соединения (установлены)</span><strong>'+esc(m.tcp_established??"—")+'</strong>'+
-      '<span>TCP retransmits (всего)</span><strong>'+esc(m.tcp_retrans_segs??"—")+'</strong>'+
-      '<span>Потери пакетов RX / TX (всего)</span><strong>'+esc(m.net_rx_dropped??"—")+' / '+esc(m.net_tx_dropped??"—")+'</strong></div>'+
-      '<p class="muted small">RX/TX — скорость между последними замерами агента; остальные счётчики накопительные, не процент потерь. Соединения не равны количеству пользователей.</p></div>'+
-      '<div class="node-panel"><div class="node-panel-head"><h2>Базовая защита VPS</h2>'+
-      '<button class="btn subtle" data-node-task="baseline.status" '+(!online||!/^1\.(?:[2-9]|[1-9][0-9])\./.test(a.version||"")?'disabled':'')+'>Проверить настройки</button></div>'+
-      '<p class="muted small">Только чтение: BBR, FQ, SSH Fail2Ban и существующая защита порта 2222. Никаких изменений на VPS.</p>'+
-      (!/^1\.(?:[2-9]|[1-9][0-9])\./.test(a.version||"")?
-      '<p class="muted small">Для диагностики нужен Agent v1.2 или новее. Старые ноды мы не обновляем и не меняем автоматически.</p>':'')+
-      '<div id="node-task-output"></div></div></div>';
+  case "network":return securityNetworkBody(n,a,m);
   case "configs":
     return '<div class="node-panel"><div class="node-panel-head"><h2>Конфигурации VPS</h2>'+
       '<div class="node-config-choices"><button class="btn subtle" data-node-config="nginx">Nginx</button>'+
@@ -183,19 +168,7 @@ function nodeReport(action,data){
       '<button class="btn subtle" data-node-copy>Скопировать</button></div>'+
       '<pre class="node-log-output">'+esc(clean)+'</pre>';
   }
-  if(action==="baseline.status"){
-    return '<div class="node-panel"><h2>Фактическое состояние защиты</h2><div class="node-kv">'+
-      '<span>TCP congestion control</span><strong>'+esc(data.tcp_congestion||"Недоступно")+'</strong>'+
-      '<span>Очередь по умолчанию</span><strong>'+esc(data.default_qdisc||"Недоступно")+'</strong>'+
-      '<span>BBR в конфигурации XPPN</span><strong>'+nodeStatus(data.bbr_config_managed,"Да","Нет")+'</strong>'+
-      '<span>Fail2Ban</span><strong>'+nodeStatus(data.fail2ban_active,"Активен","Не активен")+'</strong>'+
-      '<span>SSH jail</span><strong>'+nodeStatus(data.sshd_jail_active,"Работает","Не работает")+'</strong>'+
-      '<span>Забанено IP в SSH</span><strong>'+esc(data.sshd_banned_count??"Неизвестно")+'</strong>'+
-      '<span>Firewall 2222 (systemd)</span><strong>'+nodeStatus(data.panel_firewall_service_active,"Активен","Неактивен")+'</strong>'+
-      '<span>Правило INPUT 2222</span><strong>'+nodeStatus(data.panel_firewall_ipv4_rule,"Подтверждено","Не обнаружено")+'</strong>'+
-      '<span>Ротация логов Nginx</span><strong>'+nodeStatus(data.nginx_logrotate,"Есть","Нет")+'</strong></div>'+
-      '<p class="muted small">Причины этапов установки: '+esc((data.baseline_events||[]).join(", ")||"Не записаны в предыдущей версии установщика")+'</p><p class="muted small">Это диагностика фактической конфигурации. Firewall не изменяется.</p></div>';
-  }
+  if(action==="baseline.status")return securityStatusReport(data);
   if(action==="cert.status"){
     return '<p class="form-feedback success">Проверка TLS завершена. '+
       esc(data.mode==="migration_required"?"Профиль требует ручной миграции.":"Сертификат подтверждён агентом.")+'</p>';
@@ -212,6 +185,7 @@ async function executeNodeTask(action,payload={}){
   try{
     const result=await agentTask(id,action,payload,action==="docker.restart");
     if(id===selectedNodeId&&seq===nodeTaskRequest){
+      if(action==="baseline.status")nodeSecuritySnapshot=result;
       output.innerHTML=nodeReport(action,result);
       if(action==="cert.status")await refreshNodeWorkspaceData();
     }
@@ -340,6 +314,9 @@ function bindNodeWorkspace(){
       return;
     }
     if(control.hasAttribute("data-node-network-refresh"))return refreshNodeWorkspaceData();
+    if(control.hasAttribute("data-security-helper"))return prepareNodeSecurity();
+    if(control.hasAttribute("data-security-install"))return installNodeSSHProtection();
+    if(control.hasAttribute("data-security-unban"))return unbanNodeSSH(control.dataset.securityUnban);
     if(control.dataset.nodeTask)return executeNodeTask(control.dataset.nodeTask);
     if(control.hasAttribute("data-node-logs")){
       const source=$("node-log-source").value,tail=Number($("node-log-tail").value);

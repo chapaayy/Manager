@@ -24,7 +24,7 @@ import (
     "time"
 )
 
-const Version = "1.3.0"
+const Version = "1.4.0"
 const MaxBody = 160000
 const Helper = "/usr/local/libexec/node-manager-helper"
 
@@ -183,6 +183,7 @@ func (a *Agent) execute(job *Task) Response {
     allowed:=map[string]bool{"docker.status":true,"docker.logs":true,
         "docker.restart":true,"logs.read":true,"service.status":true,"service.restart":true,
         "cert.status":true,"config.read":true,"config.apply":true,"baseline.status":true,
+        "security.fail2ban.install":true,"security.fail2ban.unban":true,
         "node.cleanup":true,"node.cleanup.finish":true}
     if !allowed[job.Action] {resp.Error="unsupported operation";return resp}
     if job.Payload==nil {job.Payload=map[string]interface{}{}}
