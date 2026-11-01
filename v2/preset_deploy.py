@@ -91,8 +91,8 @@ def load_preset(preset_id: str) -> dict:
         p=db.execute("SELECT * FROM presets WHERE id=?",(preset_id,)).fetchone()
         if not p:
             raise ValueError("Выбранный пресет не найден")
-        if p["mode"] not in ("direct","bridge"):
-            raise ValueError("Этот пресет не предназначен для установки нод")
+        if p["mode"]!="direct":
+            raise ValueError("Для установки новой ноды нужен обычный Direct-пресет")
         rows=db.execute("""SELECT i.kind,c.content_enc,c.revision
              FROM preset_items i JOIN library_configs c ON c.id=i.config_id
              WHERE i.preset_id=?""",(preset_id,)).fetchall()
@@ -154,27 +154,7 @@ def xray_for_install(preset:dict,source:Endpoint)->dict:
         if {i.get("tag") for i in result.get("outbounds",[])}!={"DIRECT","BLOCKED"}:
             raise ValueError("Direct Xray: посторонние исходящие маршруты запрещены")
     else:
-        # Use the *chosen* bridge template's inbound settings; do not guess a
-        # foreign exit or deploy placeholders {{exit.*}} to a real VPN node.
-        source_in=raw.get("inbounds",[])
-        if len(source_in)!=2 or {i.get("port") for i in source_in}!={443,8443}:
-            raise ValueError("Bridge Xray: нужны два inbound 443 и 8443")
-        ins=[]
-        for inbound in sorted(source_in,key=lambda i:i["port"]):
-            obj=copy.deepcopy(inbound)
-            obj["tag"]=source.code+("_BRIDGE_VLESS_TLS_IN" if obj["port"]==443
-                                     else "_FILTER_VLESS_TLS_IN")
-            obj=_replace(obj,source)
-            _assert_inbound(obj,source,obj["port"])
-            ins.append(obj)
-        result={
-            "log":_replace(raw.get("log",{}),source),
-            "inbounds":ins,
-            "outbounds":[{"tag":"BLOCKED","protocol":"blackhole"}],
-            "routing":{"domainStrategy":"IPIfNonMatch","rules":[
-                {"type":"field","outboundTag":"BLOCKED","inboundTag":[i["tag"]]}
-                for i in ins]},
-        }
+        raise ValueError("Bridge-топология отключена; используй Xray-конфиги отдельно")
     validate_rendered(result)
     return result
 
@@ -182,8 +162,8 @@ def xray_for_install(preset:dict,source:Endpoint)->dict:
 def render_snapshot(preset_id:str,source:Endpoint,role:str)->dict:
     preset=load_preset(preset_id)
     mode=preset["mode"]
-    if (mode=="bridge" and role!="entry") or (mode=="direct" and role not in ("regular","exit")):
-        raise ValueError("Тип ноды не соответствует выбранному пресету")
+    if mode!="direct" or role!="regular":
+        raise ValueError("Сейчас поддерживается только обычная нода с Direct-пресетом")
     xray=xray_for_install(preset,source)
     nginx=_replace(preset["files"]["nginx"],source)
     if "{{" in nginx or "\x00" in nginx or len(nginx.encode())>45000:
