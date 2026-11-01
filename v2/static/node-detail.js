@@ -2,7 +2,7 @@
 // Single node workspace inside the Nodes section. All data comes from Manager,
 // not from the Remnawave host filesystem.
 let selectedNodeId=null, selectedNodeTab="overview", nodeOverviewAgents=[], nodeOverviewCerts=[];
-let nodeTaskRequest=0, nodeTaskBusy=false;
+let nodeTaskRequest=0, nodeTaskBusy=false, nodeSSHAccess=null;
 const nodeTabs={overview:"Обзор",docker:"Docker и службы",logs:"Логи",tls:"Сертификат",network:"Сеть и защита",configs:"Конфигурации",manage:"Управление"};
 const nodeTime=t=>t?new Date(t*1000).toLocaleString("ru-RU"):"Ещё нет";
 const nodeSize=n=>typeof n==="number"&&Number.isFinite(n)?(n/1073741824).toFixed(1)+" ГБ":"—";
@@ -32,7 +32,7 @@ function openNodeWorkspace(id,tab="overview"){
   if(!state.nodes.some(n=>n.id===id))return message("Нода не найдена",true);
   selectedNodeId=id;
   selectedNodeTab=tab;
-  nodeSecuritySnapshot=null;
+  nodeSecuritySnapshot=null;nodeSSHAccess=null;
   nodeTaskRequest++;
   $("nodes-home").classList.add("hidden");
   $("node-detail").classList.remove("hidden");
@@ -41,7 +41,7 @@ function openNodeWorkspace(id,tab="overview"){
   window.scrollTo({top:0,behavior:"auto"});
 }
 function closeNodeWorkspace(){
-  selectedNodeId=null;nodeSecuritySnapshot=null;nodeTaskRequest++;
+  selectedNodeId=null;nodeSecuritySnapshot=null;nodeSSHAccess=null;nodeTaskRequest++;
   $("node-detail").classList.add("hidden");
   $("nodes-home").classList.remove("hidden");
   renderNodes();
