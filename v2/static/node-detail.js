@@ -136,6 +136,7 @@ function nodeWorkspaceBody(n,a,c){
       '<button class="btn subtle" data-node-agent-install>Установить / восстановить агент</button>'+
       '<button class="btn subtle" data-node-archive>В архив / вернуть</button>'+
       '<button class="btn subtle" data-node-remove>Удалить ноду…</button></div>'+
+      '<div class="node-panel" id="node-ssh-access"><h2>SSH-доступ</h2><p class="muted small">Загружаем сохранённый доступ…</p></div>'+
       '<div class="node-panel" id="node-agent-updater"><h2>Обновления агента</h2>'+
       '<p class="muted small">Загружаем версии агента…</p></div></div>';
   }
@@ -199,7 +200,7 @@ async function refreshNodeWorkspaceData(){
   nodeOverviewCerts=certs.nodes||[];
   if(selectedNodeId){
     renderNodeWorkspace();
-    if(selectedNodeTab==="manage")await loadNodeAgentUpdates();
+    if(selectedNodeTab==="manage"){await loadNodeSSHAccess();await loadNodeAgentUpdates();}
   }
 }
 async function showNodeConfig(name){
@@ -233,6 +234,46 @@ async function showNodeConfig(name){
   }catch(e){if(id===selectedNodeId)output.innerHTML='<p class="form-feedback error">'+esc(e.message)+'</p>'}
   finally{nodeTaskBusy=false}
 }
+async function loadNodeSSHAccess(){
+  const id=selectedNodeId,box=$("node-ssh-access");
+  if(!id||!box)return null;
+  try{
+    const info=await api("/nodes/"+encodeURIComponent(id)+"/ssh-access");
+    if(selectedNodeId!==id||!document.getElementById("node-ssh-access"))return info;
+    nodeSSHAccess=info;
+    box.innerHTML='<div class="node-panel-head"><h2>SSH-доступ</h2>'+
+      '<span class="node-state '+(info.has_password?"is-good":"is-bad")+'">'+
+      (info.has_password?"Пароль сохранён":"Пароль не сохранён")+'</span></div>'+
+      '<div class="node-kv"><span>IPv4 VPS</span><strong>'+esc(info.ip)+'</strong>'+
+      '<span>SSH-порт</span><strong>'+esc(info.port)+'</strong>'+
+      '<span>Fingerprint</span><strong><code>'+esc(info.ssh_fingerprint)+'</code></strong></div>'+
+      '<p class="muted small">Пароль хранится только в зашифрованном виде на сервере Manager и никогда не возвращается браузеру.</p>'+
+      '<div class="form-buttons"><button class="btn subtle" data-ssh-save>'+
+      (info.has_password?"Изменить пароль":"Сохранить пароль")+'</button>'+
+      (info.has_password?'<button class="btn subtle" data-ssh-clear>Удалить сохранённый пароль</button>':'')+'</div>';
+    return info;
+  }catch(e){box.innerHTML='<h2>SSH-доступ</h2><p class="form-feedback error">'+esc(e.message)+'</p>';return null}
+}
+function saveNodeSSHPassword(){
+  const id=selectedNodeId,n=currentNode();if(!id||!n)return;
+  openModal("SSH-доступ · "+n.code,"ЗАШИФРОВАННОЕ ХРАНЕНИЕ",
+    '<p class="muted small">Пароль будет сохранён на Manager в зашифрованном виде. В браузер при следующих операциях он не возвращается.</p>'+
+    '<form><label>Пароль root SSH<input type="password" name="password" required autocomplete="new-password"></label>'+
+    '<div class="form-buttons"><button class="btn primary" type="submit">Сохранить пароль</button></div></form>',
+    async fd=>{await api("/nodes/"+encodeURIComponent(id)+"/ssh-access","PUT",{password:fd.get("password")});
+      message("SSH-пароль сохранён зашифрованно");await loadNodeSSHAccess();});
+}
+async function clearNodeSSHPassword(){
+  const id=selectedNodeId;if(!id||!confirm("Удалить сохранённый SSH-пароль этой ноды из Manager?"))return;
+  try{await api("/nodes/"+encodeURIComponent(id)+"/ssh-access","DELETE");message("Сохранённый SSH-пароль удалён");await loadNodeSSHAccess()}
+  catch(e){message(e.message,true)}
+}
+async function nodeHasSavedSSH(){
+  if(nodeSSHAccess&&nodeSSHAccess.node_id===selectedNodeId)return nodeSSHAccess.has_password;
+  const info=await api("/nodes/"+encodeURIComponent(selectedNodeId)+"/ssh-access");
+  nodeSSHAccess=info;return !!info.has_password;
+}
+
 async function loadNodeAgentUpdates(){
   const id=selectedNodeId,box=$("node-agent-updater");
   if(!id||!box)return;
@@ -276,14 +317,20 @@ async function updateNodeAgentNow(){
     const state=await api("/agents/"+encodeURIComponent(id)+"/update-status");
     if(!state.upgrade_needed)return message("Агент уже последней версии");
     if(state.one_time_ssh_migration_required){
+      if(await nodeHasSavedSSH()){
+        if(!confirm("Обновить только Agent на "+n.code+" через сохранённый SSH-доступ?"))return;
+        await api("/agents/"+encodeURIComponent(id)+"/update","POST",{confirmed:true,password:""});
+        message("Агент перезапущен. Ожидаем heartbeat новой версии.");
+        return refreshNodeWorkspaceData();
+      }
       openModal("Обновить агент "+n.code,"ОДНОКРАТНО ЧЕРЕЗ SSH",
-        '<p class="muted small">Первый переход старого агента на обновления через HTTPS. Токен и файл agent.env сохраняются; VPN и Docker не меняются.</p>'+
+        '<p class="muted small">SSH-пароль ещё не сохранён. Введи его один раз — Manager сохранит его зашифрованно.</p>'+
         '<form><label>Пароль root SSH<input name="password" type="password" required autocomplete="new-password"></label>'+
         '<label class="check-row"><input type="checkbox" name="confirm" required> Подтверждаю обновление только агента</label>'+
         '<div class="form-buttons"><button class="btn primary" type="submit">Обновить агент</button></div></form>',
         async fd=>{
-          await api("/agents/"+encodeURIComponent(id)+"/update","POST",{
-            confirmed:fd.get("confirm")==="on",password:fd.get("password")});
+          await api("/nodes/"+encodeURIComponent(id)+"/ssh-access","PUT",{password:fd.get("password")});
+          await api("/agents/"+encodeURIComponent(id)+"/update","POST",{confirmed:fd.get("confirm")==="on",password:""});
           message("Агент перезапущен. Ожидаем heartbeat новой версии.");
           await refreshNodeWorkspaceData();
         });
@@ -301,11 +348,13 @@ function bindNodeWorkspace(){
   $("node-detail").addEventListener("click",async e=>{
     const control=e.target.closest("button");if(!control)return;
     if(control.hasAttribute("data-node-back"))return closeNodeWorkspace();
+    if(control.hasAttribute("data-ssh-save"))return saveNodeSSHPassword();
+    if(control.hasAttribute("data-ssh-clear"))return clearNodeSSHPassword();
     if(control.hasAttribute("data-agent-update-now"))return updateNodeAgentNow();
     if(control.hasAttribute("data-agent-update-refresh"))return loadNodeAgentUpdates();
     if(control.dataset.nodeTab){
       selectedNodeTab=control.dataset.nodeTab;nodeTaskRequest++;renderNodeWorkspace();
-      if(selectedNodeTab==="manage")return loadNodeAgentUpdates();
+      if(selectedNodeTab==="manage"){loadNodeSSHAccess();return loadNodeAgentUpdates()}
       if(selectedNodeTab==="network"){
         const agent=currentAgent();
         if(agent.online&&/^1\.(?:[2-9]|[1-9][0-9])\./.test(agent.version||""))
