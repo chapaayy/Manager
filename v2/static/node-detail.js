@@ -194,7 +194,7 @@ function nodeReport(action,data){
       '<span>Firewall 2222 (systemd)</span><strong>'+nodeStatus(data.panel_firewall_service_active,"Активен","Неактивен")+'</strong>'+
       '<span>Правило INPUT 2222</span><strong>'+nodeStatus(data.panel_firewall_ipv4_rule,"Подтверждено","Не обнаружено")+'</strong>'+
       '<span>Ротация логов Nginx</span><strong>'+nodeStatus(data.nginx_logrotate,"Есть","Нет")+'</strong></div>'+
-      '<p class="muted small">Это диагностика фактической конфигурации. Firewall не изменяется.</p></div>';
+      '<p class="muted small">Причины этапов установки: '+esc((data.baseline_events||[]).join(", ")||"Не записаны в предыдущей версии установщика")+'</p><p class="muted small">Это диагностика фактической конфигурации. Firewall не изменяется.</p></div>';
   }
   if(action==="cert.status"){
     return '<p class="form-feedback success">Проверка TLS завершена. '+
