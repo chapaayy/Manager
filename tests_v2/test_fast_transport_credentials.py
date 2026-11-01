@@ -50,19 +50,20 @@ def test_ssh_password_encrypted_and_never_returned_by_install_job(db):
     assert enc and "super-secret-password" not in enc
 
 
-@pytest.mark.asyncio
-async def test_long_poll_wakes_immediately_when_task_is_queued(db):
+def test_long_poll_wakes_immediately_when_task_is_queued(db):
     node=make_node()
-    async def waiter():
-        start=time.monotonic()
-        result=await agent_transport.long_poll(node["id"],2)
-        return result,time.monotonic()-start
-    task=asyncio.create_task(waiter())
-    await asyncio.sleep(.05)
-    queued=agent_transport.enqueue(node["id"],"system.status",{})
-    result,elapsed=await task
-    assert result["job"]["id"]==queued["id"]
-    assert elapsed<.8
+    async def scenario():
+        async def waiter():
+            start=time.monotonic()
+            result=await agent_transport.long_poll(node["id"],2)
+            return result,time.monotonic()-start
+        task=asyncio.create_task(waiter())
+        await asyncio.sleep(.05)
+        queued=agent_transport.enqueue(node["id"],"system.status",{})
+        result,elapsed=await task
+        assert result["job"]["id"]==queued["id"]
+        assert elapsed<.8
+    asyncio.run(scenario())
 
 
 def test_bridge_preset_is_demoted_and_direct_remains_installable(db):
