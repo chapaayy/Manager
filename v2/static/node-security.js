@@ -87,19 +87,25 @@ function securityStatusReport(data){
 async function securityReload(){
   if(selectedNodeTab==="network"&&selectedNodeId)await executeNodeTask("baseline.status");
 }
-function prepareNodeSecurity(){
-  const id=selectedNodeId,n=currentNode();
-  if(!n)return;
-  openModal("Подготовить SSH-защиту · "+n.code,"ОДНОКРАТНОЕ ОБНОВЛЕНИЕ HELPER",
-    '<p class="muted small">Через SSH с проверкой fingerprint передадим только служебные файлы Fail2Ban и обновим helper с резервной копией. VPN и Agent не перезапускаются.</p>'+
-    '<form><label>Пароль root SSH<input type="password" name="password" autocomplete="new-password" required></label>'+
-    '<label class="check-row"><input type="checkbox" name="confirmed" required> Подтверждаю обновление helper</label>'+
-    '<div class="form-buttons"><button type="submit" class="btn primary">Подготовить</button></div></form>',
-    async fd=>{
-      await api("/agents/"+encodeURIComponent(id)+"/ssh-protection/helper","POST",
-        {password:fd.get("password"),confirmed:fd.get("confirmed")==="on"});
-      message("Служебные файлы установлены. Проверяем доступность.");await securityReload();
-    });
+async function prepareNodeSecurity(){
+  const id=selectedNodeId,n=currentNode();if(!n)return;
+  try{
+    if(await nodeHasSavedSSH()){
+      if(!confirm("Подготовить helper SSH-защиты на "+n.code+" через сохранённый SSH-доступ?"))return;
+      await api("/agents/"+encodeURIComponent(id)+"/ssh-protection/helper","POST",{password:"",confirmed:true});
+      message("Служебные файлы безопасности подготовлены.");return securityReload();
+    }
+    openModal("Подготовить SSH-защиту · "+n.code,"ОДНОКРАТНОЕ ОБНОВЛЕНИЕ HELPER",
+      '<p class="muted small">SSH-пароль ещё не сохранён. Введи его один раз — Manager сохранит его зашифрованно. VPN и Agent не перезапускаются.</p>'+
+      '<form><label>Пароль root SSH<input type="password" name="password" autocomplete="new-password" required></label>'+
+      '<label class="check-row"><input type="checkbox" name="confirmed" required> Подтверждаю обновление helper</label>'+
+      '<div class="form-buttons"><button type="submit" class="btn primary">Сохранить и подготовить</button></div></form>',
+      async fd=>{
+        await api("/nodes/"+encodeURIComponent(id)+"/ssh-access","PUT",{password:fd.get("password")});
+        await api("/agents/"+encodeURIComponent(id)+"/ssh-protection/helper","POST",{password:"",confirmed:fd.get("confirmed")==="on"});
+        message("SSH-доступ сохранён. Служебные файлы установлены.");await securityReload();
+      });
+  }catch(e){message(e.message,true)}
 }
 function installNodeSSHProtection(){
   const id=selectedNodeId,n=currentNode();if(!n)return;
