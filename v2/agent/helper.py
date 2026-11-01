@@ -246,7 +246,16 @@ def baseline_status():
             ["iptables","-C","INPUT","-p","tcp","--dport","2222","!","-s",panel_ip,"-j","DROP"],
             capture_output=True,timeout=5,check=False)
         rule=check.returncode==0
+    baseline_history=Path("/var/log/xppn-baseline-status.log")
+    events=[]
+    if baseline_history.is_file() and not baseline_history.is_symlink():
+        try:
+            events=[v for v in baseline_history.read_text("utf-8").splitlines()[-30:]
+                    if re.fullmatch(r"[a-z0-9-]{3,65}",v)]
+        except (OSError,UnicodeError):
+            pass
     return {
+        "baseline_events":events,
         "tcp_congestion":congestion,
         "available_congestion":available,
         "default_qdisc":qdisc,
