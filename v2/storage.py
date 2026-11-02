@@ -6,58 +6,15 @@ in SQLite with XPPN_DATA_KEY.
 """
 from __future__ import annotations
 
-import contextlib
 import json
 import os
 import secrets
 import sqlite3
 import time
 import uuid
-from cryptography.fernet import Fernet
 
-
-def db_path() -> str:
-    return os.environ.get("XPPN_V2_DB", "/data/xppn-v2.db")
-
-
-def cipher() -> Fernet:
-    key = os.environ.get("XPPN_DATA_KEY")
-    if not key:
-        raise RuntimeError("XPPN_DATA_KEY is required; do not generate a new key on each reboot")
-    return Fernet(key.encode())
-
-
-def encrypt(value: str) -> str:
-    return cipher().encrypt(value.encode("utf-8")).decode("ascii")
-
-
-def decrypt(value: str) -> str:
-    return cipher().decrypt(value.encode("ascii")).decode("utf-8")
-
-
-@contextlib.contextmanager
-def connect():
-    connection = sqlite3.connect(db_path(), timeout=15, isolation_level=None)
-    connection.row_factory = sqlite3.Row
-    connection.execute("PRAGMA foreign_keys=ON")
-    connection.execute("PRAGMA busy_timeout=15000")
-    try:
-        yield connection
-    finally:
-        connection.close()
-
-
-@contextlib.contextmanager
-def transaction():
-    with connect() as c:
-        c.execute("BEGIN IMMEDIATE")
-        try:
-            yield c
-        except Exception:
-            c.execute("ROLLBACK")
-            raise
-        else:
-            c.execute("COMMIT")
+from .core.database import cipher, connect, db_path, decrypt, encrypt, transaction
+from .core.events import record as event
 
 
 def init_db():
@@ -253,11 +210,6 @@ def clear_node_ssh_password(node_id: str) -> dict:
             raise LookupError("Установка ноды не найдена")
         event(c,"node.ssh_credentials",node_id,"SSH password cleared")
     return node_ssh_credentials(node_id)
-
-def event(c, action: str, target: str, message: str):
-    c.execute("INSERT INTO events(time,action,target,message) VALUES(?,?,?,?)",
-              (int(time.time()), action, target, message[:500]))
-
 
 def get_panel() -> dict:
     with connect() as c:
