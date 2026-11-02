@@ -23,7 +23,7 @@ for candidate in (
         sys.path.insert(0, str(candidate))
 sys.path.insert(0, str(HERE))
 
-from helperlib.common import ACTIONS, INTERNAL_ACTIONS, fail
+from helperlib.common import ACTIONS, fail
 from helperlib.dispatcher import execute
 from helperlib.security_firewall import firewall_script as _firewall_script
 from helperlib.security_service import apply_security_settings
@@ -35,13 +35,18 @@ from helperlib.cleanup import (
 
 
 def main():
-    if len(sys.argv) != 2 or sys.argv[1] not in ACTIONS:
+    if len(sys.argv) != 2:
         fail("action not allowed")
     action = sys.argv[1]
-    # Internal bootstrap actions may run only from a direct root process.
-    # The unprivileged Agent always enters through sudo and gets SUDO_USER.
-    if action in INTERNAL_ACTIONS and os.environ.get("SUDO_USER"):
-        fail("internal action not available through sudo")
+    bootstrap = (
+        action == "security.bootstrap"
+        and Path(__file__).resolve()
+        == Path("/root/.xppn-pending/agent-helper.py")
+        and os.geteuid() == 0
+        and not os.environ.get("SUDO_USER")
+    )
+    if action not in ACTIONS and not bootstrap:
+        fail("action not allowed")
 
     raw = sys.stdin.buffer.read(51001)
     if len(raw) > 50000:
