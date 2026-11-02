@@ -10,7 +10,9 @@ import re
 
 import paramiko
 
-from . import agent_transport, storage, vps_install
+from . import agent_transport, storage
+from .nodes.install import ssh as node_ssh
+from .template_engine import Endpoint
 
 ROOT=Path(__file__).resolve().parent/"agent"
 
@@ -41,7 +43,7 @@ STAGE_DESCRIPTION = {
 def _remote_bootstrap_failure(transport):
     """Only read machine-generated stage tags. Never expose raw install logs."""
     try:
-        status = vps_install.run_command(
+        status = node_ssh.run_command(
             transport,
             "if test -f /var/log/node-manager-bootstrap.log; then "
             "grep -E '^AGENT_(FAILURE|STEP):[a-z_-]+(:[0-9]+)?$' "
@@ -71,7 +73,7 @@ def install_on_transport(transport: paramiko.Transport, node_id: str) -> dict:
         raise AgentBootstrapError("Нода не готова к установке агента")
     url = manager_url()
     try:
-        arch = vps_install.run_command(transport,"uname -m",timeout=10).strip()
+        arch = node_ssh.run_command(transport,"uname -m",timeout=10).strip()
     except Exception:
         raise AgentBootstrapError("SSH подключился, но не удалось определить архитектуру VPS") from None
     binary = {"x86_64":"agent-amd64","aarch64":"agent-arm64"}.get(arch)
@@ -95,7 +97,7 @@ def install_on_transport(transport: paramiko.Transport, node_id: str) -> dict:
            "\nAGENT_TOKEN=" + token + "\n")
     files["agent.env"] = env.encode("ascii")
     try:
-        vps_install.run_command(transport,"mkdir -p -m 0700 /root/.node-manager-bootstrap",
+        node_ssh.run_command(transport,"mkdir -p -m 0700 /root/.node-manager-bootstrap",
                                 timeout=15)
         client = paramiko.SFTPClient.from_transport(transport)
         try:
@@ -115,7 +117,7 @@ def install_on_transport(transport: paramiko.Transport, node_id: str) -> dict:
             "SSH подключился, но копирование файлов агента не удалось. "
             "Проверь SFTP и свободное место на VPS.") from None
     try:
-        vps_install.run_command(
+        node_ssh.run_command(
             transport,
             "bash /root/.node-manager-bootstrap/install.sh "
             ">/var/log/node-manager-bootstrap.log 2>&1 "
@@ -134,12 +136,12 @@ def install_existing(node_id: str, password: str, confirmed: bool) -> dict:
         raise AgentBootstrapError("Добавить агент можно только на работающую ноду")
     job = storage.get_install_job(node_id)
     try:
-        transport, _ = vps_install.ssh_open(
+        transport, _ = node_ssh.ssh_open(
             job["ip"],job["port"],password,job["ssh_fingerprint"])
     except paramiko.AuthenticationException:
         raise AgentBootstrapError("SSH: пароль root не принят сервером") from None
     except ValueError as exc:
-        # vps_install only raises allowlisted, human-readable validation errors.
+        # node install SSH layer only raises allowlisted, human-readable validation errors.
         raise AgentBootstrapError(str(exc)) from None
     except (socket.timeout,TimeoutError):
         raise AgentBootstrapError("SSH: VPS не отвечает по сохранённому адресу и порту") from None
@@ -148,8 +150,8 @@ def install_existing(node_id: str, password: str, confirmed: bool) -> dict:
                                   "Проверь IP, порт SSH и доступ с сервера менеджера.") from None
     try:
         try:
-            vps_install.verify_existing_install(
-                transport,vps_install.Endpoint(node["code"],node["domain"],node["country"]))
+            node_ssh.verify_existing_install(
+                transport,Endpoint(node["code"],node["domain"],node["country"]))
         except ValueError as exc:
             raise AgentBootstrapError(
                 "SSH подключился, но проверка готовой ноды не прошла: " + str(exc)) from None
@@ -170,7 +172,7 @@ def repair_existing(node_id: str, password: str, confirmed: bool) -> dict:
         raise AgentBootstrapError("Сначала установи и подключи агент обычным способом")
     job=storage.get_install_job(node_id)
     try:
-        transport,_=vps_install.ssh_open(
+        transport,_=node_ssh.ssh_open(
             job["ip"],job["port"],password,job["ssh_fingerprint"])
     except paramiko.AuthenticationException:
         raise AgentBootstrapError("SSH: пароль root не принят сервером") from None
@@ -182,8 +184,8 @@ def repair_existing(node_id: str, password: str, confirmed: bool) -> dict:
         raise AgentBootstrapError("SSH: соединение с VPS не удалось") from None
     try:
         try:
-            vps_install.verify_existing_install(
-                transport,vps_install.Endpoint(node["code"],node["domain"],node["country"]))
+            node_ssh.verify_existing_install(
+                transport,Endpoint(node["code"],node["domain"],node["country"]))
         except ValueError as exc:
             raise AgentBootstrapError("Проверка существующей VPS не пройдена: "+str(exc)) from None
         script=(ROOT/"repair-helper.sh").read_bytes()
@@ -201,7 +203,7 @@ def repair_existing(node_id: str, password: str, confirmed: bool) -> dict:
         except Exception:
             raise AgentBootstrapError("Не удалось передать скрипт исправления по SFTP") from None
         try:
-            vps_install.run_command(
+            node_ssh.run_command(
                 transport,"bash /root/.node-manager-agent-repair.sh "
                           ">/var/log/node-manager-repair.log 2>&1 "
                           "&& rm -f /root/.node-manager-agent-repair.sh "
@@ -209,7 +211,7 @@ def repair_existing(node_id: str, password: str, confirmed: bool) -> dict:
                 timeout=120,max_bytes=1200)
         except Exception:
             try:
-                marker=vps_install.run_command(
+                marker=node_ssh.run_command(
                     transport,"if test -f /var/log/node-manager-repair.log; then "
                               "grep -E '^AGENT_REPAIR_FAILURE:[a-z_-]+:[0-9]+$' "
                               "/var/log/node-manager-repair.log | tail -n 1 || :; fi",
@@ -243,17 +245,17 @@ def upgrade_existing(node_id:str,password:str,confirmed:bool)->dict:
     if not agent or not agent["online"] or agent["revoked"]:
         raise AgentBootstrapError("Требуется работающий зарегистрированный агент")
     try:
-        t,_=vps_install.ssh_open(job["ip"],job["port"],password,job["ssh_fingerprint"])
+        t,_=node_ssh.ssh_open(job["ip"],job["port"],password,job["ssh_fingerprint"])
     except paramiko.AuthenticationException:
         raise AgentBootstrapError("Неверный SSH пароль root") from None
     except (ValueError,socket.timeout,TimeoutError,OSError,paramiko.SSHException) as exc:
         raise AgentBootstrapError("SSH обновление недоступно: проверь доступ и fingerprint VPS") from None
     try:
         try:
-            vps_install.verify_existing_install(t,vps_install.Endpoint(node["code"],node["domain"],node["country"]))
+            node_ssh.verify_existing_install(t,Endpoint(node["code"],node["domain"],node["country"]))
         except ValueError:
             raise AgentBootstrapError("Существующая VPS не прошла проверку целостности") from None
-        arch=vps_install.run_command(t,"uname -m",timeout=10).strip()
+        arch=node_ssh.run_command(t,"uname -m",timeout=10).strip()
         binary_name={"x86_64":"agent-amd64","aarch64":"agent-arm64"}.get(arch)
         if not binary_name:
             raise AgentBootstrapError("Неподдерживаемая архитектура VPS")
@@ -270,7 +272,7 @@ def upgrade_existing(node_id:str,password:str,confirmed:bool)->dict:
             raise AgentBootstrapError("В Manager отсутствуют файлы новой версии агента") from None
         if any(not item or len(item)>14000000 for item in files.values()):
             raise AgentBootstrapError("Некорректные файлы обновления агента")
-        vps_install.run_command(t,"mkdir -p -m 0700 /root/.node-manager-agent-upgrade",timeout=12)
+        node_ssh.run_command(t,"mkdir -p -m 0700 /root/.node-manager-agent-upgrade",timeout=12)
         client=paramiko.SFTPClient.from_transport(t)
         try:
             for filename,contents in files.items():
@@ -280,7 +282,7 @@ def upgrade_existing(node_id:str,password:str,confirmed:bool)->dict:
         finally:
             client.close()
         try:
-            result=vps_install.run_command(
+            result=node_ssh.run_command(
                 t,"bash /root/.node-manager-agent-upgrade/upgrade.sh",
                 timeout=90,max_bytes=1000)
             if "AGENT_UPGRADE:restarted" not in result:
@@ -306,20 +308,20 @@ def enable_ssh_security(node_id: str,password: str,confirmed: bool) -> dict:
         raise AgentBootstrapError("Для настройки безопасности нужен Agent v1.4 или новее")
     job=storage.get_install_job(node_id)
     try:
-        t,_=vps_install.ssh_open(job["ip"],job["port"],password,job["ssh_fingerprint"])
+        t,_=node_ssh.ssh_open(job["ip"],job["port"],password,job["ssh_fingerprint"])
     except paramiko.AuthenticationException:
         raise AgentBootstrapError("SSH: неверный пароль root") from None
     except (ValueError,socket.timeout,TimeoutError,OSError,paramiko.SSHException):
         raise AgentBootstrapError("SSH: подключение недоступно или fingerprint сервера изменился") from None
     try:
-        vps_install.verify_existing_install(
-            t,vps_install.Endpoint(node["code"],node["domain"],node["country"]))
+        node_ssh.verify_existing_install(
+            t,Endpoint(node["code"],node["domain"],node["country"]))
         files={"helper.py":(ROOT/"helper.py").read_bytes(),
                "fail2ban-setup.sh":(ROOT/"fail2ban-setup.sh").read_bytes()}
         if any(not x or len(x)>100000 for x in files.values()):
             raise AgentBootstrapError("Файлы безопасности некорректны")
         stage="/root/.node-manager-security-stage"
-        vps_install.run_command(t,"install -d -m 0700 "+stage,timeout=12)
+        node_ssh.run_command(t,"install -d -m 0700 "+stage,timeout=12)
         client=paramiko.SFTPClient.from_transport(t)
         try:
             for name,raw in files.items():
@@ -347,7 +349,7 @@ def enable_ssh_security(node_id: str,password: str,confirmed: bool) -> dict:
             "rm -rf -- /root/.node-manager-security-stage\n"
             "echo SECURITY_HELPER:ready\n"
         )
-        output=vps_install.run_command(
+        output=node_ssh.run_command(
             t,"bash -se <<'XPPN_SECURITY_HELPER_V1'\n"+script+"XPPN_SECURITY_HELPER_V1",
             timeout=35,max_bytes=800)
         if "SECURITY_HELPER:ready" not in output:

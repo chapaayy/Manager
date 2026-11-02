@@ -3,7 +3,9 @@ import sqlite3
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from .. import node_lifecycle, node_removal, storage
+from .. import storage
+from ..nodes import lifecycle as node_lifecycle
+from ..nodes import removal as node_removal
 from ..core.auth import read_access, write_access
 from ..core.errors import api_failure
 from ..template_engine import Endpoint

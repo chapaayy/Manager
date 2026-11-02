@@ -2,14 +2,10 @@
 from __future__ import annotations
 
 from . import auth
-from .. import (
-    agent_transport,
-    bundled,
-    node_cert_sync,
-    node_lifecycle,
-    security_settings,
-    storage,
-)
+from .. import agent_transport, bundled, storage
+from ..nodes import lifecycle as node_lifecycle
+from ..nodes import security as security_settings
+from ..nodes import tls as node_cert_sync
 
 
 def startup() -> None:

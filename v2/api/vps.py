@@ -3,7 +3,8 @@ import sqlite3
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from .. import preset_deploy, remnawave, storage, vps_install
+from .. import preset_deploy, remnawave, storage
+from ..nodes import install as node_install
 from ..core.auth import read_access, write_access
 from ..core.errors import api_failure
 from ..template_engine import Endpoint, TemplateError
@@ -57,7 +58,7 @@ def vps_preview(body: VpsPreviewData, _=Depends(write_access)):
             body.country.upper().strip(),
         )
         selected = body.preset_id or preset_deploy.default_preset_id()
-        return vps_install.preview_plan(endpoint, selected, body.role)
+        return node_install.preview_plan(endpoint, selected, body.role)
     except (TemplateError, ValueError) as exc:
         raise HTTPException(422, str(exc)) from None
 
@@ -65,7 +66,7 @@ def vps_preview(body: VpsPreviewData, _=Depends(write_access)):
 @router.post("/api/vps/probe")
 def probe_vps(body: VpsProbeData, request: Request, _=Depends(write_access)):
     try:
-        return vps_install.preflight(
+        return node_install.preflight(
             body.ip, body.port, body.password, body.domain.strip().lower()
         )
     except ValueError as exc:
@@ -81,7 +82,7 @@ def install_vps(body: VpsInstallData, request: Request, _=Depends(write_access))
     if not storage.get_panel().get("has_token"):
         raise HTTPException(422, "Сначала подключи Remnawave API в настройках")
     try:
-        return vps_install.start_install(
+        return node_install.start_install(
             code=body.code.upper().strip(),
             country=body.country.upper(),
             name=body.name.strip(),
@@ -120,7 +121,7 @@ def vps_job_status(node_id: str, _=Depends(read_access)):
 @router.post("/api/vps/jobs/{node_id}/resume")
 def resume_vps(node_id: str, body: VpsResumeData, _=Depends(write_access)):
     try:
-        return vps_install.start_resume(
+        return node_install.start_resume(
             node_id, node_password(node_id, body.password), body.confirm_existing
         )
     except (ValueError, TemplateError, remnawave.PanelError, LookupError) as exc:

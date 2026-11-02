@@ -3,7 +3,7 @@ from pathlib import Path
 from cryptography.fernet import Fernet
 import pytest
 
-from v2 import storage,agent_transport,agent_bootstrap,vps_install
+from v2 import storage,agent_transport,agent_bootstrap
 
 
 def test_installer_keeps_sudo_capabilities_and_scopes_nginx_write():
@@ -52,13 +52,13 @@ def test_repair_uses_existing_identity_and_only_touches_agent(connected,monkeypa
         closed=False
         def close(self):self.closed=True
     transport=FakeTransport()
-    monkeypatch.setattr(vps_install,"ssh_open",lambda *_:(transport,"fp"))
-    monkeypatch.setattr(vps_install,"verify_existing_install",lambda *_:None)
+    monkeypatch.setattr(agent_bootstrap.node_ssh,"ssh_open",lambda *_:(transport,"fp"))
+    monkeypatch.setattr(agent_bootstrap.node_ssh,"verify_existing_install",lambda *_:None)
     commands=[]
     def run(_transport,cmd,**_kwargs):
         commands.append(cmd)
         return "AGENT_REPAIR_SUCCESS\n"
-    monkeypatch.setattr(vps_install,"run_command",run)
+    monkeypatch.setattr(agent_bootstrap.node_ssh,"run_command",run)
     class FakeDestination:
         def __enter__(self):return self
         def __exit__(self,*_):pass
@@ -88,7 +88,7 @@ def test_repair_requires_consent_and_prior_agent_connection(connected,monkeypatc
 
 def test_ssh_repair_fails_without_exposing_password(connected,monkeypatch):
     node,_=connected
-    monkeypatch.setattr(vps_install,"ssh_open",
+    monkeypatch.setattr(agent_bootstrap.node_ssh,"ssh_open",
                         lambda *_:(_ for _ in ()).throw(
                             agent_bootstrap.paramiko.AuthenticationException("password SHOULD_NOT_LEAK")))
     with pytest.raises(agent_bootstrap.AgentBootstrapError) as exc:

@@ -6,6 +6,7 @@ import pytest
 from cryptography.fernet import Fernet
 
 from v2 import remnawave, storage
+from v2.integrations.remnawave import client as remnawave_client
 
 
 @pytest.fixture
@@ -48,7 +49,7 @@ def test_remnawave_requests_both_headers_without_revealing_values(panel_db,monke
     storage.set_panel(url="https://panel.guessway.com",
                       token="sample-token-for-Remnawave",
                       caddy_api_key="secret-caddy-api-key")
-    monkeypatch.setattr(remnawave.socket,"getaddrinfo",lambda host,port,**kwargs:[
+    monkeypatch.setattr(remnawave_client.socket,"getaddrinfo",lambda host,port,**kwargs:[
         (2,1,6,"",("1.1.1.1",443))
     ])
     calls=[]
@@ -61,7 +62,7 @@ def test_remnawave_requests_both_headers_without_revealing_values(panel_db,monke
             return type("Resp",(),{"status":200,"read":lambda self,n:b'{"response":{}}'})()
         def close(self):
             pass
-    monkeypatch.setattr(remnawave,"PinnedHTTPS",Connection)
+    monkeypatch.setattr(remnawave_client,"PinnedHTTPS",Connection)
     assert remnawave.request("GET","/api/config-profiles")=={"response":{}}
     assert calls[0][2]["Authorization"]=="Bearer sample-token-for-Remnawave"
     assert calls[0][2]["X-Api-Key"]=="secret-caddy-api-key"
@@ -73,7 +74,7 @@ def test_errors_identify_endpoint_and_never_expose_secrets(panel_db,monkeypatch,
     storage.set_panel(url="https://panel.guessway.com",
                       token="sensitive-Remnawave-token",
                       caddy_api_key="sensitive-Caddy-key")
-    monkeypatch.setattr(remnawave.socket,"getaddrinfo",lambda *a,**kw:[
+    monkeypatch.setattr(remnawave_client.socket,"getaddrinfo",lambda *a,**kw:[
         (2,1,6,"",("1.1.1.1",443))
     ])
     class Connection:
@@ -82,7 +83,7 @@ def test_errors_identify_endpoint_and_never_expose_secrets(panel_db,monkeypatch,
         def getresponse(self):
             return type("Resp",(),{"status":status})()
         def close(self):pass
-    monkeypatch.setattr(remnawave,"PinnedHTTPS",Connection)
+    monkeypatch.setattr(remnawave_client,"PinnedHTTPS",Connection)
     with pytest.raises(remnawave.PanelError) as error:
         remnawave.request("GET","/api/config-profiles")
     assert str(status) in str(error.value)
@@ -92,7 +93,7 @@ def test_errors_identify_endpoint_and_never_expose_secrets(panel_db,monkeypatch,
 
 def test_no_caddy_key_no_extra_header(panel_db, monkeypatch):
     storage.set_panel(url="https://panel.guessway.com",token="Bearer token-wrapped")
-    monkeypatch.setattr(remnawave.socket,"getaddrinfo",lambda *a,**kw:[
+    monkeypatch.setattr(remnawave_client.socket,"getaddrinfo",lambda *a,**kw:[
         (2,1,6,"",("1.1.1.1",443))
     ])
     class Connection:
@@ -103,7 +104,7 @@ def test_no_caddy_key_no_extra_header(panel_db, monkeypatch):
             return type("Resp",(),{"status":200,"read":lambda self,n:b'{"response":{}}'})()
         def close(self):pass
     captured={}
-    monkeypatch.setattr(remnawave,"PinnedHTTPS",Connection)
+    monkeypatch.setattr(remnawave_client,"PinnedHTTPS",Connection)
     remnawave.request("GET","/api/config-profiles")
     assert captured["Authorization"]=="Bearer token-wrapped"
     assert "X-Api-Key" not in captured

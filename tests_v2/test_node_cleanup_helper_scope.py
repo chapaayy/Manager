@@ -27,9 +27,11 @@ def test_delete_not_exposed_by_regular_agent_admin_api():
     source=Path("v2/agent_transport.py").read_text()
     assert 'action.startswith("node.cleanup") and not internal' in source
     assert 'internal: bool = False' in source
-    lifecycle=Path("v2/node_lifecycle.py").read_text()
+    lifecycle=Path("v2/nodes/lifecycle/legacy_cleanup.py").read_text()
+    facade=Path("v2/node_lifecycle.py").read_text()
     assert 'internal=True' in lifecycle
     assert '"node.cleanup.finish"' in lifecycle
+    assert '"node.cleanup"' not in facade
 
 
 def test_cannot_remove_cloud_vps_with_this_tool():

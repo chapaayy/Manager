@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from .. import agent_transport, node_cert_sync
+from .. import agent_transport
+from ..nodes import tls as node_cert_sync
 from ..core.auth import read_access, write_access
 
 router = APIRouter()

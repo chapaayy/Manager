@@ -6,6 +6,7 @@ import pytest
 from cryptography.fernet import Fernet
 
 from v2 import bundled,storage,vps_install
+from v2.nodes.install import service as install_service
 from v2.template_engine import Endpoint,validate_rendered
 
 
@@ -79,7 +80,7 @@ def test_render_remote_files_preserves_shell_dollar_and_no_secret_in_log(db):
 def test_installer_rejects_unconfirmed_and_mismatched_ssh_key(db,monkeypatch):
     def nope(*args,**kwargs):
         raise ValueError("SSH-ключ изменился")
-    monkeypatch.setattr(vps_install,"preflight",nope)
+    monkeypatch.setattr(install_service.ssh,"preflight",nope)
     with pytest.raises(ValueError,match="SSH-ключ"):
         vps_install.start_install(
             code="DE1",country="DE",name="Germany DE1",domain="de1.gowayot.com",

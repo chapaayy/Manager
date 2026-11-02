@@ -2,6 +2,9 @@
 import pytest
 from cryptography.fernet import Fernet
 from v2 import storage, vps_install
+from v2.nodes.install import service as install_service
+from v2.nodes.install import ssh as install_ssh
+from v2.nodes.install import registration as install_registration
 from v2.template_engine import Endpoint
 
 
@@ -55,10 +58,10 @@ def test_resume_uses_same_ip_and_fingerprint_without_reinstall(failed_job, monke
     def fake_ssh(ip, port, password, fingerprint):
         observed["ssh"] = (ip,port,password,fingerprint)
         return DummyTransport(), fingerprint
-    monkeypatch.setattr(vps_install,"ssh_open",fake_ssh)
-    monkeypatch.setattr(vps_install,"verify_existing_install",
+    monkeypatch.setattr(install_service.ssh,"ssh_open",fake_ssh)
+    monkeypatch.setattr(install_service.ssh,"verify_existing_install",
                         lambda transport, source: observed.setdefault("checked",source.domain))
-    monkeypatch.setattr(vps_install.POOL,"submit",
+    monkeypatch.setattr(install_service.POOL,"submit",
                         lambda fn,*args: observed.setdefault("worker",(fn.__name__, args)))
     with pytest.raises(ValueError, match="Подтверди"):
         vps_install.start_resume(failed_job["id"], "test-root-password", False)
@@ -73,10 +76,10 @@ def test_resume_uses_same_ip_and_fingerprint_without_reinstall(failed_job, monke
 
 def test_resume_rejects_missing_service_or_wrong_domain(monkeypatch):
     node=Endpoint("RUS10","rus10.gowayot.com","RU")
-    monkeypatch.setattr(vps_install,"run_command",lambda *a,**k:"DOMAIN=someone.else.org\n")
+    monkeypatch.setattr(install_ssh,"run_command",lambda *a,**k:"DOMAIN=someone.else.org\n")
     with pytest.raises(ValueError, match="Домен"):
         vps_install.verify_existing_install(object(),node)
-    monkeypatch.setattr(vps_install,"run_command",
+    monkeypatch.setattr(install_ssh,"run_command",
                         lambda *a,**k: (_ for _ in ()).throw(RuntimeError("remote failed")))
     with pytest.raises(ValueError, match="не подтверждены"):
         vps_install.verify_existing_install(object(),node)
@@ -97,7 +100,7 @@ def test_successful_panel_resume_persists_profile_and_remote_id(failed_job,monke
     from v2 import remnawave
     source=Endpoint("RUS10","rus10.gowayot.com","RU")
     monkeypatch.setattr(remnawave,"list_profiles",lambda:[])
-    monkeypatch.setattr(vps_install,"xray_config",lambda *args:{"inbounds":[]})
+    monkeypatch.setattr(install_registration,"xray_config",lambda *args:{"inbounds":[]})
     monkeypatch.setattr(remnawave,"create_profile",lambda *args:{
         "uuid":"profile-id",
         "inbounds":[{"uuid":"inbound-id","tag":"RUS10_VLESS_TLS_IN"}]})
