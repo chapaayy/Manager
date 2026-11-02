@@ -134,7 +134,8 @@ def test_helper_uses_allowlisted_structured_security_operations():
     assert "/etc/logrotate.d/xppn-nginx" in raw
     assert "/etc/logrotate.d/xppn-remnanode" in raw
     assert "security_settings_supported" in raw
-    assert "INTERNAL_ACTIONS" in launcher
+    assert 'Path("/root/.xppn-pending/agent-helper.py")' in launcher
+    assert 'action not in ACTIONS and not bootstrap' in launcher
     for dangerous in ("iptables -F INPUT","iptables -P INPUT","nft flush ruleset",
                       "ufw --force reset","systemctl restart ssh.service"):
         assert dangerous not in raw
