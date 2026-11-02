@@ -262,6 +262,7 @@ def upgrade_existing(node_id:str,password:str,confirmed:bool)->dict:
         try:
             files={"agent-binary":(ROOT/binary_name).read_bytes(),
                    "agent-updater.sh":(ROOT/"agent-updater.sh").read_bytes(),
+                   "fail2ban-setup.sh":(ROOT/"fail2ban-setup.sh").read_bytes(),
                    "upgrade.sh":(ROOT/"upgrade-agent.sh").read_bytes(),
                    **helper_bundle.artifacts()}
             import hashlib
@@ -345,12 +346,14 @@ def enable_ssh_security(node_id: str,password: str,confirmed: bool) -> dict:
             "python3 /root/.node-manager-security-stage/agent-helper.py baseline.status </dev/null >/dev/null\n"
             "install -m 0700 -o root -g root /usr/local/libexec/node-manager-helper /root/.node-manager-security-stage/helper.prev\n"
             "if test -s /usr/local/libexec/node-manager-helperlib.zip; then install -m 0600 /usr/local/libexec/node-manager-helperlib.zip /root/.node-manager-security-stage/helperlib.prev; fi\n"
+            "if test -s /usr/local/libexec/node-manager-fail2ban; then install -m 0700 /usr/local/libexec/node-manager-fail2ban /root/.node-manager-security-stage/fail2ban.prev; fi\n"
             "if ! install -m 0755 /root/.node-manager-security-stage/agent-helper.py /usr/local/libexec/node-manager-helper || "
             "! install -m 0644 /root/.node-manager-security-stage/agent-helperlib.zip /usr/local/libexec/node-manager-helperlib.zip || "
             "! install -m 0700 /root/.node-manager-security-stage/fail2ban-setup.sh /usr/local/libexec/node-manager-fail2ban || "
             "! /usr/local/libexec/node-manager-helper baseline.status </dev/null >/dev/null; then\n"
             " install -m 0755 /root/.node-manager-security-stage/helper.prev /usr/local/libexec/node-manager-helper\n"
             " if test -s /root/.node-manager-security-stage/helperlib.prev; then install -m 0644 /root/.node-manager-security-stage/helperlib.prev /usr/local/libexec/node-manager-helperlib.zip; else rm -f /usr/local/libexec/node-manager-helperlib.zip; fi\n"
+            " if test -s /root/.node-manager-security-stage/fail2ban.prev; then install -m 0700 /root/.node-manager-security-stage/fail2ban.prev /usr/local/libexec/node-manager-fail2ban; else rm -f /usr/local/libexec/node-manager-fail2ban; fi\n"
             " echo SECURITY_HELPER:rolled-back\n"
             " exit 36\n"
             "fi\n"
