@@ -21,6 +21,10 @@ for(const [name,source] of Object.entries({
 })){
   assert.doesNotThrow(()=>new vm.Script(source),name+" must parse as JavaScript");
 }
+assert.doesNotThrow(
+  ()=>new vm.Script(frontend),
+  "Classic frontend scripts must share one global lexical scope without duplicate declarations"
+);
 
 const ids=[...html.matchAll(/\bid="([^"]+)"/g)].map(m=>m[1]);
 const unique=new Set(ids);
