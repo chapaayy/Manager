@@ -14,7 +14,8 @@ ROOT=Path(__file__).resolve().parents[1]
 def test_fail2ban_worker_is_thin_and_real_config_is_ssh_only():
     worker=(ROOT/"v2/agent/fail2ban-setup.sh").read_text()
     content=(ROOT/"v2/agent/helperlib/security_fail2ban.py").read_text()
-    assert "security.fail2ban.bootstrap" in worker
+    assert "bootstrap_fail2ban" in worker
+    assert "/usr/local/libexec/node-manager-helper security.fail2ban.bootstrap" not in worker
     assert "[sshd]" in content
     assert "backend = systemd" in content
     assert "maxretry" in content and "findtime" in content
