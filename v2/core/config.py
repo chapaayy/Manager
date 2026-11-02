@@ -8,6 +8,17 @@ from __future__ import annotations
 import os
 
 
+def database_path() -> str:
+    return os.environ.get("XPPN_V2_DB", "/data/xppn-v2.db")
+
+
+def data_key() -> str:
+    key = os.environ.get("XPPN_DATA_KEY", "")
+    if not key:
+        raise RuntimeError("XPPN_DATA_KEY is required; do not generate a new key on each reboot")
+    return key
+
+
 def session_secret() -> str:
     key = os.environ.get("XPPN_V2_SESSION_SECRET", "")
     if len(key) < 32:
