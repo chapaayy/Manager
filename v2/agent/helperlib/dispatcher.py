@@ -5,7 +5,6 @@ from .cleanup import cleanup_managed, finish_cleanup
 from .common import fail
 from .operations import execute_regular
 from .security_fail2ban import (
-    bootstrap_fail2ban,
     install_ssh_protection,
     unban_ssh_ip,
 )
@@ -20,8 +19,6 @@ from .updates import schedule_agent_update
 def execute(action: str, data: dict):
     if action == "security.fail2ban.install":
         return install_ssh_protection(data)
-    if action == "security.fail2ban.bootstrap":
-        return bootstrap_fail2ban(data)
     if action == "security.fail2ban.unban":
         return unban_ssh_ip(data)
     if action == "security.settings.apply":
