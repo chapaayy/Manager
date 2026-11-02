@@ -198,28 +198,9 @@ def bootstrap_security(_data):
     }
     _validate(cfg)
 
-    optional = {}
-    for name, operation in (
-        ("logs", lambda: apply_log_settings(cfg["logs"])),
-        (
-            "fail2ban",
-            lambda: apply_fail2ban_settings(
-                cfg["fail2ban"], panel_ip
-            ),
-        ),
-        ("tcp", lambda: apply_tcp_settings(cfg["tcp"])),
-    ):
-        try:
-            optional[name] = operation()
-        except SystemExit:
-            optional[name] = {
-                "bootstrap_skipped": True,
-                "enabled": False,
-            }
-
-    # This one is not optional: port 2222 must be protected before the
-    # Remnawave Node container is started.
-    firewall = apply_firewall_settings(cfg["firewall"])
+    # Fresh installs are deliberately strict: Manager records this exact
+    # profile as applied only after every managed group validates successfully.
+    result = _apply(cfg)
 
     if peer:
         BOOTSTRAP_PEER.parent.mkdir(
@@ -233,6 +214,5 @@ def bootstrap_security(_data):
         "bootstrap": True,
         "panel_api_protected": True,
         "bootstrap_ssh_peer": peer,
-        "firewall": firewall,
-        **optional,
+        **result,
     }
