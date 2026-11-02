@@ -65,6 +65,6 @@ def test_download_is_only_accessible_to_authenticated_node(manager,tmp_path,monk
     assert client.get("/api/agent/v1/update/manifest").status_code==401
     assert client.get("/api/agent/v1/update/binary/../../etc/passwd",
        headers={"X-Node-Id":node["id"],"Authorization":"Bearer "+token}).status_code!=200
-    assert "trusted_agent_release()" in (Path(__file__).resolve().parents[1]/"v2/agent/helper.py").read_text()
+    assert "trusted_agent_release()" in (Path(__file__).resolve().parents[1]/"v2/agent/helperlib/updates.py").read_text()
     assert client.post("/api/agents/"+node["id"]+"/tasks",json={
        "action":"agent.update","confirmed":True,"payload":{"version":"1.3.0"}}).status_code==422
