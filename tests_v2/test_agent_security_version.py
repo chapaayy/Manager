@@ -3,7 +3,7 @@ import paramiko
 import pytest
 from cryptography.fernet import Fernet
 
-from v2 import agent_bootstrap, agent_transport, storage, vps_install
+from v2 import agent_bootstrap, agent_transport, storage
 
 
 @pytest.fixture()
@@ -32,14 +32,14 @@ def test_security_helper_allows_agent_1_5_before_attempting_ssh(ready_node,monke
     agent_transport.heartbeat(ready_node["id"],{"version":"1.5.0","metrics":{}})
     def reject_auth(*_args,**_kwargs):
         raise paramiko.AuthenticationException()
-    monkeypatch.setattr(vps_install,"ssh_open",reject_auth)
+    monkeypatch.setattr(agent_bootstrap.node_ssh,"ssh_open",reject_auth)
     with pytest.raises(agent_bootstrap.AgentBootstrapError,match="неверный пароль"):
         agent_bootstrap.enable_ssh_security(ready_node["id"],"bad",True)
 
 
 def test_security_helper_rejects_agent_1_3(ready_node,monkeypatch):
     agent_transport.heartbeat(ready_node["id"],{"version":"1.3.9","metrics":{}})
-    monkeypatch.setattr(vps_install,"ssh_open",
+    monkeypatch.setattr(agent_bootstrap.node_ssh,"ssh_open",
                         lambda *_args,**_kwargs: pytest.fail("SSH must not be attempted"))
     with pytest.raises(agent_bootstrap.AgentBootstrapError,match="v1.4 или новее"):
         agent_bootstrap.enable_ssh_security(ready_node["id"],"bad",True)
