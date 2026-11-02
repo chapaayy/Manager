@@ -5,7 +5,7 @@ import paramiko
 import pytest
 from cryptography.fernet import Fernet
 
-from v2 import agent_bootstrap,agent_transport,storage,vps_install
+from v2 import agent_bootstrap,agent_transport,storage
 
 
 @pytest.fixture
@@ -22,7 +22,7 @@ def existing_node(tmp_path,monkeypatch):
 
 
 def test_stage_failure_only_exposes_allowlisted_label(monkeypatch):
-    monkeypatch.setattr(vps_install,"run_command",lambda *_args,**_kw:"AGENT_FAILURE:service:1\n")
+    monkeypatch.setattr(agent_bootstrap.node_ssh,"run_command",lambda *_args,**_kw:"AGENT_FAILURE:service:1\n")
     result=agent_bootstrap._remote_bootstrap_failure(object())
     assert "запуск и проверка systemd-службы" in result
     assert "код 1" in result
@@ -32,7 +32,7 @@ def test_stage_failure_only_exposes_allowlisted_label(monkeypatch):
 def test_bad_ssh_password_is_not_leaked(existing_node,monkeypatch):
     def wrong(*args):
         raise paramiko.AuthenticationException("sensitive password should not appear here")
-    monkeypatch.setattr(vps_install,"ssh_open",wrong)
+    monkeypatch.setattr(agent_bootstrap.node_ssh,"ssh_open",wrong)
     with pytest.raises(agent_bootstrap.AgentBootstrapError,match="пароль root не принят") as exc:
         agent_bootstrap.install_existing(existing_node["id"],"rootsecret",True)
     assert "rootsecret" not in str(exc.value)
@@ -55,7 +55,7 @@ def test_remote_script_failure_has_concrete_stage_without_shell_logs(existing_no
             raise RuntimeError("internal secret token; should never reach UI")
         if "grep -E" in cmd:return "AGENT_FAILURE:sudoers:1\n"
         return ""
-    monkeypatch.setattr(vps_install,"run_command",command)
+    monkeypatch.setattr(agent_bootstrap.node_ssh,"run_command",command)
 
     class DummyFile(io.BytesIO):
         def __enter__(self):return self
@@ -78,6 +78,6 @@ def test_remote_script_failure_has_concrete_stage_without_shell_logs(existing_no
 
 
 def test_unreachable_remote_log_does_not_leak_exception(monkeypatch):
-    monkeypatch.setattr(vps_install,"run_command",
+    monkeypatch.setattr(agent_bootstrap.node_ssh,"run_command",
                         lambda *_a,**_k:(_ for _ in ()).throw(OSError("dangerous secret")))
     assert "dangerous secret" not in agent_bootstrap._remote_bootstrap_failure(object())
