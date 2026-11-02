@@ -11,6 +11,8 @@ from fastapi.staticfiles import StaticFiles
 from .api.router import router
 from .core.http import protective_headers
 from .core.lifecycle import startup
+from .core.auth import _password_ok  # compatibility: old tests/imports
+from .core.config import admin_username as _username  # compatibility alias
 
 STATIC = Path(__file__).resolve().parent / "static"
 
