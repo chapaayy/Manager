@@ -81,7 +81,8 @@ def test_agent_install_and_upgrade_manage_helper_zip_as_one_unit():
 
 def test_fail2ban_worker_contains_no_configuration_logic():
     worker=(ROOT/"v2/agent/fail2ban-setup.sh").read_text()
-    assert "security.fail2ban.bootstrap" in worker
+    assert "bootstrap_fail2ban" in worker
+    assert "/usr/local/libexec/node-manager-helper security.fail2ban.bootstrap" not in worker
     for duplicate in ("[sshd]","maxretry =","findtime =","bantime =","apt-get"):
         assert duplicate not in worker
 
