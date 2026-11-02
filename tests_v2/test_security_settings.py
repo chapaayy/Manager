@@ -108,7 +108,10 @@ def test_agent_security_apply_is_internal_only(ready_node):
 
 
 def test_helper_uses_allowlisted_structured_security_operations():
-    raw=(ROOT/"v2/agent/helper.py").read_text()
+    launcher=(ROOT/"v2/agent/helper.py").read_text()
+    raw="\n".join(
+        path.read_text() for path in sorted(
+            (ROOT/"v2/agent/helperlib").glob("*.py")))
     assert '"security.settings.apply"' in raw
     assert "def apply_security_settings" in raw
     assert "XPPN_NODE_API4" in raw and "XPPN_NODE_API6" in raw
@@ -116,6 +119,7 @@ def test_helper_uses_allowlisted_structured_security_operations():
     assert "/etc/logrotate.d/xppn-nginx" in raw
     assert "/etc/logrotate.d/xppn-remnanode" in raw
     assert "security_settings_supported" in raw
+    assert "INTERNAL_ACTIONS" in launcher
     for dangerous in ("iptables -F INPUT","iptables -P INPUT","nft flush ruleset",
                       "ufw --force reset","systemctl restart ssh.service"):
         assert dangerous not in raw
