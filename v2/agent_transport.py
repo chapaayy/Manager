@@ -170,7 +170,7 @@ def heartbeat(node_id: str, data: dict) -> dict:
                                (now-METRIC_RETENTION_SECONDS,))
                     _last_metric_prune=now
     # First TLS verification is queued immediately on the first ready heartbeat.
-    from . import node_cert_sync
+    from .nodes import tls as node_cert_sync
     node_cert_sync.queue_initial_check(node_id)
     try:
         from . import agent_updates
@@ -319,7 +319,7 @@ def report(node_id: str, body: dict) -> dict:
             result={"truncated":True}
         if ok and row["action"]=="security.settings.apply":
             try:
-                from . import security_settings
+                from .nodes import security as security_settings
                 security_settings.mark_applied(node_id,result)
             except Exception:
                 # Desired-state bookkeeping must never turn a successful VPS
