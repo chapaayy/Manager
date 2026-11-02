@@ -122,7 +122,7 @@ def test_lease_timeout_is_not_automatically_retried(node,monkeypatch):
 
 
 def test_tls_error_shows_safe_diagnostic_without_private_key(node,monkeypatch):
-    from v2 import node_cert_sync
+    from v2.nodes import tls as node_cert_sync
     agent_transport.issue_token(node["id"])
     task=agent_transport.enqueue(node["id"],"cert.status")
     agent_transport.poll(node["id"])
@@ -141,7 +141,7 @@ def test_tls_error_shows_safe_diagnostic_without_private_key(node,monkeypatch):
 
 
 def test_tls_unexpected_exception_keeps_details_private(node,monkeypatch):
-    from v2 import node_cert_sync
+    from v2.nodes import tls as node_cert_sync
     agent_transport.issue_token(node["id"])
     task=agent_transport.enqueue(node["id"],"cert.status")
     agent_transport.poll(node["id"])
