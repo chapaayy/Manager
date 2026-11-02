@@ -6,21 +6,19 @@ queries remain in their repositories/storage modules.
 from __future__ import annotations
 
 import contextlib
-import os
 import sqlite3
 
 from cryptography.fernet import Fernet
 
+from . import config
+
 
 def db_path() -> str:
-    return os.environ.get("XPPN_V2_DB", "/data/xppn-v2.db")
+    return config.database_path()
 
 
 def cipher() -> Fernet:
-    key = os.environ.get("XPPN_DATA_KEY")
-    if not key:
-        raise RuntimeError("XPPN_DATA_KEY is required; do not generate a new key on each reboot")
-    return Fernet(key.encode())
+    return Fernet(config.data_key().encode())
 
 
 def encrypt(value: str) -> str:
