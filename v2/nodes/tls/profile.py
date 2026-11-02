@@ -6,6 +6,10 @@ import re
 from ... import remnawave
 from ...template_engine import Endpoint
 from ..install.render import config_profile_name
+from ..profile_ownership import (
+    ProfileOwnershipError,
+    attached_profile as _attached_profile,
+)
 from .errors import CertificateSyncError, LocalTLSError
 
 
@@ -17,38 +21,10 @@ def paths(domain: str) -> dict:
 
 
 def attached_profile(row: dict) -> tuple[str | None, bool]:
-    profile = row.get("configProfile")
-    if isinstance(profile, dict):
-        if "activeConfigProfileUuid" in profile:
-            value = profile["activeConfigProfileUuid"]
-            if value is None or value == "":
-                return None, True
-            if isinstance(value, str):
-                return value, True
-            raise CertificateSyncError(
-                "Remnawave вернула некорректную привязку профиля"
-            )
-    if "configProfileUuid" in row:
-        value = row["configProfileUuid"]
-        if value is None or value == "":
-            return None, True
-        if isinstance(value, str):
-            return value, True
-        raise CertificateSyncError(
-            "Remnawave вернула некорректный UUID профиля"
-        )
-    if "activeConfigProfileUuid" in row:
-        value = row["activeConfigProfileUuid"]
-        if value is None or value == "":
-            return None, True
-        if isinstance(value, str):
-            return value, True
-        raise CertificateSyncError(
-            "Remnawave вернула некорректный UUID профиля"
-        )
-    if "configProfile" in row and profile is None:
-        return None, True
-    return None, False
+    try:
+        return _attached_profile(row)
+    except ProfileOwnershipError as exc:
+        raise CertificateSyncError(str(exc)) from None
 
 
 def api_error(exc: Exception) -> str:
