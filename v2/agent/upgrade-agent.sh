@@ -46,10 +46,16 @@ rollback_unexpected(){
   else
     rm -f "$fail2ban_worker" || true
   fi
+  if test -f /var/backups/node-manager-upgrade/previous-updater; then
+    install -m 0700 /var/backups/node-manager-upgrade/previous-updater "$updater" || true
+  else
+    rm -f "$updater" || true
+  fi
   systemctl restart node-manager-agent.service || true
 }
 trap 'rollback_unexpected' ERR
-if test -f "$updater"; then
+rm -f /var/backups/node-manager-upgrade/previous-updater
+if test -f "$updater" && test ! -L "$updater"; then
   install -m 0700 "$updater" /var/backups/node-manager-upgrade/previous-updater
 fi
 install -d -m 0750 -o nodemanager -g nodemanager /var/lib/node-manager
@@ -108,6 +114,11 @@ if [[ "$confirmed" != 1 ]]; then
     install -m 0700 /var/backups/node-manager-upgrade/previous-fail2ban "$fail2ban_worker"
   else
     rm -f "$fail2ban_worker"
+  fi
+  if test -f /var/backups/node-manager-upgrade/previous-updater; then
+    install -m 0700 /var/backups/node-manager-upgrade/previous-updater "$updater"
+  else
+    rm -f "$updater"
   fi
   systemctl restart node-manager-agent.service || true
   rm -f /var/lib/node-manager/update-pending /var/lib/node-manager/update-ok
