@@ -36,11 +36,7 @@ PUBLIC_ACTIONS = {
     "security.fail2ban.unban",
     "security.settings.apply",
 }
-INTERNAL_ACTIONS = {
-    "security.bootstrap",
-    "security.fail2ban.bootstrap",
-}
-ACTIONS = PUBLIC_ACTIONS | INTERNAL_ACTIONS
+ACTIONS = PUBLIC_ACTIONS
 
 
 def fail(message: str):
