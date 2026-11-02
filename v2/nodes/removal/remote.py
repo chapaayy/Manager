@@ -62,21 +62,14 @@ def inspect_remote_state(node: dict, job: dict | None) -> dict:
         except ProfileOwnershipError as exc:
             raise RemovalError(str(exc)) from None
 
-        profiles = remnawave.list_profiles()
-        if not isinstance(profiles, list):
-            raise RemovalError(
-                "Не удалось проверить список Xray-профилей"
-            )
-        selected = next(
-            (
-                profile
-                for profile in profiles
-                if profile.get("uuid") == profile_uuid
-            ),
-            None,
-        )
-        if selected:
+        # A known UUID is checked directly. list_profiles() is not sufficient
+        # proof of absence because list endpoints may be partial or delayed.
+        try:
             full = remnawave.detailed_profile(profile_uuid)
+        except remnawave.PanelError as exc:
+            if "HTTP 404" not in str(exc):
+                raise
+        else:
             name = full.get("name")
             data["profile_present"] = True
             data["profile_name"] = str(name or "")[:100]
