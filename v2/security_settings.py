@@ -10,11 +10,12 @@ from .nodes.security.repository import (
     get,
     initialize,
     mark_applied,
+    mark_bootstrap_applied,
     save,
 )
 from .nodes.security.service import queue_apply
 
 __all__ = [
     "DEFAULT_CONFIG","QDISC","TCP_CC","default_config","normalize",
-    "get","initialize","mark_applied","save","queue_apply",
+    "get","initialize","mark_applied","mark_bootstrap_applied","save","queue_apply",
 ]

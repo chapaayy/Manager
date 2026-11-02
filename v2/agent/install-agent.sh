@@ -9,6 +9,7 @@ printf "AGENT_STEP:%s\n" "$AGENT_STAGE"
 STAGE=/root/.node-manager-bootstrap
 test -s "$STAGE/agent-binary"
 test -s "$STAGE/agent-helper.py"
+test -s "$STAGE/agent-helperlib.zip"
 test -s "$STAGE/agent.env"
 test -s "$STAGE/agent-uninstall.sh"
 test -s "$STAGE/agent-updater.sh"
@@ -32,6 +33,7 @@ install -d -m 0750 -o root -g nodemanager /etc/node-manager
 install -m 0640 -o root -g nodemanager "$STAGE/agent.env" /etc/node-manager/agent.env
 install -d -m 0755 /usr/local/libexec
 install -m 0755 -o root -g root "$STAGE/agent-helper.py" /usr/local/libexec/node-manager-helper
+install -m 0644 -o root -g root "$STAGE/agent-helperlib.zip" /usr/local/libexec/node-manager-helperlib.zip
 install -m 0700 -o root -g root "$STAGE/agent-uninstall.sh" /usr/local/libexec/node-manager-uninstall.sh
 install -m 0700 -o root -g root "$STAGE/agent-updater.sh" /usr/local/libexec/node-manager-updater
 install -m 0700 -o root -g root "$STAGE/fail2ban-setup.sh" /usr/local/libexec/node-manager-fail2ban

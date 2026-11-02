@@ -48,6 +48,21 @@ def test_defaults_are_structured_and_revisioned(ready_node):
         security_settings.save(ready_node["id"],config,0)
 
 
+
+def test_fresh_bootstrap_is_recorded_as_applied_default(ready_node):
+    state=security_settings.mark_bootstrap_applied(ready_node["id"])
+    assert state["revision"]==1
+    assert state["applied_revision"]==1
+    assert state["changed_since_apply"] is False
+    changed=state["config"]
+    changed["fail2ban"]["maxretry"]=4
+    saved=security_settings.save(ready_node["id"],changed,1)
+    assert saved["revision"]==2
+    # A later bootstrap bookkeeping call must never overwrite operator state.
+    again=security_settings.mark_bootstrap_applied(ready_node["id"])
+    assert again["revision"]==2
+    assert again["config"]["fail2ban"]["maxretry"]==4
+
 def test_validation_rejects_unsafe_or_unbounded_values():
     config=security_settings.default_config()
     config["firewall"]["extra_allowed_sources"]=["1.2.3.4; rm -rf /"]
@@ -108,7 +123,10 @@ def test_agent_security_apply_is_internal_only(ready_node):
 
 
 def test_helper_uses_allowlisted_structured_security_operations():
-    raw=(ROOT/"v2/agent/helper.py").read_text()
+    launcher=(ROOT/"v2/agent/helper.py").read_text()
+    raw="\n".join(
+        path.read_text() for path in sorted(
+            (ROOT/"v2/agent/helperlib").glob("*.py")))
     assert '"security.settings.apply"' in raw
     assert "def apply_security_settings" in raw
     assert "XPPN_NODE_API4" in raw and "XPPN_NODE_API6" in raw
@@ -116,6 +134,8 @@ def test_helper_uses_allowlisted_structured_security_operations():
     assert "/etc/logrotate.d/xppn-nginx" in raw
     assert "/etc/logrotate.d/xppn-remnanode" in raw
     assert "security_settings_supported" in raw
+    assert 'Path("/root/.xppn-pending/agent-helper.py")' in launcher
+    assert 'action not in ACTIONS and not bootstrap' in launcher
     for dangerous in ("iptables -F INPUT","iptables -P INPUT","nft flush ruleset",
                       "ufw --force reset","systemctl restart ssh.service"):
         assert dangerous not in raw

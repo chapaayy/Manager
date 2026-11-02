@@ -61,8 +61,11 @@ def stage_files(transport, files: dict):
     try:
         for name, content in files.items():
             path = "/root/.xppn-pending/" + name
+            raw = content.encode("utf-8") if isinstance(content, str) else content
+            if not isinstance(raw, (bytes, bytearray)) or not raw or len(raw) > 14000000:
+                raise ValueError("invalid staged install artifact")
             with sftp.file(path, "wb") as target:
-                target.write(content.encode("utf-8"))
+                target.write(raw)
             sftp.chmod(path, 0o600)
     finally:
         sftp.close()

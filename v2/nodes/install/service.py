@@ -5,6 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 import re
 
 from ... import preset_deploy, remnawave, storage
+from .. import security as node_security
 from ...template_engine import Endpoint, TemplateError
 from . import remote, render, ssh
 from .registration import complete_panel_registration
@@ -120,6 +121,7 @@ def deploy(
             remote.run_install_script(
                 transport, lambda step: stage("installing", step)
             )
+            node_security.mark_bootstrap_applied(node_id)
             stage(
                 "installing",
                 "Certbot хранит TLS-файлы на VPS; PEM не передаётся на панель",

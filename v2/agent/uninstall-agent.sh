@@ -11,6 +11,9 @@ rm -rf /etc/systemd/system/node-manager-agent.service.d
 rm -f /etc/sudoers.d/nodemanager-agent
 rm -f /usr/local/bin/node-manager-agent
 rm -f /usr/local/libexec/node-manager-helper
+rm -f /usr/local/libexec/node-manager-helperlib.zip
+rm -f /usr/local/libexec/node-manager-updater
+rm -f /usr/local/libexec/node-manager-fail2ban
 rm -rf /etc/node-manager /var/lib/node-manager
 systemctl daemon-reload
 # No global Docker, system SSH or OS packages are removed.

@@ -7,11 +7,13 @@ stage=/root/.node-manager-agent-upgrade
 agent=/usr/local/bin/node-manager-agent
 helper=/usr/local/libexec/node-manager-helper
 updater=/usr/local/libexec/node-manager-updater
+helperlib=/usr/local/libexec/node-manager-helperlib.zip
+fail2ban_worker=/usr/local/libexec/node-manager-fail2ban
 test -f "$agent" && test ! -L "$agent"
 test -f "$helper" && test ! -L "$helper"
 test -s /etc/node-manager/agent.env
 systemctl is-active --quiet node-manager-agent.service
-for file in agent-binary agent-helper.py agent-updater.sh; do
+for file in agent-binary agent-helper.py agent-helperlib.zip agent-updater.sh fail2ban-setup.sh; do
   test -s "$stage/$file" && test ! -L "$stage/$file"
 done
 test -s "$stage/agent-version"
@@ -22,19 +24,45 @@ read -r expected_version expected_sha < "$stage/agent-version"
 install -d -m 0700 /var/backups/node-manager-upgrade
 install -m 0700 "$agent" /var/backups/node-manager-upgrade/previous-agent
 install -m 0700 "$helper" /var/backups/node-manager-upgrade/previous-helper
+rm -f /var/backups/node-manager-upgrade/previous-helperlib.zip
+if test -f "$helperlib" && test ! -L "$helperlib"; then
+  install -m 0600 "$helperlib" /var/backups/node-manager-upgrade/previous-helperlib.zip
+fi
+rm -f /var/backups/node-manager-upgrade/previous-fail2ban
+if test -f "$fail2ban_worker" && test ! -L "$fail2ban_worker"; then
+  install -m 0700 "$fail2ban_worker" /var/backups/node-manager-upgrade/previous-fail2ban
+fi
 rollback_unexpected(){
   trap - ERR
   install -m 0755 /var/backups/node-manager-upgrade/previous-agent "$agent" || true
   install -m 0755 /var/backups/node-manager-upgrade/previous-helper "$helper" || true
+  if test -f /var/backups/node-manager-upgrade/previous-helperlib.zip; then
+    install -m 0644 /var/backups/node-manager-upgrade/previous-helperlib.zip "$helperlib" || true
+  else
+    rm -f "$helperlib" || true
+  fi
+  if test -f /var/backups/node-manager-upgrade/previous-fail2ban; then
+    install -m 0700 /var/backups/node-manager-upgrade/previous-fail2ban "$fail2ban_worker" || true
+  else
+    rm -f "$fail2ban_worker" || true
+  fi
+  if test -f /var/backups/node-manager-upgrade/previous-updater; then
+    install -m 0700 /var/backups/node-manager-upgrade/previous-updater "$updater" || true
+  else
+    rm -f "$updater" || true
+  fi
   systemctl restart node-manager-agent.service || true
 }
 trap 'rollback_unexpected' ERR
-if test -f "$updater"; then
+rm -f /var/backups/node-manager-upgrade/previous-updater
+if test -f "$updater" && test ! -L "$updater"; then
   install -m 0700 "$updater" /var/backups/node-manager-upgrade/previous-updater
 fi
 install -d -m 0750 -o nodemanager -g nodemanager /var/lib/node-manager
 install -m 0700 "$stage/agent-updater.sh" "$updater"
 install -m 0755 "$stage/agent-helper.py" "$helper"
+install -m 0644 "$stage/agent-helperlib.zip" "$helperlib"
+install -m 0700 "$stage/fail2ban-setup.sh" "$fail2ban_worker"
 install -m 0755 "$stage/agent-binary" "$agent"
 [[ "$(sha256sum "$agent" | awk '{print $1}')" == "$expected_sha" ]]
 printf '%s %s\n' "$expected_version" "$expected_sha" > /var/lib/node-manager/update-pending
@@ -45,6 +73,16 @@ if ! systemctl restart node-manager-agent.service ||
    ! systemctl is-active --quiet node-manager-agent.service; then
   install -m 0755 /var/backups/node-manager-upgrade/previous-agent "$agent"
   install -m 0755 /var/backups/node-manager-upgrade/previous-helper "$helper"
+  if test -f /var/backups/node-manager-upgrade/previous-helperlib.zip; then
+    install -m 0644 /var/backups/node-manager-upgrade/previous-helperlib.zip "$helperlib"
+  else
+    rm -f "$helperlib"
+  fi
+  if test -f /var/backups/node-manager-upgrade/previous-fail2ban; then
+    install -m 0700 /var/backups/node-manager-upgrade/previous-fail2ban "$fail2ban_worker"
+  else
+    rm -f "$fail2ban_worker"
+  fi
   if test -f /var/backups/node-manager-upgrade/previous-updater; then
     install -m 0700 /var/backups/node-manager-upgrade/previous-updater "$updater"
   else
@@ -67,6 +105,21 @@ done
 if [[ "$confirmed" != 1 ]]; then
   install -m 0755 /var/backups/node-manager-upgrade/previous-agent "$agent"
   install -m 0755 /var/backups/node-manager-upgrade/previous-helper "$helper"
+  if test -f /var/backups/node-manager-upgrade/previous-helperlib.zip; then
+    install -m 0644 /var/backups/node-manager-upgrade/previous-helperlib.zip "$helperlib"
+  else
+    rm -f "$helperlib"
+  fi
+  if test -f /var/backups/node-manager-upgrade/previous-fail2ban; then
+    install -m 0700 /var/backups/node-manager-upgrade/previous-fail2ban "$fail2ban_worker"
+  else
+    rm -f "$fail2ban_worker"
+  fi
+  if test -f /var/backups/node-manager-upgrade/previous-updater; then
+    install -m 0700 /var/backups/node-manager-upgrade/previous-updater "$updater"
+  else
+    rm -f "$updater"
+  fi
   systemctl restart node-manager-agent.service || true
   rm -f /var/lib/node-manager/update-pending /var/lib/node-manager/update-ok
   echo AGENT_UPGRADE:rolled-back

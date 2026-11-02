@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ... import preset_deploy
+from ... import helper_bundle, preset_deploy
 from ...template_engine import Endpoint, new_inbound, validate_rendered
 from ..naming import config_profile_name
 from .ssh import check_ip
@@ -140,5 +140,5 @@ def render_files(
         "node.env": "SECRET_KEY=" + secret_key + "\n",
         "index.html": html_site,
         "remote-install.sh": (DATA / "remote-install.sh").read_text(encoding="utf8"),
-        "node-baseline.sh": (DATA / "node-baseline.sh").read_text(encoding="utf8"),
+        **helper_bundle.artifacts(),
     }

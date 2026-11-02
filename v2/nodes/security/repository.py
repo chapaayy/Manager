@@ -166,3 +166,38 @@ def mark_applied(node_id: str, result: dict) -> None:
             node_id,
             f"Applied security revision {revision}",
         )
+
+
+def mark_bootstrap_applied(node_id: str) -> dict:
+    """Record the exact default profile applied by fresh-VPS bootstrap.
+
+    Never overwrite an operator-created profile. This is called only after the
+    remote installer has exited successfully.
+    """
+    storage.get_node(node_id)
+    initialize()
+    now = int(time.time())
+    config = default_config()
+    encoded = json.dumps(
+        config, separators=(",", ":"), sort_keys=True
+    )
+    with storage.transaction() as db:
+        existing = db.execute(
+            "SELECT revision FROM node_security_settings WHERE node_id=?",
+            (node_id,),
+        ).fetchone()
+        if existing is None:
+            db.execute(
+                """INSERT INTO node_security_settings
+                   (node_id,config_json,revision,applied_revision,
+                    updated_at,applied_at)
+                   VALUES(?,?,1,1,?,?)""",
+                (node_id, encoded, now, now),
+            )
+            storage.event(
+                db,
+                "node.security.bootstrap",
+                node_id,
+                "Fresh VPS default security profile applied",
+            )
+    return get(node_id)

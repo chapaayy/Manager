@@ -10,7 +10,7 @@ import re
 
 import paramiko
 
-from . import agent_transport, storage
+from . import agent_transport, helper_bundle, storage
 from .nodes.install import ssh as node_ssh
 from .template_engine import Endpoint
 
@@ -82,11 +82,11 @@ def install_on_transport(transport: paramiko.Transport, node_id: str) -> dict:
     try:
         files = {
             "agent-binary": (ROOT/binary).read_bytes(),
-            "agent-helper.py": (ROOT/"helper.py").read_bytes(),
             "install.sh": (ROOT/"install-agent.sh").read_bytes(),
             "agent-uninstall.sh": (ROOT/"uninstall-agent.sh").read_bytes(),
             "agent-updater.sh": (ROOT/"agent-updater.sh").read_bytes(),
             "fail2ban-setup.sh": (ROOT/"fail2ban-setup.sh").read_bytes(),
+            **helper_bundle.artifacts(),
         }
     except (OSError, ValueError):
         raise AgentBootstrapError("В образе менеджера отсутствуют файлы агента. "
@@ -261,9 +261,10 @@ def upgrade_existing(node_id:str,password:str,confirmed:bool)->dict:
             raise AgentBootstrapError("Неподдерживаемая архитектура VPS")
         try:
             files={"agent-binary":(ROOT/binary_name).read_bytes(),
-                   "agent-helper.py":(ROOT/"helper.py").read_bytes(),
                    "agent-updater.sh":(ROOT/"agent-updater.sh").read_bytes(),
-                   "upgrade.sh":(ROOT/"upgrade-agent.sh").read_bytes()}
+                   "fail2ban-setup.sh":(ROOT/"fail2ban-setup.sh").read_bytes(),
+                   "upgrade.sh":(ROOT/"upgrade-agent.sh").read_bytes(),
+                   **helper_bundle.artifacts()}
             import hashlib
             from . import agent_release
             files["agent-version"]=(agent_release.release()["version"]+" "+
@@ -316,9 +317,12 @@ def enable_ssh_security(node_id: str,password: str,confirmed: bool) -> dict:
     try:
         node_ssh.verify_existing_install(
             t,Endpoint(node["code"],node["domain"],node["country"]))
-        files={"helper.py":(ROOT/"helper.py").read_bytes(),
-               "fail2ban-setup.sh":(ROOT/"fail2ban-setup.sh").read_bytes()}
-        if any(not x or len(x)>100000 for x in files.values()):
+        files={
+            "agent-helper.py":helper_bundle.launcher_bytes(),
+            "agent-helperlib.zip":helper_bundle.library_zip_bytes(),
+            "fail2ban-setup.sh":(ROOT/"fail2ban-setup.sh").read_bytes(),
+        }
+        if any(not x or len(x)>700000 for x in files.values()):
             raise AgentBootstrapError("Файлы безопасности некорректны")
         stage="/root/.node-manager-security-stage"
         node_ssh.run_command(t,"install -d -m 0700 "+stage,timeout=12)
@@ -336,13 +340,20 @@ def enable_ssh_security(node_id: str,password: str,confirmed: bool) -> dict:
             "set -Eeuo pipefail\n"
             "test ! -L /usr/local/libexec/node-manager-helper\n"
             "test -s /usr/local/libexec/node-manager-helper\n"
-            "python3 -m py_compile /root/.node-manager-security-stage/helper.py\n"
+            "test ! -L /usr/local/libexec/node-manager-helperlib.zip || exit 35\n"
+            "python3 -m py_compile /root/.node-manager-security-stage/agent-helper.py\n"
             "bash -n /root/.node-manager-security-stage/fail2ban-setup.sh\n"
+            "python3 /root/.node-manager-security-stage/agent-helper.py baseline.status </dev/null >/dev/null\n"
             "install -m 0700 -o root -g root /usr/local/libexec/node-manager-helper /root/.node-manager-security-stage/helper.prev\n"
-            "if ! install -m 0755 /root/.node-manager-security-stage/helper.py /usr/local/libexec/node-manager-helper || "
+            "if test -s /usr/local/libexec/node-manager-helperlib.zip; then install -m 0600 /usr/local/libexec/node-manager-helperlib.zip /root/.node-manager-security-stage/helperlib.prev; fi\n"
+            "if test -s /usr/local/libexec/node-manager-fail2ban; then install -m 0700 /usr/local/libexec/node-manager-fail2ban /root/.node-manager-security-stage/fail2ban.prev; fi\n"
+            "if ! install -m 0755 /root/.node-manager-security-stage/agent-helper.py /usr/local/libexec/node-manager-helper || "
+            "! install -m 0644 /root/.node-manager-security-stage/agent-helperlib.zip /usr/local/libexec/node-manager-helperlib.zip || "
             "! install -m 0700 /root/.node-manager-security-stage/fail2ban-setup.sh /usr/local/libexec/node-manager-fail2ban || "
             "! /usr/local/libexec/node-manager-helper baseline.status </dev/null >/dev/null; then\n"
             " install -m 0755 /root/.node-manager-security-stage/helper.prev /usr/local/libexec/node-manager-helper\n"
+            " if test -s /root/.node-manager-security-stage/helperlib.prev; then install -m 0644 /root/.node-manager-security-stage/helperlib.prev /usr/local/libexec/node-manager-helperlib.zip; else rm -f /usr/local/libexec/node-manager-helperlib.zip; fi\n"
+            " if test -s /root/.node-manager-security-stage/fail2ban.prev; then install -m 0700 /root/.node-manager-security-stage/fail2ban.prev /usr/local/libexec/node-manager-fail2ban; else rm -f /usr/local/libexec/node-manager-fail2ban; fi\n"
             " echo SECURITY_HELPER:rolled-back\n"
             " exit 36\n"
             "fi\n"
