@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from ..template_engine import Endpoint
-from .install.render import config_profile_name
+from .naming import config_profile_name
 
 
 class ProfileOwnershipError(ValueError):
