@@ -278,7 +278,7 @@ def report(node_id: str, body: dict) -> dict:
         raise AgentError("Задание уже завершено или неизвестно")
     # Certificates are processed in memory and NEVER written to DB.
     if row["action"] in ("cert.export","cert.status"):
-        from . import node_cert_sync
+        from .nodes import tls as node_cert_sync
         # Never propagate arbitrary helper errors or Remnawave API bodies:
         # they might contain PEM or other secrets.
         if ok:
