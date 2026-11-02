@@ -23,6 +23,7 @@ read -r expected_version expected_sha < "$stage/agent-version"
 install -d -m 0700 /var/backups/node-manager-upgrade
 install -m 0700 "$agent" /var/backups/node-manager-upgrade/previous-agent
 install -m 0700 "$helper" /var/backups/node-manager-upgrade/previous-helper
+rm -f /var/backups/node-manager-upgrade/previous-helperlib.zip
 if test -f "$helperlib" && test ! -L "$helperlib"; then
   install -m 0600 "$helperlib" /var/backups/node-manager-upgrade/previous-helperlib.zip
 fi
@@ -82,6 +83,11 @@ done
 if [[ "$confirmed" != 1 ]]; then
   install -m 0755 /var/backups/node-manager-upgrade/previous-agent "$agent"
   install -m 0755 /var/backups/node-manager-upgrade/previous-helper "$helper"
+  if test -f /var/backups/node-manager-upgrade/previous-helperlib.zip; then
+    install -m 0644 /var/backups/node-manager-upgrade/previous-helperlib.zip "$helperlib"
+  else
+    rm -f "$helperlib"
+  fi
   systemctl restart node-manager-agent.service || true
   rm -f /var/lib/node-manager/update-pending /var/lib/node-manager/update-ok
   echo AGENT_UPGRADE:rolled-back
