@@ -43,7 +43,8 @@ function securityActualMatches(data){
     : data.bbr_config_managed!==true;
 
   const expectedIgnore=["127.0.0.1/8","::1",...f.trusted_sources];
-  if(fw.enabled&&data.panel_firewall_panel_ip)expectedIgnore.push(data.panel_firewall_panel_ip+"/32");
+  if(data.bootstrap_ssh_peer&&!expectedIgnore.includes(data.bootstrap_ssh_peer))expectedIgnore.push(data.bootstrap_ssh_peer);
+  if(fw.enabled&&data.panel_firewall_panel_ip&&!expectedIgnore.includes(data.panel_firewall_panel_ip+"/32"))expectedIgnore.push(data.panel_firewall_panel_ip+"/32");
   const f2bOk=f.enabled
     ? data.fail2ban_active===true&&data.sshd_jail_active===true&&
       Number(data.fail2ban_maxretry)===f.maxretry&&
