@@ -84,3 +84,18 @@ def test_fail2ban_worker_contains_no_configuration_logic():
     assert "security.fail2ban.bootstrap" in worker
     for duplicate in ("[sshd]","maxretry =","findtime =","bantime =","apt-get"):
         assert duplicate not in worker
+
+
+def test_ssh_migration_rolls_back_the_complete_agent_bundle():
+    upgrade=(ROOT/"v2/agent/upgrade-agent.sh").read_text()
+    for artifact in (
+        "previous-agent",
+        "previous-helper",
+        "previous-helperlib.zip",
+        "previous-fail2ban",
+        "previous-updater",
+    ):
+        assert artifact in upgrade
+    assert upgrade.count('previous-updater') >= 4
+    assert upgrade.count('previous-helperlib.zip') >= 4
+    assert upgrade.count('previous-fail2ban') >= 4
