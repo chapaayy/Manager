@@ -110,3 +110,21 @@ def test_storage_keeps_compatibility_aliases_for_core_primitives():
     assert storage.encrypt is database.encrypt
     assert storage.decrypt is database.decrypt
     assert storage.event is events.record
+
+
+def test_storage_module_is_a_small_compatibility_facade():
+    source = open("v2/storage.py", encoding="utf-8").read()
+    assert len(source.splitlines()) < 100
+    assert "SELECT " not in source
+    assert "INSERT " not in source
+    assert "UPDATE " not in source
+    assert "CREATE TABLE" not in source
+
+
+def test_api_layer_does_not_own_database_queries():
+    from pathlib import Path
+    for path in Path("v2/api").glob("*.py"):
+        source = path.read_text(encoding="utf-8")
+        assert "sqlite3.connect(" not in source, path
+        assert ".execute(\"SELECT " not in source, path
+        assert ".execute(\"INSERT " not in source, path
