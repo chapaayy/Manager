@@ -21,16 +21,16 @@
   <div id="login-screen" class="auth-overlay">
     <form id="login-form" class="auth-card">
       <div class="logo-mark"><svg><use href="/static/icons.svg#i-shield-check"></use></svg></div>
-      <p class="eyebrow">XPPN / VERSION 2.2</p>
+      <p class="eyebrow">XPPN / VERSION 2.3</p>
       <h1>Твоя инфраструктура.<br>Без лишнего.</h1>
-      <p class="muted">Одна Remnawave, единое управление нодами и мостами.</p>
+      <p class="muted">Одна Remnawave, единое управление VPS и нодами.</p>
       <label for="login-username">Логин</label>
       <input id="login-username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" required minlength="3" maxlength="40" value="admin">
       <label for="login-password">Пароль</label>
       <input id="login-password" type="password" autocomplete="current-password" required minlength="1">
       <button class="btn primary large" type="submit">Войти <svg><use href="/static/icons.svg#i-arrow-right"></use></svg></button>
       <p class="form-error" id="login-error" role="alert"></p>
-      <p class="small-print">Предварительная версия. Не управляет рабочими серверами без отдельного подтверждения.</p>
+      <p class="small-print">Системные изменения на VPS выполняются только через отдельные подтверждённые действия.</p>
     </form>
   </div>
   <div id="shell" class="shell hidden">
@@ -53,13 +53,13 @@
         <button class="nav-link" data-page="updates" title="Обновления" type="button"><svg><use href="/static/icons.svg#i-refresh-cw"></use></svg><span>Обновления</span></button>
       </nav>
       <div class="sidebar-bottom">
-        <span class="phase-dot"></span><span class="phase-label">Режим предпросмотра</span>
+        <span class="phase-dot"></span><span class="phase-label">Единая панель</span>
       </div>
     </aside>
     <div class="workspace">
       <header class="topbar">
         <div class="crumbs"><span>XPPN</span><span class="crumb-separator">/</span><strong id="current-page-name">Ноды</strong></div>
-        <div class="topbar-actions"><span class="topbar-phase">Проверка изменений без применения</span><button class="icon-button" id="refresh" title="Обновить данные" type="button"><svg><use href="/static/icons.svg#i-refresh-cw"></use></svg></button></div>
+        <div class="topbar-actions"><span class="topbar-phase">REMNAWAVE API + AGENT</span><button class="icon-button" id="refresh" title="Обновить данные" type="button"><svg><use href="/static/icons.svg#i-refresh-cw"></use></svg></button></div>
       </header>
       <main>
         <section id="page-nodes" class="page">
@@ -133,7 +133,7 @@
               </form>
               <p id="monitoring-status" class="form-feedback"></p>
             </section>
-<aside class="panel info-panel"><svg class="info-icon"><use href="/static/icons.svg#i-shield-check"></use></svg><h3>Безопасный предпросмотр</h3><p>Действующие VPN-конфиги и ключи не изменяются при редактировании библиотеки или просмотре конфигураций. Применение будет подключено отдельно после проверки совместимости и отката.</p><p>Глубокая проверка сетевой доступности из регионов потребует независимых измерительных узлов и не подменяется проверкой с одного VPS.</p></aside>
+<aside class="panel info-panel"><svg class="info-icon"><use href="/static/icons.svg#i-shield-check"></use></svg><h3>Безопасное управление</h3><p>Редактирование библиотеки само по себе не меняет действующие VPN-конфиги. Применение выполняется только из конкретной ноды через отдельное подтверждённое действие и проверку Agent.</p><p>Глубокая проверка сетевой доступности из регионов потребует независимых измерительных узлов и не подменяется проверкой с одного VPS.</p></aside>
           </div>
         </section>
         <section id="page-updates" class="page hidden">
@@ -222,7 +222,7 @@
         <label>Домен VPS<input name="domain" required placeholder="de1.gowayot.com"></label>
         <div class="two-fields"><label>SSH-пароль root<input type="password" name="password" autocomplete="new-password" required></label>
           <label>Исходящий IPv4 Remnawave (доступ к порту 2222)<input name="panel_ip" required placeholder="Публичный IP управляющей панели"></label></div>
-        <p class="muted small">Установка только на пустой Ubuntu/Debian. DNS домена должен указывать на указанный IPv4. Порт 2222 разрешается только IP панели. После успешной проверки пароль SSH сохраняется на Manager в зашифрованном виде и не возвращается в браузер.</p><p class="inline-info">Первый установщик ещё не проверен на настоящем VPS. Используй только пустую тестовую машину. При сбое возможна частичная установка без автоматического отката.</p>
+        <p class="muted small">Установка только на пустой Ubuntu/Debian. DNS домена должен указывать на указанный IPv4. Порт 2222 разрешается только IP панели. После успешной проверки пароль SSH сохраняется на Manager в зашифрованном виде и не возвращается в браузер.</p><p class="inline-info">Установка изменяет системные сервисы VPS. Для нового хостера или образа сначала используй пустую тестовую машину; при сбое до финальной проверки возможна частичная установка.</p>
         <button id="vps-probe-button" type="submit" class="btn primary">Проверить SSH, DNS и порты</button>
       </form>
     </div>
