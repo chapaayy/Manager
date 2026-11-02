@@ -3,7 +3,7 @@ from pathlib import Path
 import re
 
 def test_destructive_helper_has_fixed_scope_and_no_global_docker_wipe():
-    helper=Path("v2/agent/helper.py").read_text()
+    helper=Path("v2/agent/helperlib/cleanup.py").read_text()
     agent=Path("v2/agent/main.go").read_text()
     uninstall=Path("v2/agent/uninstall-agent.sh").read_text()
     assert 'if action=="node.cleanup":return _cleanup_managed(data)' in helper
