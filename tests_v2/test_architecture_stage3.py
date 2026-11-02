@@ -33,10 +33,14 @@ def test_helper_bundle_is_deterministic_zip_with_no_extra_files():
 def test_internal_bootstrap_actions_are_not_available_through_agent_sudo():
     launcher=(ROOT/"v2/agent/helper.py").read_text()
     common=(ROOT/"v2/agent/helperlib/common.py").read_text()
+    worker=(ROOT/"v2/agent/fail2ban-setup.sh").read_text()
     agent=(ROOT/"v2/agent/main.go").read_text()
-    assert '"security.bootstrap"' in common
-    assert '"security.fail2ban.bootstrap"' in common
-    assert 'action in INTERNAL_ACTIONS and os.environ.get("SUDO_USER")' in launcher
+    assert '"security.bootstrap"' not in common
+    assert '"security.fail2ban.bootstrap"' not in common
+    assert 'Path("/root/.xppn-pending/agent-helper.py")' in launcher
+    assert 'not os.environ.get("SUDO_USER")' in launcher
+    assert 'bootstrap_fail2ban' in worker
+    assert '/usr/local/libexec/node-manager-helper security.fail2ban.bootstrap' not in worker
     assert '"security.bootstrap":true' not in agent
     assert '"security.fail2ban.bootstrap":true' not in agent
 
