@@ -5,17 +5,10 @@ from pathlib import Path
 
 from ... import preset_deploy
 from ...template_engine import Endpoint, new_inbound, validate_rendered
+from ..naming import config_profile_name
 from .ssh import check_ip
 
 DATA = Path(__file__).resolve().parents[2] / "data"
-
-
-def config_profile_name(source: Endpoint, mode: str = "direct") -> str:
-    return (
-        f"XPPN {source.code} {source.country} BRIDGE VLESS TLS"
-        if mode == "bridge"
-        else f"XPPN {source.code} {source.country} VLESS TLS"
-    )
 
 
 def xray_config(source: Endpoint) -> dict:
