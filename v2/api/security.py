@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from .. import agent_bootstrap, agent_transport, security_settings
+from .. import agent_bootstrap, agent_transport
+from ..nodes import security as security_settings
 from ..core.auth import read_access, write_access
 from .node_access import node_password
 
