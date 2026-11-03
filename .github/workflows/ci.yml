@@ -1,4 +1,4 @@
-name: XPPN Manager 2.0 checks
+name: XPPN Manager 2.3 checks
 on:
   push:
   pull_request:
