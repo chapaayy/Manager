@@ -1,7 +1,7 @@
 """Stable naming rules shared by node installation and ownership checks."""
 from __future__ import annotations
 
-from ..template_engine import Endpoint
+from ..xray import Endpoint
 
 
 def config_profile_name(source: Endpoint, mode: str = "direct") -> str:
