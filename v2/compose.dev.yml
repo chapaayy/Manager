@@ -1,0 +1,25 @@
+name: xppn-v2-dev
+services:
+  manager-v2:
+    build:
+      context: ..
+      dockerfile: v2/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - path: .env.dev
+        format: raw
+    ports:
+      - "127.0.0.1:8791:8000"
+    volumes:
+      - v2-dev-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,noexec,nosuid
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 160
+    mem_limit: 512m
+volumes:
+  v2-dev-data:
