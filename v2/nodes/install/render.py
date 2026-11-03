@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ... import helper_bundle, preset_deploy
-from ...template_engine import Endpoint, new_inbound, validate_rendered
+from ...xray import Endpoint, new_inbound, validate_rendered
 from ..naming import config_profile_name
 from .ssh import check_ip
 

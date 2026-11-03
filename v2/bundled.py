@@ -1,7 +1,7 @@
-"""Idempotent XPPN starter library: two Xray roles and shared VPS files.
+"""Idempotent starter library for the active Direct profile and shared VPS files.
 
-Existing user-edited content and existing preset associations are never
-overwritten. Deleted starter files are not resurrected.
+The old Bridge Xray example is preserved only as an editable library artifact;
+it is not an install mode. Existing user content is never overwritten.
 """
 from __future__ import annotations
 from pathlib import Path
@@ -11,6 +11,7 @@ import uuid
 from . import storage
 
 ROOT=Path(__file__).resolve().parent/"data"
+BRIDGE_ROOT=Path(__file__).resolve().parent/"bridge"/"data"
 STARTERS=(
     ("XPPN · Xray Bridge VLESS TLS","xray","xray_bridge_template.json"),
     ("XPPN · Xray Direct VLESS TLS","xray","xray_direct_template.json"),
@@ -18,7 +19,6 @@ STARTERS=(
     ("XPPN · Nginx Compose","nginx_compose","nginx-compose.yml"),
     ("XPPN · Remnawave Node Compose","node_compose","remnanode-compose.yml"),
 )
-BRIDGE_PRESET="XPPN · Bridge VLESS TLS RAW"
 DIRECT_PRESET="XPPN · Direct VLESS TLS RAW"
 DEFAULT_PRESET=DIRECT_PRESET
 
@@ -38,7 +38,7 @@ def seed_defaults() -> None:
                 c.execute("""INSERT INTO library_configs
                     (id,name,kind,content_enc,revision,created_at,updated_at)
                     VALUES(?,?,?,?,1,?,?)""",
-                    (ident,name,kind,storage.encrypt((ROOT/filename).read_text("utf-8")),now,now))
+                    (ident,name,kind,storage.encrypt(((BRIDGE_ROOT if filename=="xray_bridge_template.json" else ROOT)/filename).read_text("utf-8")),now,now))
                 ids[filename]=ident
             if not c.execute("SELECT 1 FROM starter_seeds WHERE name=?",(key,)).fetchone():
                 c.execute("INSERT INTO starter_seeds(name,applied_at) VALUES(?,?)",(key,now))
@@ -49,17 +49,12 @@ def seed_defaults() -> None:
         for name,mode,xray in ((DIRECT_PRESET,"direct","xray_direct_template.json"),):
             key="preset:"+name
             existing=c.execute("SELECT id,mode FROM presets WHERE name=?",(name,)).fetchone()
-            if existing:
-                # Upgrade only the known old seed to its declared purpose.
-                if name==BRIDGE_PRESET and existing["mode"]=="custom":
-                    c.execute("UPDATE presets SET mode='bridge' WHERE id=?",(existing["id"],))
-            elif not c.execute("SELECT 1 FROM starter_seeds WHERE name=?",(key,)).fetchone():
+            if not existing and not c.execute(
+                "SELECT 1 FROM starter_seeds WHERE name=?", (key,)
+            ).fetchone():
                 if all(f in ids for f in (xray,*common)):
                     preset_id=str(uuid.uuid4())
-                    description=("Прямой VLESS TLS сервер: Xray 443 + Nginx + Docker."
-                                 if mode=="direct" else
-                                 "Входной мост 443/8443: безопасный старт без выходных маршрутов. "
-                                 "Связи с выходными VPS настраиваются отдельно.")
+                    description="Прямой VLESS TLS сервер: Xray 443 + Nginx + Docker."
                     c.execute("""INSERT INTO presets
                         (id,name,description,mode,created_at,updated_at)
                         VALUES(?,?,?,?,?,?)""",

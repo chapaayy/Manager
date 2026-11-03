@@ -1,4 +1,4 @@
-name: XPPN Manager 2.0 checks
+name: XPPN Manager 2.3 checks
 on:
   push:
   pull_request:
@@ -39,12 +39,12 @@ jobs:
           node --check v2/static/node-security.js
           node --check v2/static/vps.js
           node tests_v2/test_ui.js
-          bash -n v2/preview-install.sh v2/install.sh v2/activate-web-updates.sh v2/data/remote-install.sh v2/data/node-baseline.sh
+          bash -n v2/dev-install.sh v2/preview-install.sh v2/install.sh v2/activate-web-updates.sh v2/data/remote-install.sh v2/data/node-baseline.sh
       - name: Validate Xray transformations, HTTP API and security
         run: python -m pytest -q tests_v2
       - name: Validate public and shared-proxy Docker configurations
         run: |
-          cat > v2/.env.preview <<'EOF'
+          cat > v2/.env <<'EOF'
           XPPN_V2_DB=/data/xppn-v2.db
           XPPN_V2_DOMAIN=manager.example.org
           XPPN_V2_ADMIN_USER=admin
@@ -53,15 +53,23 @@ jobs:
           XPPN_DATA_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
           XPPN_V2_COOKIE_SECURE=1
           EOF
-          docker compose --project-directory v2 --env-file v2/.env.preview \
-            -f v2/compose.preview.yml -f v2/compose.public.yml config --quiet
-          docker compose --project-directory v2 --env-file v2/.env.preview \
-            -f v2/compose.preview.yml -f v2/compose.public.yml config --format json \
+          docker compose --project-directory v2 --env-file v2/.env \
+            -f v2/compose.yml -f v2/compose.public.yml config --quiet
+          docker compose --project-directory v2 --env-file v2/.env \
+            -f v2/compose.yml -f v2/compose.public.yml config --format json \
             > /tmp/xppn-v2-compose.json
           python -c 'import json; c=json.load(open("/tmp/xppn-v2-compose.json")); h=c["services"]["manager-v2"]["environment"]["XPPN_V2_ADMIN_PASSWORD_HASH"]; assert h.startswith("pbkdf2_sha256:600000:0123456789abcdef") and h.endswith("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"), "Compose mangled PBKDF2 delimiter"'
           XPPN_V2_EXISTING_NETWORK=xppn-manager_default \
-            docker compose --project-directory v2 --env-file v2/.env.preview \
-              -f v2/compose.preview.yml -f v2/compose.attach.yml config --quiet
+            docker compose --project-directory v2 --env-file v2/.env \
+              -f v2/compose.yml -f v2/compose.attach.yml config --quiet
+          # One-release transition guard: the updater from the previous release
+          # still references these historical names after fetching new code.
+          cp v2/.env v2/.env.preview
+          docker compose --project-directory v2 --env-file v2/.env.preview \
+            -f v2/compose.preview.yml -f v2/compose.public.yml config --quiet
+          cp v2/.env v2/.env.dev
+          docker compose -p xppn-v2-dev --project-directory v2 --env-file v2/.env.dev \
+            -f v2/compose.dev.yml config --quiet
           docker run --rm -e XPPN_V2_DOMAIN=manager.example.org \
             -v "$PWD/v2/Caddyfile.public:/etc/caddy/Caddyfile:ro" \
             caddy:2.10.2-alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
@@ -70,14 +78,14 @@ jobs:
         run: |
           # Reproduce installer umask 077, which previously crashed non-root uvicorn.
           chmod -R go-rwx v2
-          docker build -f v2/Dockerfile -t xppn-v2-preview:ci .
+          docker build -f v2/Dockerfile -t xppn-v2:ci .
           docker run -d --name xppn-v2-smoke \
             -e XPPN_V2_DB=/tmp/xppn-v2-ci.db \
             -e XPPN_V2_ADMIN_PASSWORD=ci-only-secure-password-123456 \
             -e XPPN_V2_SESSION_SECRET=ci-only-session-secret-012345678901234567890123 \
             -e XPPN_DATA_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= \
             -e XPPN_V2_COOKIE_SECURE=0 \
-            -p 127.0.0.1:8790:8000 xppn-v2-preview:ci
+            -p 127.0.0.1:8790:8000 xppn-v2:ci
           for attempt in 1 2 3 4 5 6 7 8 9 10; do
             if curl -fsS http://127.0.0.1:8790/api/health | grep -q '"ok":true'; then
               docker rm -f xppn-v2-smoke

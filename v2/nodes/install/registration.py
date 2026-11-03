@@ -4,7 +4,7 @@ from __future__ import annotations
 import time
 
 from ... import remnawave, storage
-from ...template_engine import Endpoint
+from ...xray import Endpoint
 from .render import config_profile_name, xray_config
 
 

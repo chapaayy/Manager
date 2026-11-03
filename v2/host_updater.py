@@ -25,7 +25,29 @@ CONFIG = Path("/etc/xppn-v2-update.json")
 LOCK = Path("/run/lock/xppn-v2-host-update.lock")
 REPO = "https://github.com/chapaayy/Manager.git"
 BRANCH = "v2/rebuild-single-panel"
+# Docker project/container identity is intentionally kept stable. Renaming the
+# historical xppn-v2-preview project would detach the named SQLite volume.
 CONTAINER = "xppn-v2-preview-manager-v2-1"
+PRIMARY_ENV = APP / "v2" / ".env"
+LEGACY_ENV = APP / "v2" / ".env.preview"
+PRIMARY_COMPOSE = APP / "v2" / "compose.yml"
+LEGACY_COMPOSE = APP / "v2" / "compose.preview.yml"
+
+
+def env_path() -> Path:
+    if PRIMARY_ENV.is_file():
+        return PRIMARY_ENV
+    if LEGACY_ENV.is_file():
+        return LEGACY_ENV
+    raise RuntimeError("Не найден файл окружения Manager (.env)")
+
+
+def compose_path() -> Path:
+    if PRIMARY_COMPOSE.is_file():
+        return PRIMARY_COMPOSE
+    if LEGACY_COMPOSE.is_file():
+        return LEGACY_COMPOSE
+    raise RuntimeError("Не найден основной Docker Compose Manager")
 
 
 def call(*args: str, timeout: int = 150) -> str:
@@ -68,8 +90,8 @@ def compose() -> list[str]:
     args = [
         "docker", "compose", "-p", "xppn-v2-preview",
         "--project-directory", str(APP / "v2"),
-        "--env-file", str(APP / "v2" / ".env.preview"),
-        "-f", str(APP / "v2" / "compose.preview.yml"),
+        "--env-file", str(env_path()),
+        "-f", str(compose_path()),
     ]
     if mode == "public":
         args += ["-f", str(APP / "v2" / "compose.public.yml")]
@@ -101,7 +123,7 @@ def healthy(timeout: int = 95) -> bool:
 def snapshot(timestamp: str) -> None:
     BACKUP.mkdir(parents=True, exist_ok=True)
     os.chmod(BACKUP, 0o700)
-    env = APP / "v2" / ".env.preview"
+    env = env_path()
     shutil.copy2(env, BACKUP / ("v2-env-before-update-" + timestamp))
     os.chmod(BACKUP / ("v2-env-before-update-" + timestamp), 0o600)
     # SQLite online backup through the running application container, not a live copy

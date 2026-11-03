@@ -1,7 +1,7 @@
 """Shared Remnawave profile-assignment rules for one Manager-owned node."""
 from __future__ import annotations
 
-from ..template_engine import Endpoint
+from ..xray import Endpoint
 from .naming import config_profile_name
 
 

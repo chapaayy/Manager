@@ -4,7 +4,7 @@ import io
 import zipfile
 
 from v2 import helper_bundle, vps_install
-from v2.template_engine import Endpoint
+from v2.xray import Endpoint
 
 ROOT=Path(__file__).resolve().parents[1]
 

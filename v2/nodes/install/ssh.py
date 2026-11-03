@@ -10,7 +10,7 @@ import time
 
 import paramiko
 
-from ...template_engine import Endpoint
+from ...xray import Endpoint
 
 SSH_TIMEOUT = 16
 FP = re.compile(r"SHA256:[A-Za-z0-9+/]{42,44}\Z")

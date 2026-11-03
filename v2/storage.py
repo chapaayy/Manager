@@ -38,7 +38,7 @@ from .repositories.installations import (
     save_install_preset,
     set_install_status,
 )
-from .repositories.bridge import (
+from .bridge.repository import (
     approve_plan,
     create_bridge,
     create_plan,

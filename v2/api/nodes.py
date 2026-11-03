@@ -8,7 +8,7 @@ from ..nodes import lifecycle as node_lifecycle
 from ..nodes import removal as node_removal
 from ..core.auth import read_access, write_access
 from ..core.errors import api_failure
-from ..template_engine import Endpoint
+from ..xray import Endpoint
 
 router = APIRouter()
 

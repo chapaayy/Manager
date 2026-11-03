@@ -11,7 +11,7 @@ from v2.app import _password_ok, _username
 
 
 def test_new_domain_login_and_hash_only(tmp_path,monkeypatch):
-    env=tmp_path / ".env.preview"
+    env=tmp_path / ".env"
     result=configure(env,"admin.gowayot.com","xppnadmin","a long and unique passphrase here")
     assert result["domain"]=="admin.gowayot.com"
     assert result["username"]=="xppnadmin"
@@ -31,7 +31,7 @@ def test_new_domain_login_and_hash_only(tmp_path,monkeypatch):
 
 
 def test_upgrade_keeps_secrets_and_original_hash(tmp_path):
-    env=tmp_path / ".env.preview"
+    env=tmp_path / ".env"
     configure(env,"v2a.gowayot.com","admin","very long password of mine")
     _, one=read_env(env)
     configure(env,"v2b.gowayot.com","operator","")
@@ -58,7 +58,7 @@ def test_legacy_preview_plaintext_password_is_migrated(tmp_path):
 @pytest.mark.parametrize("bad",["127.0.0.1","localhost","http://panel.example.com","domain.local",
                                "example.com:80","test.example.com","-broken.org"])
 def test_bad_domains_fail_without_writing_file(tmp_path,bad):
-    path=tmp_path / ".env.preview"
+    path=tmp_path / ".env"
     with pytest.raises(SetupError):
         configure(path,bad,"admin","long valid password for admin")
     assert not path.exists()
@@ -95,7 +95,7 @@ def test_app_http_login_requires_correct_username(tmp_path,monkeypatch):
     from fastapi.testclient import TestClient
     from v2.app import app
     from v2 import storage
-    env=tmp_path / ".env.preview"
+    env=tmp_path / ".env"
     configure(env,"dashboard.gowayot.com","myoperator","a passphrase that passes all checks")
     _, values=read_env(env)
     for key,val in values.items():
@@ -116,7 +116,7 @@ def test_install_cli_accepts_admin_and_hashes_password(tmp_path):
     """Reproduce bash install: python -m v2.setup_env --username admin with NUL stdin."""
     import subprocess
     import sys
-    env=tmp_path / ".env.preview"
+    env=tmp_path / ".env"
     run=subprocess.run(
         [sys.executable, "-m", "v2.setup_env", "--file", str(env),
          "--domain", "nodeist.gowayot.com", "--username", "admin"],
@@ -131,7 +131,7 @@ def test_install_cli_accepts_admin_and_hashes_password(tmp_path):
 def test_installer_and_runtime_accept_same_non_ascii_alphanumeric_username(tmp_path):
     from v2.app import _username
     import os
-    env=tmp_path / ".env.preview"
+    env=tmp_path / ".env"
     configure(env,"newnode.gowayot.com","админ","long-example-password-for-tests")
     _, values=read_env(env)
     old=os.environ.get("XPPN_V2_ADMIN_USER")
@@ -147,14 +147,14 @@ def test_installer_and_runtime_accept_same_non_ascii_alphanumeric_username(tmp_p
 
 def test_hidden_unicode_login_character_is_explained(tmp_path):
     with pytest.raises(SetupError,match="U\\+200B"):
-        configure(tmp_path / ".env.preview","newnode.gowayot.com","admin\u200b",
+        configure(tmp_path / ".env","newnode.gowayot.com","admin\u200b",
                   "long-example-password-for-tests")
 
 
 
 def test_migrate_existing_dollar_separated_hash_without_password_reset(tmp_path,monkeypatch):
     from v2.app import _password_ok
-    env=tmp_path/".env.preview"
+    env=tmp_path/".env"
     configure(env,"admin.gowayot.com","admin","a strong existing password 123")
     original=env.read_text()
     import re

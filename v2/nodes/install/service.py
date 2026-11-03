@@ -6,7 +6,7 @@ import re
 
 from ... import preset_deploy, remnawave, storage
 from .. import security as node_security
-from ...template_engine import Endpoint, TemplateError
+from ...xray import Endpoint, TemplateError
 from . import remote, render, ssh
 from .registration import complete_panel_registration
 

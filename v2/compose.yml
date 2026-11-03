@@ -1,0 +1,29 @@
+# Primary Manager compose file.
+# The project name xppn-v2-preview is a legacy stable identifier: changing it
+# would create a different named volume and disconnect existing installations.
+name: xppn-v2-preview
+services:
+  manager-v2:
+    build:
+      context: ..
+      dockerfile: v2/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        format: raw
+    ports:
+      - "127.0.0.1:8790:8000"
+    volumes:
+      - v2-data:/data
+      - /var/lib/xppn-v2-update:/updater:rw
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,noexec,nosuid
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 160
+    mem_limit: 512m
+volumes:
+  v2-data:

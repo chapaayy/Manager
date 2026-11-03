@@ -10,7 +10,7 @@ from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 from v2.app import app
 from v2 import storage, remnawave
-from v2.template_engine import Endpoint
+from v2.xray import Endpoint
 
 
 @pytest.fixture()

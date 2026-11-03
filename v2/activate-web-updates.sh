@@ -4,10 +4,17 @@
 set -Eeuo pipefail
 umask 077
 APP=/opt/xppn-manager-v2
-ENVFILE="$APP/v2/.env.preview"
+ENVFILE="$APP/v2/.env"
+LEGACY_ENVFILE="$APP/v2/.env.preview"
 [[ $EUID -eq 0 ]] || { echo "Нужен sudo/root" >&2; exit 1; }
-[[ -d "$APP/.git" && -f "$ENVFILE" ]] || {
+[[ -d "$APP/.git" ]] || {
   echo "На этом сервере не найдена установленная XPPN Manager v2" >&2; exit 1;
+}
+if [[ ! -f "$ENVFILE" && -f "$LEGACY_ENVFILE" ]]; then
+  install -m 0600 -o root -g root "$LEGACY_ENVFILE" "$ENVFILE"
+fi
+[[ -f "$ENVFILE" ]] || {
+  echo "Не найден файл окружения XPPN Manager (.env)" >&2; exit 1;
 }
 for c in git docker python3 curl systemctl flock; do
   command -v "$c" >/dev/null || { echo "Нужен $c" >&2; exit 1; }
@@ -36,7 +43,7 @@ CADDY_V2="$(docker ps --filter label=com.docker.compose.project=xppn-v2-preview 
 CADDY_V1="$(docker ps --filter label=com.docker.compose.project=xppn-manager --filter label=com.docker.compose.service=caddy --format '{{.ID}}' | head -1)"
 MODE=public
 NETWORK=""
-set -- -p xppn-v2-preview --project-directory "$APP/v2" --env-file "$ENVFILE" -f "$APP/v2/compose.preview.yml"
+set -- -p xppn-v2-preview --project-directory "$APP/v2" --env-file "$ENVFILE" -f "$APP/v2/compose.yml"
 if [[ -n "$CADDY_V2" ]]; then
   # v2 already owns HTTPS. Don't touch ports 80/443.
   set -- "$@" -f "$APP/v2/compose.public.yml"

@@ -3,9 +3,10 @@ import copy
 import json
 import uuid
 import pytest
-from v2.template_engine import (
-    Endpoint, Exit, TemplateError, diff_configs, extend_existing_bridge,
-    render_bridge, safe_preview, validate_rendered, variables_map,
+from v2.xray import Endpoint, TemplateError, validate_rendered
+from v2.bridge.renderer import (
+    Exit, diff_configs, extend_existing_bridge, render_bridge,
+    safe_preview, variables_map,
 )
 
 def source():
@@ -103,9 +104,9 @@ def test_previews_hide_credentials_and_show_real_change():
 
 def test_full_editable_xray_template_renders_all_highlighted_fields():
     from pathlib import Path
-    from v2.template_engine import render_template_document
+    from v2.bridge.renderer import render_template_document
     sample=json.loads((Path(__file__).resolve().parents[1] /
-                      "v2/data/xray_bridge_template.json").read_text(encoding="utf-8"))
+                      "v2/bridge/data/xray_bridge_template.json").read_text(encoding="utf-8"))
     de=dest()
     output=render_template_document(source(),de,sample)
     assert output["inbounds"][0]["tag"]=="RUS1_DE1_VLESS_TLS_IN"
@@ -118,9 +119,9 @@ def test_full_editable_xray_template_renders_all_highlighted_fields():
 
 def test_unknown_or_mismatched_user_template_is_rejected():
     from pathlib import Path
-    from v2.template_engine import render_template_document
+    from v2.bridge.renderer import render_template_document
     sample=json.loads((Path(__file__).resolve().parents[1] /
-                      "v2/data/xray_bridge_template.json").read_text(encoding="utf-8"))
+                      "v2/bridge/data/xray_bridge_template.json").read_text(encoding="utf-8"))
     sample["log"]["loglevel"]="{{undocumented.variable}}"
     with pytest.raises(TemplateError):
         render_template_document(source(),dest(),sample)
