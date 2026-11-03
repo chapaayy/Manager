@@ -21,7 +21,7 @@ def dashboard(_=Depends(read_access)):
         "panel": storage.get_panel(),
         "nodes": storage.list_nodes(),
         "bridges": [],
-        "phase": "preview-only",
+        "phase": "single-panel",
     }
 
 
