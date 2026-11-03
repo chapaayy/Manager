@@ -49,9 +49,9 @@ def seed_defaults() -> None:
         for name,mode,xray in ((DIRECT_PRESET,"direct","xray_direct_template.json"),):
             key="preset:"+name
             existing=c.execute("SELECT id,mode FROM presets WHERE name=?",(name,)).fetchone()
-            if existing:
-                pass
-            elif not c.execute("SELECT 1 FROM starter_seeds WHERE name=?",(key,)).fetchone():
+            if not existing and not c.execute(
+                "SELECT 1 FROM starter_seeds WHERE name=?", (key,)
+            ).fetchone():
                 if all(f in ids for f in (xray,*common)):
                     preset_id=str(uuid.uuid4())
                     description="Прямой VLESS TLS сервер: Xray 443 + Nginx + Docker."
