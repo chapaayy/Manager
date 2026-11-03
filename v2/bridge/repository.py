@@ -56,7 +56,7 @@ def list_bridges() -> list[dict]:
 
 def save_snapshot(bridge_id: str, value: dict, *, expected_revision: int):
     """Import the ACTUAL currently deployed Xray JSON without modifying the VPS."""
-    from ..template_engine import validate_rendered
+    from ..xray import validate_rendered
     validate_rendered(value)
     encrypted = encrypt(json.dumps(value, ensure_ascii=False))
     with transaction() as c:
