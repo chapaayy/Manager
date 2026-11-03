@@ -1,7 +1,7 @@
-"""Legacy bridge persistence.
+"""Frozen Bridge persistence for historical rows.
 
-Bridge HTTP behavior remains disabled; this repository preserves existing data
-and compatibility until the dedicated legacy cleanup stage.
+Bridge HTTP behavior remains disabled. Existing records are preserved until a
+separate, backed-up database deletion migration is explicitly approved.
 """
 from __future__ import annotations
 
