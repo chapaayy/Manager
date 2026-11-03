@@ -1,7 +1,8 @@
 """Top-level HTTP router composition."""
 from fastapi import APIRouter
 
-from . import agents, auth, bridge, configs, dashboard, nodes, panel, security, system, tls, vps, web
+from . import agents, auth, configs, dashboard, nodes, panel, security, system, tls, vps, web
+from ..bridge import api as bridge_api
 
 router = APIRouter()
 
@@ -18,7 +19,7 @@ for child in (
     agents.router,
     security.router,
     nodes.router,
-    bridge.router,
+    bridge_api.router,
     configs.router,
 ):
     router.include_router(child)
