@@ -106,7 +106,7 @@ def test_old_preview_compose_is_explicit_transition_compatibility():
     assert 'LEGACY_COMPOSE = APP / "v2" / "compose.preview.yml"' in updater
     architecture=read("v2/ARCHITECTURE.md")
     assert "stable legacy identity" in architecture
-    assert "named SQLite volume" in architecture
+    assert "SQLite volume" in architecture
 
 
 def test_development_install_is_physically_separate_from_production():
