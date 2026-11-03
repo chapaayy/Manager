@@ -34,6 +34,14 @@ def test_active_direct_code_does_not_depend_on_legacy_template_facade():
         assert "bridge.repository" not in source, path
 
 
+def test_shared_xray_module_has_no_bridge_topology_constants():
+    source=read("v2/xray.py")
+    assert "class Exit" not in source
+    assert "8444" not in source
+    assert "8999" not in source
+    assert "render_bridge" not in source
+
+
 def test_bridge_implementation_is_physically_isolated():
     bridge=ROOT/"v2/bridge"
     for name in (
