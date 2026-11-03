@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# XPPN Manager v2.1: domain, login, HTTPS, side by side with v1.
+# XPPN Manager v2.3: domain, login, HTTPS, single-panel deployment.
 set -Eeuo pipefail
 umask 077
 APP=/opt/xppn-manager-v2
-ENVFILE="$APP/v2/.env.preview"
+ENVFILE="$APP/v2/.env"
+LEGACY_ENVFILE="$APP/v2/.env.preview"
 V1_CADDY=/opt/xppn-manager/Caddyfile
 BRANCH=v2/rebuild-single-panel
 [[ $EUID -eq 0 ]] || { echo "Запусти через sudo/root" >&2; exit 1; }
@@ -26,7 +27,7 @@ docker info >/dev/null || { echo "Docker недоступен" >&2; exit 1; }
 mkdir -p /run/lock
 exec 9>/run/lock/xppn-v2-install.lock
 flock -n 9 || { echo "Установщик уже запущен" >&2; exit 1; }
-echo "=== XPPN Manager v2.1: простой установщик ==="
+echo "=== XPPN Manager v2.3: установщик single-panel ==="
 if [[ ! -d "$APP/.git" ]]; then
   [[ ! -e "$APP" ]] || { echo "Папка $APP существует и не принадлежит этому проекту" >&2; exit 1; }
   git clone --branch "$BRANCH" --single-branch --depth 1 -q https://github.com/chapaayy/Manager.git "$APP"
@@ -39,6 +40,14 @@ else
     git -C "$APP" fetch -q origin "$BRANCH"
   fi
   git -C "$APP" merge --ff-only FETCH_HEAD
+fi
+
+# Existing installations used the historical .env.preview filename.
+# Copy it once to the production name; keep the old file for one updater
+# transition because the previously installed updater may still reference it.
+if [[ ! -f "$ENVFILE" && -f "$LEGACY_ENVFILE" ]]; then
+  install -m 0600 -o root -g root "$LEGACY_ENVFILE" "$ENVFILE"
+  echo "Перенесены существующие секреты: .env.preview → .env"
 fi
 
 PREV_DOMAIN=""
@@ -86,7 +95,7 @@ echo "Собираем новую панель, не останавливая с
 install -d -m 0700 -o 10001 -g 10001 /var/lib/xppn-v2-update
 CADDY_V2="$(docker ps --filter label=com.docker.compose.project=xppn-v2-preview --filter label=com.docker.compose.service=caddy-v2 --format '{{.ID}}' | head -1)"
 CADDY="$(docker ps --filter label=com.docker.compose.project=xppn-manager --filter label=com.docker.compose.service=caddy --format '{{.ID}}' | head -1)"
-set -- -p xppn-v2-preview --project-directory "$APP/v2" --env-file "$ENVFILE" -f "$APP/v2/compose.preview.yml"
+set -- -p xppn-v2-preview --project-directory "$APP/v2" --env-file "$ENVFILE" -f "$APP/v2/compose.yml"
 MODE=standalone
 NETWORK=""
 if [[ -n "$CADDY_V2" ]]; then
@@ -192,7 +201,7 @@ PY
 fi
 
 echo "══════════════════════════════════════════════"
-echo "XPPN Manager v2.2"
+echo "XPPN Manager v2.3"
 echo "Ссылка: https://$DOMAIN"
 echo "Логин: $USERNAME"
 echo "Пароль: тот, что указал при установке"
@@ -203,4 +212,4 @@ else
   echo "HTTPS и ответ менеджера проверены."
 fi
 echo "Вкладка Обновления теперь работает с сайта, SSH для следующих обновлений не нужен."
-echo "Старая версия v1 сохранена. Установка VPN-нод в v2 пока не подключена."
+echo "Новые VPS и ноды добавляются из раздела «Ноды»; существующая v1 не изменяется автоматически."
