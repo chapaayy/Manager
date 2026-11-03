@@ -5,7 +5,7 @@ import sqlite3
 
 from fastapi import HTTPException
 
-from ..template_engine import TemplateError
+from ..xray import TemplateError
 
 
 def api_failure(exc: Exception):
