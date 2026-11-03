@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 
 from ... import remnawave
-from ...template_engine import Endpoint
+from ...xray import Endpoint
 from ..install.render import config_profile_name
 from ..profile_ownership import (
     ProfileOwnershipError,
