@@ -67,6 +67,9 @@ jobs:
           cp v2/.env v2/.env.preview
           docker compose --project-directory v2 --env-file v2/.env.preview \
             -f v2/compose.preview.yml -f v2/compose.public.yml config --quiet
+          cp v2/.env v2/.env.dev
+          docker compose -p xppn-v2-dev --project-directory v2 --env-file v2/.env.dev \
+            -f v2/compose.dev.yml config --quiet
           docker run --rm -e XPPN_V2_DOMAIN=manager.example.org \
             -v "$PWD/v2/Caddyfile.public:/etc/caddy/Caddyfile:ro" \
             caddy:2.10.2-alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
