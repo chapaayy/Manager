@@ -356,9 +356,11 @@ Development uses:
 - project `xppn-v2-dev`
 - a separate development volume
 
-The old `compose.preview.yml` is retained temporarily because the root updater
-from the previous release refers to that exact filename after it fetches new
-Git code.
+The old `compose.preview.yml` is retained because an existing Manager VPS may
+still run an older root-owned updater from `/usr/local/libexec` that refers to
+that exact filename after it fetches new Git code. A normal web-app update does
+not itself replace that root-owned updater. Remove the compatibility file only
+as part of an explicit host-updater migration.
 
 The Compose project name `xppn-v2-preview` is also intentionally retained for
 production for now. It is a **stable legacy identity**, not a statement that the
