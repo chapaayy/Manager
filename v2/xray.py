@@ -11,11 +11,6 @@ from dataclasses import dataclass
 
 CODE = re.compile(r"^[A-Z][A-Z0-9_-]{1,19}$")
 DOMAIN = re.compile(r"^(?=.{4,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$")
-PORTS_RESERVED = {443, 8443}
-EXTRA_PORT_START = 8444
-EXTRA_PORT_END = 8999
-
-
 class TemplateError(ValueError):
     pass
 
