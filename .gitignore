@@ -4,7 +4,8 @@
 **/.env
 **/.env.preview
 !.env.example
-!**/.env.preview.example
+!**/.env.example
+!**/.env.dev.example
 *.key
 *.pem
 *.crt
