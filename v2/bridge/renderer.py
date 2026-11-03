@@ -14,7 +14,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Sequence
 
-from ..xray import Endpoint, TemplateError, new_inbound, validate_rendered
+from ..xray import (
+    EXTRA_PORT_END,
+    EXTRA_PORT_START,
+    PORTS_RESERVED,
+    Endpoint,
+    TemplateError,
+    new_inbound,
+    validate_rendered,
+)
 
 @dataclass(frozen=True)
 class Exit:
