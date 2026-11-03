@@ -1,6 +1,7 @@
-# COMPATIBILITY ONLY: retained for one transition because the previously
-# installed root updater references this exact file after fetching new code.
-# New installs and the new updater use compose.yml.
+# COMPATIBILITY ONLY: existing installations may still run a previously
+# installed root updater that references this exact file after fetching code.
+# New installs use compose.yml. Remove this file only with an explicit
+# migration of the root-owned host updater on existing Manager VPSs.
 name: xppn-v2-preview
 services:
   manager-v2:
