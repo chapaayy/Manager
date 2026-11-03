@@ -20,6 +20,11 @@ def test_active_direct_code_does_not_depend_on_legacy_template_facade():
         ROOT/"v2/preset_deploy.py",
         ROOT/"v2/core/errors.py",
         *sorted((ROOT/"v2/nodes").rglob("*.py")),
+        *sorted((ROOT/"v2/integrations").rglob("*.py")),
+        *sorted(
+            path for path in (ROOT/"v2/api").glob("*.py")
+            if path.name not in {"bridge.py","router.py"}
+        ),
     ]
     for path in active:
         source=path.read_text(encoding="utf-8")
