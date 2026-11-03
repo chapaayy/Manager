@@ -7,7 +7,7 @@ from cryptography.fernet import Fernet
 
 from v2 import bundled,storage,vps_install
 from v2.nodes.install import service as install_service
-from v2.template_engine import Endpoint,validate_rendered
+from v2.xray import Endpoint,validate_rendered
 
 
 @pytest.fixture
