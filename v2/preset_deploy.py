@@ -1,6 +1,5 @@
-"""Render two scoped install presets from the encrypted Manager library.
+"""Render the active Direct install preset from the encrypted Manager library.
 
-Bridge bootstrap has no outbound destination until a real exit is configured.
 Only Nginx text may differ from the shipped baseline; Compose is constrained
 to the known safe service/mount sets to prevent arbitrary root VPS changes.
 """
@@ -12,7 +11,7 @@ from pathlib import Path
 import yaml
 
 from . import storage
-from .template_engine import Endpoint, TemplateError, validate_rendered
+from .xray import Endpoint, TemplateError, validate_rendered
 
 ROOT=Path(__file__).resolve().parent/"data"
 TYPES=("xray","nginx","nginx_compose","node_compose")
@@ -174,6 +173,4 @@ def render_snapshot(preset_id:str,source:Endpoint,role:str)->dict:
             "nginx_compose":preset["files"]["nginx_compose"],
             "node_compose":preset["files"]["node_compose"],
             "inbound_tags":[i["tag"] for i in xray["inbounds"]],
-            "note":("Мост установлен в безопасном режиме: все VPN-подключения блокируются "
-                    "до создания реальных выходных маршрутов." if mode=="bridge"
-                    else "Обычный VLESS TLS сервер с прямым выходом.")}
+            "note":"Обычный VLESS TLS сервер с прямым выходом."}
