@@ -1,5 +1,5 @@
 """Compatibility facade for v2.nodes.install."""
-from .template_engine import Endpoint, TemplateError
+from .xray import Endpoint, TemplateError
 from .nodes.install import (
     FP,
     POOL,
