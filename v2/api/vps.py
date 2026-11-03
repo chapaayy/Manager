@@ -7,7 +7,7 @@ from .. import preset_deploy, remnawave, storage
 from ..nodes import install as node_install
 from ..core.auth import read_access, write_access
 from ..core.errors import api_failure
-from ..template_engine import Endpoint, TemplateError
+from ..xray import Endpoint, TemplateError
 from .node_access import node_password
 
 router = APIRouter()
