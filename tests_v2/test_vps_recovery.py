@@ -5,7 +5,7 @@ from v2 import storage, vps_install
 from v2.nodes.install import service as install_service
 from v2.nodes.install import ssh as install_ssh
 from v2.nodes.install import registration as install_registration
-from v2.template_engine import Endpoint
+from v2.xray import Endpoint
 
 
 @pytest.fixture
