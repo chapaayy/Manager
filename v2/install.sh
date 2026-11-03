@@ -43,8 +43,9 @@ else
 fi
 
 # Existing installations used the historical .env.preview filename.
-# Copy it once to the production name; keep the old file for one updater
-# transition because the previously installed updater may still reference it.
+# Copy it once to the production name. Keep the old file until the root-owned
+# updater on this Manager VPS has been explicitly migrated; older copies may
+# still reference the historical filename.
 if [[ ! -f "$ENVFILE" && -f "$LEGACY_ENVFILE" ]]; then
   install -m 0600 -o root -g root "$LEGACY_ENVFILE" "$ENVFILE"
   echo "Перенесены существующие секреты: .env.preview → .env"
