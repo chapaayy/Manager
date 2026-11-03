@@ -12,7 +12,7 @@ import paramiko
 
 from . import agent_transport, helper_bundle, storage
 from .nodes.install import ssh as node_ssh
-from .template_engine import Endpoint
+from .xray import Endpoint
 
 ROOT=Path(__file__).resolve().parent/"agent"
 
